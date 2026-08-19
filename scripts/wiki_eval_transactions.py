@@ -19,12 +19,12 @@ from _file_transactions import (
     TransactionConflict,
     TransactionCorrupt,
     TransactionError,
-    _integrity,
     recover_all,
     run_transaction,
     transaction_status,
     validate_journal,
 )
+from _transaction_contract import TRANSACTION_EXECUTION_CONTRACT
 from eval_lib import Results
 from _durable_files import stable_lock
 
@@ -598,7 +598,7 @@ def mutate_journal_identity(tx: Path, field: str, value) -> None:
     journal_path = tx / "journal.json"
     journal = json.loads(journal_path.read_text(encoding="utf-8"))
     journal[field] = value
-    journal["integrity_sha256"] = _integrity(journal)
+    journal["integrity_sha256"] = TRANSACTION_EXECUTION_CONTRACT.integrity(journal)
     journal_path.write_text(json.dumps(journal, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 
 
@@ -626,11 +626,11 @@ with tempfile.TemporaryDirectory(prefix="wiki-transactions-schema-") as td:
     journal_path = tx_dirs(root)[0] / "journal.json"
     journal = json.loads(journal_path.read_text(encoding="utf-8"))
     journal["state"] = "UNKNOWN"
-    journal["integrity_sha256"] = _integrity(journal)
+    journal["integrity_sha256"] = TRANSACTION_EXECUTION_CONTRACT.integrity(journal)
     results.record("unknown-state-validator-fails", any("unknown state" in error for error in validate_journal(journal)), f"errors={validate_journal(journal)}")
     journal["state"] = "PREPARED"
     journal["plan_sha256"] = "0" * 64
-    journal["integrity_sha256"] = _integrity(journal)
+    journal["integrity_sha256"] = TRANSACTION_EXECUTION_CONTRACT.integrity(journal)
     results.record("bad-plan-hash-validator-fails", any("plan_sha256 mismatch" in error for error in validate_journal(journal)), f"errors={validate_journal(journal)}")
     journal["plan_sha256"] = json.loads(journal_path.read_text(encoding="utf-8"))["plan_sha256"]
     journal["integrity_sha256"] = "0" * 64
@@ -653,7 +653,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-transactions-transition-") as td:
     except RuntimeError:
         pass
     tx_dir = tx_dirs(root)[0]
-    journal = transactions._load_journal(
+    journal = TRANSACTION_EXECUTION_CONTRACT.load_journal(
         tx_dir,
         expected_transaction_id=tx_dir.name.removeprefix(transactions.PREPARING_PREFIX),
     )
@@ -860,7 +860,7 @@ for event, expected in kill_cases:
 with tempfile.TemporaryDirectory(prefix="wiki-transactions-lock-contention-") as td:
     root = Path(td)
     setup_repo(root)
-    authority = transactions._ensure_authority(root)
+    authority = TRANSACTION_EXECUTION_CONTRACT.ensure_authority(root)
     contention_code = """
 import sys
 from pathlib import Path

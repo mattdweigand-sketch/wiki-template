@@ -11,6 +11,16 @@ Append-only history of ingest, lint, query, and decision-capture sessions. Newes
 
 ---
 
+## [2026-08-19] maintenance | adoption review polish
+
+Change: Made the direct-import discoverability regression path-specific and removed the transaction facade's nine method aliases so production and evaluation call sites use the named execution contract directly.
+Reason: Ensure each adversarial import case proves its own detection path and keep the transaction module boundary visible instead of recreating the former private helper surface under local aliases.
+Rejected alternative: Keep the aliases or restore them for evaluation convenience, which would preserve a duplicate internal API and hide the contract at its consumer sites.
+Accepted tradeoff: Transaction call sites are longer, but their dependency is explicit and owned by one typed seam.
+Validation: PASS - discoverability and transaction suites on Python 3.9.25, 3.11.15, and 3.12.13; full `python3 scripts/wiki_eval.py`; clean transaction authority; `git diff --check`.
+
+---
+
 ## [2026-08-19] maintenance | runtime and interface contract hardening
 
 Change: Made the documented `python3` tooling compatible with Python 3.9+, added the runtime version to eval output and a Python 3.9/3.11 CI matrix, extended discoverability enforcement to implicit public classes and declared local import edges, repaired the live lint interfaces, and replaced private transaction-helper imports with one named internal execution contract.

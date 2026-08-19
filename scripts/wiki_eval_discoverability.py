@@ -162,7 +162,8 @@ def main() -> int:
         results.record(
             "isolated-import-omitted-from-declared-interface-fails",
             any(
-                finding["symbol"] == "interface_owner.collect"
+                finding["path"] == "scripts/interface_consumer.py"
+                and finding["symbol"] == "interface_owner.collect"
                 for finding in findings_of_kind(report, "import-not-exported")
             ),
             json.dumps(report, sort_keys=True),
