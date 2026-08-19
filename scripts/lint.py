@@ -34,13 +34,6 @@ from _wiki_parse import META_PAGES, get_entity_pages
 from wiki_lint_adjudications import load_adjudications
 from wiki_lint_contract import (
     ADJUDICATIONS_PATH,
-    FOLDER_TYPE,
-    LOG_ROTATION_WARN_LINES,
-    RELATED_LABELS,
-    VALID_AUTHORITY_FRESHNESS,
-    VALID_AUTHORITY_KIND,
-    VALID_CONFIDENCE,
-    VALID_SOURCE_TYPE,
     WIKI_ROOT,
 )
 from wiki_lint_signals import TIER2_SIGNALS, run_tier2_lint

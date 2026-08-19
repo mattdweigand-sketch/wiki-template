@@ -102,6 +102,70 @@ def declared_public_names(tree: ast.Module) -> frozenset[str] | None:
     return None
 
 
+def declared_module_interfaces(scripts_dir: Path) -> dict[str, frozenset[str]]:
+    """Map local module names to their literal declared interfaces."""
+    interfaces: dict[str, frozenset[str]] = {}
+    for path in sorted(scripts_dir.glob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        declared = declared_public_names(tree)
+        if declared is not None:
+            interfaces[path.stem] = declared
+    return interfaces
+
+
+def local_import_findings(
+    relative_path: Path,
+    tree: ast.Module,
+    interfaces: dict[str, frozenset[str]],
+) -> list[Finding]:
+    """Report local imports that bypass an owner's literal interface."""
+    findings: list[Finding] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if node.level != 0 or node.module not in interfaces:
+            continue
+        for imported in node.names:
+            if imported.name == "*" or imported.name in interfaces[node.module]:
+                continue
+            findings.append(
+                build_finding(
+                    relative_path,
+                    node.lineno,
+                    "import-not-exported",
+                    f"{node.module}.{imported.name}",
+                )
+            )
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Import):
+            continue
+        for imported in node.names:
+            if imported.name not in interfaces:
+                continue
+            binding = imported.asname or imported.name
+            used_names = {
+                candidate.attr
+                for candidate in ast.walk(tree)
+                if isinstance(candidate, ast.Attribute)
+                and isinstance(candidate.value, ast.Name)
+                and candidate.value.id == binding
+            }
+            for used_name in sorted(used_names - interfaces[imported.name]):
+                findings.append(
+                    build_finding(
+                        relative_path,
+                        node.lineno,
+                        "import-not-exported",
+                        f"{imported.name}.{used_name}",
+                    )
+                )
+    return findings
+
+
 def public_top_level_functions(
     tree: ast.Module,
 ) -> Iterable[ast.FunctionDef | ast.AsyncFunctionDef]:
@@ -122,13 +186,15 @@ def public_top_level_functions(
             yield node
 
 
-def explicitly_exported_classes(tree: ast.Module) -> Iterable[ast.ClassDef]:
-    """Yield classes named by a literal ``__all__`` declaration."""
+def public_top_level_classes(tree: ast.Module) -> Iterable[ast.ClassDef]:
+    """Yield intentional top-level class interfaces in source order."""
     declared = declared_public_names(tree)
-    if declared is None:
-        return
     for node in tree.body:
-        if isinstance(node, ast.ClassDef) and node.name in declared:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if declared is not None and node.name in declared:
+            yield node
+        elif declared is None and not node.name.startswith("_"):
             yield node
 
 
@@ -197,7 +263,7 @@ def inspect_python_source(relative_path: Path, text: str) -> tuple[list[Finding]
                 build_finding(relative_path, function.lineno, "generic-callable", function.name)
             )
 
-    for class_definition in explicitly_exported_classes(tree):
+    for class_definition in public_top_level_classes(tree):
         public_names.append(class_definition.name)
         constructor = next(
             (
@@ -266,6 +332,7 @@ def collect_discoverability_report(repo_root: Path) -> DiscoverabilityReport:
         )
         return report
 
+    interfaces = declared_module_interfaces(scripts_dir)
     production_names: list[tuple[Path, str]] = []
     for path in sorted(item for item in scripts_dir.rglob("*") if item.is_file()):
         relative_path = path.relative_to(repo_root)
@@ -287,6 +354,12 @@ def collect_discoverability_report(repo_root: Path) -> DiscoverabilityReport:
             else:
                 python_findings, public_names = inspect_python_source(relative_path, text)
                 findings.extend(python_findings)
+                try:
+                    tree = ast.parse(text, filename=relative_path.as_posix())
+                except SyntaxError:
+                    pass
+                else:
+                    findings.extend(local_import_findings(relative_path, tree, interfaces))
 
         if is_production_module(relative_path):
             report["production_blockers"].extend(findings)

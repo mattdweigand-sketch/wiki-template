@@ -355,6 +355,60 @@ def validate_journal(journal: object) -> list[str]:
     return errors
 
 
+# The execution facade consumes this one typed seam; journal helpers stay private.
+class _TransactionExecutionContract:
+    __slots__ = ()
+
+    def authority_root(self, repo_root: Path) -> Path:
+        return _authority_root(repo_root)
+
+    def canonical_relative(self, value: object) -> bool:
+        return _canonical_relative(value)
+
+    def ensure_authority(self, repo_root: Path) -> Path:
+        return _ensure_authority(repo_root)
+
+    def integrity(self, journal: dict[str, object]) -> str:
+        return _integrity(journal)
+
+    def load_journal(
+        self,
+        tx_dir: Path,
+        *,
+        expected_transaction_id: str | None = None,
+    ) -> dict[str, object]:
+        return _load_journal(
+            tx_dir,
+            expected_transaction_id=expected_transaction_id,
+        )
+
+    def now(self) -> str:
+        return _now()
+
+    def plan_hash(
+        self,
+        consumer: str,
+        allowed_prefixes: list[str],
+        targets: list[dict[str, object]],
+        guards: list[dict[str, object]],
+    ) -> str:
+        return _plan_hash(consumer, allowed_prefixes, targets, guards)
+
+    def strict_directory(self, path: Path, *, mode: int = 0o700) -> os.stat_result:
+        return _strict_directory(path, mode=mode)
+
+    def strict_regular(
+        self,
+        path: Path,
+        *,
+        mode: int | None = None,
+    ) -> os.stat_result:
+        return _strict_regular(path, mode=mode)
+
+
+TRANSACTION_EXECUTION_CONTRACT = _TransactionExecutionContract()
+
+
 __all__ = [
     "AUTHORITY_NAME",
     "CLEANUP_PREFIX",
@@ -362,6 +416,7 @@ __all__ = [
     "PREPARING_PREFIX",
     "SCHEMA_VERSION",
     "STATES",
+    "TRANSACTION_EXECUTION_CONTRACT",
     "TRANSITIONS",
     "TransactionConflict",
     "TransactionCorrupt",

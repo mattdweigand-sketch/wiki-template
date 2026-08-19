@@ -21,6 +21,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import wiki_lint_contract
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -48,16 +50,14 @@ FOLDER_RE = re.compile(r"wiki/([a-z0-9]+(?:-[a-z0-9]+)*)/")
 
 
 def _live_constants() -> dict[str, set[str]]:
-    import lint
-
     return {
-        "FOLDER_TYPE_KEYS": set(lint.FOLDER_TYPE),
-        "FOLDER_TYPE_VALUES": set(lint.FOLDER_TYPE.values()),
-        "VALID_CONFIDENCE": set(lint.VALID_CONFIDENCE),
-        "VALID_SOURCE_TYPE": set(lint.VALID_SOURCE_TYPE),
-        "VALID_AUTHORITY_KIND": set(lint.VALID_AUTHORITY_KIND),
-        "VALID_AUTHORITY_FRESHNESS": set(lint.VALID_AUTHORITY_FRESHNESS),
-        "RELATED_LABELS": set(lint.RELATED_LABELS),
+        "FOLDER_TYPE_KEYS": set(wiki_lint_contract.FOLDER_TYPE),
+        "FOLDER_TYPE_VALUES": set(wiki_lint_contract.FOLDER_TYPE.values()),
+        "VALID_CONFIDENCE": set(wiki_lint_contract.VALID_CONFIDENCE),
+        "VALID_SOURCE_TYPE": set(wiki_lint_contract.VALID_SOURCE_TYPE),
+        "VALID_AUTHORITY_KIND": set(wiki_lint_contract.VALID_AUTHORITY_KIND),
+        "VALID_AUTHORITY_FRESHNESS": set(wiki_lint_contract.VALID_AUTHORITY_FRESHNESS),
+        "RELATED_LABELS": set(wiki_lint_contract.RELATED_LABELS),
     }
 
 

@@ -30,10 +30,10 @@ from wiki_lint_contract import (
     WIKI_ROOT,
 )
 from wiki_lint_frontmatter import (
-    SOURCE_NONSLUG_PREFIX_RE,
     authored_body,
     block_list_has_items,
     fm_scalar,
+    is_nonrepository_source_reference,
     source_items,
     source_repo_references,
 )
@@ -313,7 +313,7 @@ def check_source_refs(ctx: PageContext) -> LintFailures:
     if not ctx.fm_block:
         return fails
     for item in source_items(ctx.fm_block):
-        if SOURCE_NONSLUG_PREFIX_RE.match(item) or is_http_url(item):
+        if is_nonrepository_source_reference(item):
             continue
         references, errors = source_repo_references(item)
         fails.extend(("source-ref", ctx.rel, error) for error in errors)

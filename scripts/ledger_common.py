@@ -47,7 +47,7 @@ ApprovalRecordSha256 = NewType("ApprovalRecordSha256", str)
 class LedgerIntegrityError(ValueError):
     """A candidate or complete ledger failed deterministic validation."""
 
-    def __init__(self, failures: str | list[str] | tuple[str, ...]):
+    def __init__(self, failures: str | list[str] | tuple[str, ...]) -> None:
         if isinstance(failures, str):
             failures = (failures,)
         self.failures = tuple(failures)

@@ -84,6 +84,23 @@ def main() -> int:
         "Summary: 0 passed, 1 failed" in result_failure.stdout,
         result_failure.stdout.strip(),
     )
+
+    runtime_result = subprocess.run(
+        [sys.executable, "scripts/wiki_eval.py", "--suite", "capture-runs"],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+    )
+    expected_runtime = (
+        f"Python runtime: {sys.version_info.major}."
+        f"{sys.version_info.minor}.{sys.version_info.micro}"
+    )
+    check(
+        "cli-reports-python-runtime-version",
+        runtime_result.returncode == 0
+        and runtime_result.stdout.startswith(expected_runtime + "\n"),
+        f"exit={runtime_result.returncode}; stdout={runtime_result.stdout!r}",
+    )
     return results.finish()
 
 

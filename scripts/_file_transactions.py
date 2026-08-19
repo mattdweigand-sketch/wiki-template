@@ -29,32 +29,29 @@ from _transaction_contract import (
     AUTHORITY_NAME,
     CLEANUP_PREFIX,
     CONSUMERS,
-    GUARD_FIELDS,
-    JOURNAL_FIELDS,
     PREPARING_PREFIX,
     SCHEMA_VERSION,
     STATES,
-    TARGET_FIELDS,
+    TRANSACTION_EXECUTION_CONTRACT,
     TRANSITIONS,
-    FaultHook,
     TransactionConflict,
     TransactionCorrupt,
     TransactionError,
-    _allowed,
-    _authority_root,
-    _canonical_json,
-    _canonical_relative,
-    _ensure_authority,
-    _integrity,
-    _is_sha,
-    _load_journal,
-    _now,
-    _plan_hash,
-    _strict_directory,
-    _strict_regular,
     validate_journal,
     validate_target_path,
 )
+
+
+FaultHook = Callable[[str], None]
+_authority_root = TRANSACTION_EXECUTION_CONTRACT.authority_root
+_canonical_relative = TRANSACTION_EXECUTION_CONTRACT.canonical_relative
+_ensure_authority = TRANSACTION_EXECUTION_CONTRACT.ensure_authority
+_integrity = TRANSACTION_EXECUTION_CONTRACT.integrity
+_load_journal = TRANSACTION_EXECUTION_CONTRACT.load_journal
+_now = TRANSACTION_EXECUTION_CONTRACT.now
+_plan_hash = TRANSACTION_EXECUTION_CONTRACT.plan_hash
+_strict_directory = TRANSACTION_EXECUTION_CONTRACT.strict_directory
+_strict_regular = TRANSACTION_EXECUTION_CONTRACT.strict_regular
 
 
 def _write_journal(tx_dir: Path, journal: dict[str, object], *, expected: str | None, fault: FaultHook | None) -> None:

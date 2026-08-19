@@ -9,6 +9,7 @@ import shlex
 import subprocess
 from datetime import date
 from pathlib import Path
+from typing import Optional
 
 from _file_transactions import transaction_status
 from _wiki_parse import META_PAGES, get_entity_pages, parse_log_entry_date, parse_log_entry_type
@@ -31,7 +32,7 @@ from wiki_lint_contract import (
 from wiki_lint_frontmatter import fm_scalar
 
 
-RawBucketRegistry = tuple[set[str] | None, str | None]
+RawBucketRegistry = tuple[Optional[set[str]], Optional[str]]
 SourcingQueueMarker = tuple[str, int, int]
 SourcingQueueMarkers = tuple[list[SourcingQueueMarker], LintFailures]
 LogEntry = dict[str, object]

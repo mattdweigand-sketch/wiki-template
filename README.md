@@ -16,6 +16,8 @@ This repo compiles stable, source-backed meaning so future work starts from an o
 
 ## Getting Started
 
+The deterministic tooling requires Python 3.9 or newer and `ripgrep` (`rg`).
+
 1. Clone the repo.
 2. Point an agent at it. Claude Code can start at `CLAUDE.md`; other agents start at `AGENTS.md`.
 3. Run [`SETUP.md`](SETUP.md) to configure `wiki/domain.md`.
@@ -32,6 +34,8 @@ Copy this into your coding agent to download and configure a local wiki from thi
 Download https://github.com/mweigand-pplx/wiki-pplx locally as a new wiki folder.
 
 Ask me where to put it and what to name the folder. Then clone the repo, enter it, read AGENTS.md, and follow SETUP.md because wiki/domain.md starts as status: unconfigured.
+
+Confirm that python3 is Python 3.9 or newer and that rg is available.
 
 After setup, run the repo checks:
 - python3 scripts/wiki_eval.py

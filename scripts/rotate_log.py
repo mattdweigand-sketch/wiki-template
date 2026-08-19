@@ -19,7 +19,7 @@ from _file_transactions import (
     run_transaction,
     transaction_status,
 )
-from lint import LOG_ROTATION_WARN_LINES
+from wiki_lint_contract import LOG_ROTATION_WARN_LINES
 
 
 DEFAULT_TARGET_LINES = 1500

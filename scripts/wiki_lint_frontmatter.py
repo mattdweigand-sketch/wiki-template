@@ -132,6 +132,10 @@ def _unsafe_source_path_expressions(item, safe_spans):
     return out
 
 
+def is_nonrepository_source_reference(value: str) -> bool:
+    return bool(SOURCE_NONSLUG_PREFIX_RE.match(value)) or is_http_url(value)
+
+
 def source_repo_references(
     item: str,
     *,
@@ -144,7 +148,7 @@ def source_repo_references(
     haystacks, so a path rejected by the guard can never be read as evidence.
     """
     root = Path.cwd() if repo_root is None else Path(repo_root)
-    if SOURCE_NONSLUG_PREFIX_RE.match(item) or is_http_url(item):
+    if is_nonrepository_source_reference(item):
         return [], []
 
     raw_matches = list(RAW_REPO_TOKEN_RE.finditer(item))
@@ -208,6 +212,7 @@ __all__ = [
     "authored_body",
     "block_list_has_items",
     "fm_scalar",
+    "is_nonrepository_source_reference",
     "nonblocking_frontmatter",
     "nonblocking_frontmatter_block",
     "source_items",

@@ -86,6 +86,11 @@ def run_suite(name: str, command: list[str]) -> int:
 
 
 def main() -> int:
+    print(
+        f"Python runtime: {sys.version_info.major}."
+        f"{sys.version_info.minor}.{sys.version_info.micro}",
+        flush=True,
+    )
     args = parser().parse_args()
     # Default to every suite, derived from SUITES so a newly registered suite can
     # never be silently dropped from the default run by a forgotten list entry.

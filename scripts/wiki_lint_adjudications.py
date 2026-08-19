@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from typing import Union
 
 from wiki_lint_contract import GLOSSARY_BULLET_ENTRY_RE, WIKI_ROOT
 from wiki_lint_repository_checks import read_adjudications
 
 
-AdjudicationValue = str | frozenset[str] | tuple[str, str]
+AdjudicationValue = Union[str, frozenset[str], tuple[str, str]]
 Adjudications = dict[str, set[AdjudicationValue]]
 
 

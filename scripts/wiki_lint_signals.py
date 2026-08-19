@@ -8,7 +8,7 @@ from collections.abc import Callable, Collection, Sequence
 from datetime import date
 from itertools import combinations
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, Union
 
 from _wiki_parse import (
     FrontmatterError,
@@ -175,9 +175,9 @@ class Tier2PageFacts(TypedDict):
     source_items: list[str]
 
 
-Tier2Item = str | tuple[float, str, str] | tuple[float, int, str, str]
+Tier2Item = Union[str, tuple[float, str, str], tuple[float, int, str, str]]
 Tier2SignalResult = tuple[list[Tier2Item], int]
-Tier2Report = dict[str, list[Tier2Item] | int]
+Tier2Report = dict[str, Union[list[Tier2Item], int]]
 
 
 class Tier2Context:

@@ -78,6 +78,36 @@ def main() -> int:
             "__all__ = ['PageContext']\n",
             encoding="utf-8",
         )
+        (scripts_dir / "implicit_contract.py").write_text(
+            "class ImplicitPageContext:\n"
+            "    def __init__(self, path):\n"
+            "        self.path = path\n",
+            encoding="utf-8",
+        )
+        (scripts_dir / "interface_owner.py").write_text(
+            "def exported_name(value: str) -> str:\n"
+            "    return value\n"
+            "\n"
+            "def collect(value: str) -> str:\n"
+            "    return value\n"
+            "\n"
+            "__all__ = ['exported_name']\n",
+            encoding="utf-8",
+        )
+        (scripts_dir / "interface_consumer.py").write_text(
+            "from interface_owner import collect\n"
+            "\n"
+            "def use_hidden_collection(value: str) -> str:\n"
+            "    return collect(value)\n",
+            encoding="utf-8",
+        )
+        (scripts_dir / "interface_qualified_consumer.py").write_text(
+            "import interface_owner as owner\n"
+            "\n"
+            "def use_qualified_hidden_collection(value: str) -> str:\n"
+            "    return owner.collect(value)\n",
+            encoding="utf-8",
+        )
         fixture_index = scripts_dir / "fixtures" / "wiki-lint" / "wiki" / "index.md"
         fixture_index.parent.mkdir(parents=True)
         fixture_index.write_text("# Miniature index\n", encoding="utf-8")
@@ -118,6 +148,31 @@ def main() -> int:
             any(
                 str(finding["symbol"]).startswith("PageContext.__init__")
                 for finding in findings_of_kind(report, "incomplete-public-signature")
+            ),
+            json.dumps(report, sort_keys=True),
+        )
+        results.record(
+            "isolated-untyped-implicit-public-constructor-fails",
+            any(
+                str(finding["symbol"]).startswith("ImplicitPageContext.__init__")
+                for finding in findings_of_kind(report, "incomplete-public-signature")
+            ),
+            json.dumps(report, sort_keys=True),
+        )
+        results.record(
+            "isolated-import-omitted-from-declared-interface-fails",
+            any(
+                finding["symbol"] == "interface_owner.collect"
+                for finding in findings_of_kind(report, "import-not-exported")
+            ),
+            json.dumps(report, sort_keys=True),
+        )
+        results.record(
+            "isolated-qualified-import-omitted-from-declared-interface-fails",
+            any(
+                finding["path"] == "scripts/interface_qualified_consumer.py"
+                and finding["symbol"] == "interface_owner.collect"
+                for finding in findings_of_kind(report, "import-not-exported")
             ),
             json.dumps(report, sort_keys=True),
         )

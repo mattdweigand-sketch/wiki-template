@@ -11,6 +11,16 @@ Append-only history of ingest, lint, query, and decision-capture sessions. Newes
 
 ---
 
+## [2026-08-19] maintenance | runtime and interface contract hardening
+
+Change: Made the documented `python3` tooling compatible with Python 3.9+, added the runtime version to eval output and a Python 3.9/3.11 CI matrix, extended discoverability enforcement to implicit public classes and declared local import edges, repaired the live lint interfaces, and replaced private transaction-helper imports with one named internal execution contract.
+Reason: Close the two remaining adoption findings: the user-facing runtime promise failed on Python 3.9, and declared module boundaries could be bypassed without failing the discoverability gate.
+Rejected alternative: Require Python 3.11+ or publish every private transaction helper through `__all__`; both would make adoption easier mechanically while weakening the template's low-friction setup or its internal boundary.
+Accepted tradeoff: CI runs the full suite twice, and explicit `__all__` owners must keep local consumers synchronized; evaluation-only internal imports remain advisory.
+Validation: PASS - full `python3 scripts/wiki_eval.py` on Python 3.9.25 and 3.11.15 (780 checks each); adversarial implicit-class, direct-import, and qualified-import discoverability cases; schema-doc parity; wrapper parity; Tier-1 lint; `git diff --check`.
+
+---
+
 ## [2026-08-19] maintenance | parallel-refactor follow-up
 
 Change: Folded the strongest targeted improvements from an independently implemented discoverability refactor into the modular tooling: renamed the due-review collector, typed Tier-1 and Tier-2 contexts and registries, removed confirmed dead lint remnants, and extended the discoverability check to reject generic collection interfaces and untyped explicitly exported constructors.
