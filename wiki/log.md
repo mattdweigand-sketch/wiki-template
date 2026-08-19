@@ -11,6 +11,16 @@ Append-only history of ingest, lint, query, and decision-capture sessions. Newes
 
 ---
 
+## [2026-08-19] maintenance | public personal-account port
+
+Change: Published the complete repository history at `mattdweigand-sketch/wiki-template`, made that public repository the canonical clone URL, and retained the organization-hosted repository as a synchronized secondary remote.
+Reason: Make the reusable template publicly accessible from the owner's personal GitHub account without deleting or transferring the existing repository.
+Rejected alternative: Transfer the existing repository or publish a history-free snapshot, either of which would remove the original location or discard provenance.
+Accepted tradeoff: Two repositories now carry the project history, so the organization-hosted copy must be synchronized deliberately when it should mirror the public canonical repository.
+Validation: PASS - full `python3 scripts/wiki_eval.py`; Tier-1 lint; public repository and remote verification; stale live-URL scan; `git diff --check`.
+
+---
+
 ## [2026-08-19] maintenance | repository rename
 
 Change: Renamed the GitHub repository to `wiki-template` and updated the clone URL in the agent setup prompt.
