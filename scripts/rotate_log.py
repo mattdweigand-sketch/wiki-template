@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import stat
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -185,7 +186,7 @@ def select_archive_path(root: Path, base_rel: Path, candidate_text: str) -> tupl
     Interrupted runs recover by reusing the lowest-numbered base/suffixed file
     whose bytes already equal the candidate. If none match, choose the first
     unused deterministic slot (base, then -2, -3, ...). Selection happens in
-    build_plan so the live pointer and maintenance entry render the real path.
+    build_log_rotation_plan so the live pointer and maintenance entry render the real path.
     """
     archive_dir = root / base_rel.parent
     existing: dict[int, Path] = {}
@@ -221,7 +222,7 @@ def select_archive_path(root: Path, base_rel: Path, candidate_text: str) -> tupl
     return base_rel.with_name(f"{base_rel.stem}-{index}.md"), None
 
 
-def build_plan(root: Path, target_lines: int, rotation_date: str) -> RotationPlan:
+def build_log_rotation_plan(root: Path, target_lines: int, rotation_date: str) -> RotationPlan:
     validate_target(target_lines)
 
     log_path = root / LOG_PATH
@@ -355,7 +356,12 @@ def build_plan(root: Path, target_lines: int, rotation_date: str) -> RotationPla
     )
 
 
-def write_plan(root: Path, plan: RotationPlan, *, fault=None) -> list[str]:
+def apply_log_rotation_plan(
+    root: Path,
+    plan: RotationPlan,
+    *,
+    fault: Callable[[str], None] | None = None,
+) -> list[str]:
     if plan.no_op:
         return []
     if (
@@ -452,9 +458,9 @@ def main() -> int:
                 print("Recovered interrupted transaction before planning:")
                 for message in recovery:
                     print(f"- {message}")
-        plan = build_plan(root, args.target_lines, args.date)
+        plan = build_log_rotation_plan(root, args.target_lines, args.date)
         if not args.dry_run:
-            write_recovery = write_plan(root, plan)
+            write_recovery = apply_log_rotation_plan(root, plan)
             if write_recovery:
                 print("Recovered interrupted transaction before commit:")
                 for message in write_recovery:

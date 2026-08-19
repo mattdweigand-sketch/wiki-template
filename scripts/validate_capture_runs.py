@@ -8,7 +8,6 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from ledger_common import (
     APPROVAL_RECORD_TYPES,
@@ -39,7 +38,7 @@ AUTHORED_SHA256_REQUIRED_FROM = "2026-07-10T03:23:58Z"
 AUTHORED_HASH_POLICY = "strip_referenced_by_v1"
 
 
-def parse_utc_timestamp(value: Any) -> datetime | None:
+def parse_utc_timestamp(value: object) -> datetime | None:
     if not is_nonempty_string(value):
         return None
     normalized = value.removesuffix("Z") + "+00:00" if value.endswith("Z") else value
@@ -78,7 +77,7 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
-def validate_backfill_fields(record: dict[str, Any]) -> list[str]:
+def validate_backfill_fields(record: dict[str, object]) -> list[str]:
     errors: list[str] = []
     if record.get("backfilled") is True and not is_nonempty_string(record.get("backfill_source")):
         errors.append("backfilled records must include backfill_source")
@@ -87,7 +86,7 @@ def validate_backfill_fields(record: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate_capture_approval(record: dict[str, Any]) -> list[str]:
+def validate_capture_approval(record: dict[str, object]) -> list[str]:
     errors: list[str] = []
     if not is_strict_int(record.get("schema_version")) or record["schema_version"] != 1:
         errors.append("approval record must have schema_version 1")
@@ -215,7 +214,7 @@ def validate_capture_approval(record: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate_synthesis_approval(record: dict[str, Any]) -> list[str]:
+def validate_synthesis_approval(record: dict[str, object]) -> list[str]:
     errors: list[str] = []
     if not is_strict_int(record.get("schema_version")) or record["schema_version"] != 1:
         errors.append("approval record must have schema_version 1")
@@ -259,7 +258,7 @@ def validate_synthesis_approval(record: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate_approval(record: dict[str, Any]) -> list[str]:
+def validate_approval(record: dict[str, object]) -> list[str]:
     if record.get("record_type") == "capture_approval":
         return validate_capture_approval(record)
     if record.get("record_type") == "synthesis_approval":
@@ -267,13 +266,14 @@ def validate_approval(record: dict[str, Any]) -> list[str]:
     return [f"unsupported record_type {record.get('record_type')!r}"]
 
 
-def validate(path: Path) -> tuple[list[str], int]:
+def validate_capture_ledger(path: Path) -> tuple[list[str], int]:
+    """Validate a complete approval ledger through its shared trust boundary."""
     return validate_ledger(path, APPROVAL_RECORD_TYPES, validate_approval)
 
 
 def main() -> int:
     args = parser().parse_args()
-    errors, approval_count = validate(Path(args.path))
+    errors, approval_count = validate_capture_ledger(Path(args.path))
     if errors:
         print("Approval ledger validation failed:")
         for error in errors:

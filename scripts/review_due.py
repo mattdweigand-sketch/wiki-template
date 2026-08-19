@@ -41,7 +41,10 @@ def iso_date_arg(value: str) -> date:
         ) from exc
 
 
-def collect(root: Path, today: date):
+def collect(
+    root: Path,
+    today: date,
+) -> tuple[list[tuple[int, str, str]], list[tuple[str, str]]]:
     due, bad = [], []
     for p in get_entity_pages(root):
         try:

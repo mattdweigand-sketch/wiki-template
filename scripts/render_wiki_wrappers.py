@@ -11,7 +11,6 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -54,8 +53,8 @@ class DuplicateKeyError(ValueError):
     pass
 
 
-def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    obj: dict[str, Any] = {}
+def _strict_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    obj: dict[str, object] = {}
     for key, value in pairs:
         if key in obj:
             raise DuplicateKeyError(f"duplicate JSON key: {key}")
@@ -80,7 +79,7 @@ class WrapperContract:
     shortcuts: tuple[Shortcut, ...]
 
 
-def _field_shape(obj: dict[str, Any], expected: frozenset[str], label: str) -> list[str]:
+def _field_shape(obj: dict[str, object], expected: frozenset[str], label: str) -> list[str]:
     problems: list[str] = []
     missing = expected - set(obj)
     unknown = set(obj) - expected

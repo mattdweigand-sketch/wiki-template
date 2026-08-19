@@ -15,7 +15,9 @@ sys.path[0], exactly as ledger_common is imported).
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
+from pathlib import Path
 
 # A wikilink slug, ignoring an optional folder prefix and an optional alias:
 #   [[slug]], [[dir/slug]], [[dir/slug|alias]]  -> captures "slug".
@@ -73,7 +75,7 @@ LOG_ENTRY_HEADER_RE = re.compile(
 )
 
 
-def parse_log_entry_date(line):
+def parse_log_entry_date(line: str) -> str | None:
     """The entry date if `line` is a recognized log entry header, else None."""
     match = LOG_ENTRY_HEADER_RE.match(line.rstrip("\n"))
     if not match:
@@ -81,7 +83,7 @@ def parse_log_entry_date(line):
     return match.group("bracketed") or match.group("plain")
 
 
-def parse_log_entry_type(line):
+def parse_log_entry_type(line: str) -> str | None:
     """The lowercased entry-type token from a recognized log entry header, or
     None when the line is not a header or carries no leading type token.
     Handles both live forms — "## [YYYY-MM-DD] type | ..." and
@@ -127,7 +129,7 @@ def _leading_frontmatter(text: str) -> _FrontmatterParts | None:
     raise FrontmatterError("leading frontmatter is missing an exact closing '---' line")
 
 
-def split_frontmatter(text):
+def split_frontmatter(text: str) -> tuple[dict[str, str] | None, str]:
     """Return (frontmatter_dict_of_toplevel_keys, body_text). Empty dict if none.
 
     Returns (None, text) when there is no parseable leading --- fence block.
@@ -146,7 +148,7 @@ def split_frontmatter(text):
     return fm, body
 
 
-def frontmatter_block(text):
+def frontmatter_block(text: str) -> str:
     """Return the raw frontmatter block (text between the leading --- fences),
     or '' if there is none. Unlike split_frontmatter, this preserves block-style
     list values that the key parser flattens, so checks that scan raw lines
@@ -249,7 +251,7 @@ def _context_mask(
     return "".join(chars)
 
 
-def strip_code_spans(text):
+def strip_code_spans(text: str) -> str:
     """Blank out fenced and inline code so a [[link]] written as a syntax
     example inside code is not mistaken for a real wikilink. Order matters:
     strip fenced blocks first, then inline spans, so the two dangling scans
@@ -257,7 +259,7 @@ def strip_code_spans(text):
     return mask_code_spans(text).replace("\x00", " ")
 
 
-def mask_code_spans(text):
+def mask_code_spans(text: str) -> str:
     """Like strip_code_spans, but length-preserving: every code character is
     replaced with a NUL so offsets in the masked text map 1:1 onto the raw
     text. Use this when a regex must LOCATE something (a section span to
@@ -408,7 +410,7 @@ def canonical_authored_text(text: str) -> str:
     return canonical.rstrip("\r\n") + "\n" if canonical else ""
 
 
-def dangling_slugs(text, valid_slugs):
+def dangling_slugs(text: str, valid_slugs: Collection[str]) -> list[str]:
     """Wikilink slugs in `text` that resolve to nothing, after stripping code
     spans and skipping folder-pointer links ([[name/]]). Single source of truth
     for both the Tier-1 entity-page scan and the Tier-2 meta-page scan, so the
@@ -421,7 +423,7 @@ def dangling_slugs(text, valid_slugs):
     return out
 
 
-def get_entity_pages(wiki_root):
+def get_entity_pages(wiki_root: Path) -> list[Path]:
     """All entity pages under `wiki_root`: top-level pages that are not meta
     pages, plus every page one level deep (every wiki/ subfolder is an
     entity-type folder). Sorted, so the link-graph scans in lint.py,
@@ -437,7 +439,7 @@ def get_entity_pages(wiki_root):
     return sorted(pages)
 
 
-def strip_referenced_by(text):
+def strip_referenced_by(text: str) -> str:
     """Remove the auto-generated "## Referenced by" section so it never counts as
     an authored link. Shared by lint.py (its outbound link-graph reads only
     authored links) and rebuild_referenced_by.py (it must not feed generated
@@ -445,7 +447,7 @@ def strip_referenced_by(text):
     return strip_sections(text, "Referenced by")
 
 
-def split_quoted_csv(value):
+def split_quoted_csv(value: str) -> list[str]:
     """Split a simple inline YAML scalar or [list] value into item strings,
     respecting quotes so a comma inside a quoted phrase does not split it.
     Single source of truth for the frontmatter inline-list grammar (sources:

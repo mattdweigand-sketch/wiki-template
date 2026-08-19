@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable, NewType
 
 from _durable_files import (
     DurableFileError,
@@ -41,6 +41,8 @@ APPROVAL_RECORD_TYPES = frozenset({"capture_approval", "synthesis_approval"})
 LEGACY_ID_FIELD = "run_id"
 IDENTITY_EXCLUDE_FIELDS = {"approved_at", LEGACY_ID_FIELD, "word_count_source", "word_count_path"}
 
+ApprovalRecordSha256 = NewType("ApprovalRecordSha256", str)
+
 
 class LedgerIntegrityError(ValueError):
     """A candidate or complete ledger failed deterministic validation."""
@@ -54,10 +56,10 @@ class LedgerIntegrityError(ValueError):
 
 @dataclass(frozen=True)
 class ValidatedApprovalLine:
-    record: dict[str, Any]
+    record: dict[str, object]
     line_no: int
     line_text: str
-    sha256: str
+    sha256: ApprovalRecordSha256
 
 
 @dataclass(frozen=True)
@@ -84,11 +86,11 @@ def under_allowed_root(path: str, *, repo_root: Path) -> bool:
     return True
 
 
-def is_nonempty_string(value: Any) -> bool:
+def is_nonempty_string(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def is_strict_int(value: Any) -> bool:
+def is_strict_int(value: object) -> bool:
     """True for real integers only. bool subclasses int in Python (True == 1),
     so a bare isinstance/equality check would accept `"schema_version": true`;
     every integer-shaped ledger field must reject booleans explicitly."""
@@ -107,7 +109,7 @@ def approved_at_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def validate_timestamp(value: Any) -> str | None:
+def validate_timestamp(value: object) -> str | None:
     if not is_nonempty_string(value):
         return "approved_at must be a non-empty string"
     normalized = value.removesuffix("Z") + "+00:00" if value.endswith("Z") else value
@@ -118,7 +120,7 @@ def validate_timestamp(value: Any) -> str | None:
     return None
 
 
-def validate_schema(record: dict[str, Any], line_no: int) -> list[str]:
+def validate_schema(record: dict[str, object], line_no: int) -> list[str]:
     errors: list[str] = []
     if line_no != 1:
         errors.append("schema record must be the first line")
@@ -129,7 +131,7 @@ def validate_schema(record: dict[str, Any], line_no: int) -> list[str]:
     return errors
 
 
-def validate_pages(record: dict[str, Any], *, repo_root: Path) -> list[str]:
+def validate_pages(record: dict[str, object], *, repo_root: Path) -> list[str]:
     """Validate pages_touched shape, allowed-root scope, and primary_home membership."""
     pages_touched = record.get("pages_touched")
     if not isinstance(pages_touched, list) or not pages_touched:
@@ -173,7 +175,7 @@ def has_schema_record(path: Path) -> bool:
     return False
 
 
-def approval_identity(record: dict[str, Any]) -> str:
+def approval_identity(record: dict[str, object]) -> str:
     """Canonical content identity for idempotency and duplicate detection.
 
     approved_at is event metadata, the legacy identifier is inert historical
@@ -188,23 +190,37 @@ def approval_identity(record: dict[str, Any]) -> str:
     return json.dumps(filtered, sort_keys=True, separators=(",", ":"))
 
 
-def approval_label(record: dict[str, Any]) -> str:
+def approval_label(record: dict[str, object]) -> str:
     artifact = str(record.get("artifact") or "approval").strip() or "approval"
     return artifact if len(artifact) <= 80 else artifact[:77] + "..."
 
 
-def approval_record_sha256(line: str | bytes) -> str:
+def approval_record_sha256(line: str | bytes) -> ApprovalRecordSha256:
     """SHA-256 of one exact UTF-8 JSONL line, excluding only its LF."""
     encoded = line.encode("utf-8") if isinstance(line, str) else line
     if encoded.endswith(b"\n"):
         encoded = encoded[:-1]
-    return hashlib.sha256(encoded).hexdigest()
+    return ApprovalRecordSha256(hashlib.sha256(encoded).hexdigest())
+
+
+def _json_nesting_exceeds(value: object, maximum_depth: int = 128) -> bool:
+    """Reject adversarial JSON depth independently of interpreter limits."""
+    pending: list[tuple[object, int]] = [(value, 0)]
+    while pending:
+        current, depth = pending.pop()
+        if depth > maximum_depth:
+            return True
+        if isinstance(current, dict):
+            pending.extend((item, depth + 1) for item in current.values())
+        elif isinstance(current, list):
+            pending.extend((item, depth + 1) for item in current)
+    return False
 
 
 def validate_ledger_text(
     text: str,
     record_types: set[str] | frozenset[str],
-    validate_approval: Callable[[dict[str, Any]], list[str]],
+    validate_approval: Callable[[dict[str, object]], list[str]],
     *,
     allow_empty: bool = False,
 ) -> LedgerValidation:
@@ -235,6 +251,9 @@ def validate_ledger_text(
         except (ValueError, RecursionError) as exc:
             detail = getattr(exc, "msg", str(exc))
             errors.append(f"line {line_no}: invalid JSON: {detail}")
+            continue
+        if _json_nesting_exceeds(record):
+            errors.append(f"line {line_no}: invalid JSON: maximum nesting depth exceeded")
             continue
         if not isinstance(record, dict):
             errors.append(f"line {line_no}: record must be a JSON object")
@@ -291,9 +310,9 @@ def _require_valid(result: LedgerValidation) -> None:
 
 
 def _validate_candidate(
-    record: dict[str, Any],
+    record: dict[str, object],
     record_type: str,
-    validate_approval: Callable[[dict[str, Any]], list[str]],
+    validate_approval: Callable[[dict[str, object]], list[str]],
 ) -> None:
     errors: list[str] = []
     if not isinstance(record_type, str) or record_type not in APPROVAL_RECORD_TYPES:
@@ -306,6 +325,8 @@ def _validate_candidate(
         )
     elif record.get("backfilled") is True:
         errors.append("the live writer may not create backfilled approval records")
+    elif _json_nesting_exceeds(record):
+        errors.append("candidate JSON exceeds maximum nesting depth")
     else:
         errors.extend(validate_approval(record))
     if errors:
@@ -319,13 +340,13 @@ def approval_lock_path(ledger_path: Path) -> Path:
 
 def write_approval_record(
     ledger_path: Path,
-    record: dict[str, Any],
+    record: dict[str, object],
     record_type: str,
     schema_description: str,
-    validate_approval: Callable[[dict[str, Any]], list[str]],
+    validate_approval: Callable[[dict[str, object]], list[str]],
     *,
     fault: Callable[[str], None] | None = None,
-) -> tuple[bool, Path, str, str]:
+) -> tuple[bool, Path, str, ApprovalRecordSha256]:
     """Validate then idempotently install one complete approval-ledger image."""
     _validate_candidate(record, record_type, validate_approval)
     if not is_nonempty_string(schema_description):
@@ -407,10 +428,10 @@ def write_approval_record(
 
 def lookup_approval_record_by_sha256(
     path: Path,
-    record_sha256: str,
+    record_sha256: ApprovalRecordSha256,
     record_types: set[str] | frozenset[str],
-    validate_approval: Callable[[dict[str, Any]], list[str]],
-) -> dict[str, Any] | None:
+    validate_approval: Callable[[dict[str, object]], list[str]],
+) -> dict[str, object] | None:
     """Return a record by exact line hash, only after full-ledger validation."""
     try:
         content, _ = read_regular_bytes(path)
@@ -430,7 +451,7 @@ def lookup_approval_record_by_sha256(
 def validate_ledger(
     path: Path,
     record_types: set[str] | frozenset[str],
-    validate_approval: Callable[[dict[str, Any]], list[str]],
+    validate_approval: Callable[[dict[str, object]], list[str]],
 ) -> tuple[list[str], int]:
     """Read a JSONL approval ledger and apply the shared pure validator."""
     try:

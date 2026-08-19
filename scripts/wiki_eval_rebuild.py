@@ -267,10 +267,10 @@ def main() -> int:
         shutil.copytree(FIXTURE_WIKI, transaction_case / "wiki")
         pages = get_entity_pages(transaction_case / "wiki")
         snapshot = rebuild.load_page_texts(pages)
-        changed, _counts = rebuild.build_plan(snapshot, transaction_case / "wiki")
+        changed, _counts = rebuild.build_backlink_rebuild_plan(snapshot, transaction_case / "wiki")
         before_transaction = read_tree_bytes(transaction_case / "wiki")
         try:
-            rebuild.apply_plan(
+            rebuild.apply_backlink_rebuild_plan(
                 changed,
                 snapshot,
                 repo_root=transaction_case,
@@ -294,10 +294,10 @@ def main() -> int:
         shutil.copytree(FIXTURE_WIKI, forward_case / "wiki")
         pages = get_entity_pages(forward_case / "wiki")
         snapshot = rebuild.load_page_texts(pages)
-        changed, _counts = rebuild.build_plan(snapshot, forward_case / "wiki")
+        changed, _counts = rebuild.build_backlink_rebuild_plan(snapshot, forward_case / "wiki")
         final_index = len(changed) - 1
         try:
-            rebuild.apply_plan(
+            rebuild.apply_backlink_rebuild_plan(
                 changed,
                 snapshot,
                 repo_root=forward_case,
@@ -323,7 +323,7 @@ def main() -> int:
         shutil.copytree(FIXTURE_WIKI, conflict_case / "wiki")
         pages = get_entity_pages(conflict_case / "wiki")
         snapshot = rebuild.load_page_texts(pages)
-        changed, _counts = rebuild.build_plan(snapshot, conflict_case / "wiki")
+        changed, _counts = rebuild.build_backlink_rebuild_plan(snapshot, conflict_case / "wiki")
         late_page = sorted(changed)[-1]
         third_party = b"third-party authored edit\n"
 
@@ -332,7 +332,7 @@ def main() -> int:
                 late_page.write_bytes(third_party)
 
         try:
-            rebuild.apply_plan(
+            rebuild.apply_backlink_rebuild_plan(
                 changed,
                 snapshot,
                 repo_root=conflict_case,
@@ -354,16 +354,16 @@ def main() -> int:
         shutil.copytree(FIXTURE_WIKI, no_op_case / "wiki")
         pages = get_entity_pages(no_op_case / "wiki")
         first_snapshot = rebuild.load_page_texts(pages)
-        first_changed, _counts = rebuild.build_plan(first_snapshot, no_op_case / "wiki")
-        rebuild.apply_plan(first_changed, first_snapshot, repo_root=no_op_case)
+        first_changed, _counts = rebuild.build_backlink_rebuild_plan(first_snapshot, no_op_case / "wiki")
+        rebuild.apply_backlink_rebuild_plan(first_changed, first_snapshot, repo_root=no_op_case)
         authority = no_op_case / ".wiki-transactions"
         before_authority = {
             path.relative_to(authority).as_posix(): (path.stat().st_mtime_ns, path.read_bytes())
             for path in authority.iterdir() if path.is_file()
         }
         second_snapshot = rebuild.load_page_texts(pages)
-        second_changed, _counts = rebuild.build_plan(second_snapshot, no_op_case / "wiki")
-        second_recovery = rebuild.apply_plan(second_changed, second_snapshot, repo_root=no_op_case)
+        second_changed, _counts = rebuild.build_backlink_rebuild_plan(second_snapshot, no_op_case / "wiki")
+        second_recovery = rebuild.apply_backlink_rebuild_plan(second_changed, second_snapshot, repo_root=no_op_case)
         after_authority = {
             path.relative_to(authority).as_posix(): (path.stat().st_mtime_ns, path.read_bytes())
             for path in authority.iterdir() if path.is_file()

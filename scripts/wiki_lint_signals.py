@@ -1,0 +1,717 @@
+#!/usr/bin/env python3
+"""Ranked, non-blocking review signals for wiki lint Tier 2."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Collection, Sequence
+from datetime import date
+from itertools import combinations
+from pathlib import Path
+
+from _wiki_parse import (
+    FrontmatterError,
+    LINK_RE,
+    META_PAGES,
+    authored_body_view,
+    authored_link_view,
+    dangling_slugs,
+    evidentiary_view,
+    frontmatter_block,
+    get_entity_pages,
+    parse_log_entry_type,
+    status_review_view,
+    strip_body_sections,
+    split_frontmatter,
+)
+from review_due import collect as collect_review_due
+from wiki_lint_adjudications import glossary_entry_lines, load_adjudications, normalize_quote
+from wiki_lint_contract import (
+    ADJUDICATIONS_PATH,
+    GLOSSARY_BULLET_ENTRY_RE,
+    LOG_ROTATION_WARN_LINES,
+    MARKDOWN_MD_LINK_RE,
+    REVIEW_BY_REQUIRED_FOLDERS,
+    STATUS_RE,
+    VOLATILE_STATUS_RE,
+    WIKI_ROOT,
+)
+from wiki_lint_frontmatter import authored_body, nonblocking_frontmatter, nonblocking_frontmatter_block, source_items, source_repo_references, tokens
+from wiki_lint_repository_checks import parse_sourcing_queue_count_markers
+
+# A quoted span followed by an inline source citation, e.g.
+#   "exact words from the source" (source: [[some-page]])
+# Straight or curly double quotes; the citation may name several pages.
+# This stays deterministic and adjacency-gated on purpose: deciding whether a
+# non-adjacent quoted phrase is an attributed source quote, the author's own
+# framing, or a rhetorical/example line is a judgment call, which the wiki keeps
+# in the /wiki-lint evidence-review prose (Tier 3), not in this script.
+QUOTED_CITATION_RE = re.compile(
+    r'["“]([^"“”]{20,}?)["”]\s*\((?:own[^)]*?, )?source[sd]?:?\s*([^)]*\[\[[^)]*)\)',
+    re.IGNORECASE,
+)
+
+
+
+
+
+def quote_fragments(quote):
+    """Split a quote on ellipses and bracketed edits; fragments of 6+ words
+    must each appear in the source for the quote to count as verbatim."""
+    parts = re.split(r"\.\.\.|…|\[[^\]]*\]", quote)
+    frags = [normalize_quote(p) for p in parts]
+    return [f for f in frags if len(f.split()) >= 6]
+
+
+def quote_mismatches(entity_pages, adjudicated_quotes, used=None):
+    """Tier-2 candidates: quoted text attributed to a source that does not
+    appear verbatim in the cited wiki page or its raw files. Deterministic
+    string matching only; whether a non-match is a defect (vs. labeled own
+    framing) is adjudicated by the lint workflow, not decided here. `used`
+    (when given) collects the adjudication keys that suppressed a candidate."""
+    by_stem = {p.stem: p for p in entity_pages}
+    out, suppressed = [], 0
+    for p in entity_pages:
+        try:
+            text = p.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue  # tier1 reports it
+        rel = str(p.relative_to(WIKI_ROOT))
+        _, body = nonblocking_frontmatter(text)
+        for m in QUOTED_CITATION_RE.finditer(authored_body(body)):
+            quote_raw, cite_blob = m.group(1), m.group(2)
+            frags = quote_fragments(quote_raw)
+            if not frags:
+                continue  # too short to judge deterministically
+            if "own framing" in m.group(0).lower() or "own interview framing" in m.group(0).lower():
+                continue  # explicitly labeled as not a source quote
+            # gather cited pages' text plus their raw files
+            haystacks = []
+            for slug in LINK_RE.findall(cite_blob):
+                cited = by_stem.get(slug)
+                if cited is None:
+                    continue  # dangling link; tier1 reports it
+                try:
+                    cited_text = cited.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    continue  # non-UTF8 cited page; tier1 reports it
+                haystacks.append(normalize_quote(cited_text))
+                cited_fm = nonblocking_frontmatter_block(cited_text)
+                if cited_fm:
+                    for item in source_items(cited_fm):
+                        references, _errors = source_repo_references(item)
+                        for kind, canonical in references:
+                            if kind != "raw":
+                                continue
+                            rp = Path.cwd().joinpath(*canonical.split("/"))
+                            if rp.is_file():
+                                try:
+                                    haystacks.append(normalize_quote(
+                                        rp.read_text(encoding="utf-8")))
+                                except (OSError, UnicodeDecodeError):
+                                    pass
+            if not haystacks:
+                continue
+            found = any(all(f in h for f in frags) for h in haystacks)
+            if found:
+                continue
+            key = (rel, normalize_quote(quote_raw))
+            if key in adjudicated_quotes:
+                if used is not None:
+                    used.add(key)
+                suppressed += 1
+                continue
+            preview = quote_raw[:70] + ("..." if len(quote_raw) > 70 else "")
+            out.append(f'{rel}: "{preview}" not found in cited source(s)')
+    return sorted(out), suppressed
+
+
+# --------------------------- Tier 2 ---------------------------
+
+
+def latest_status_date(text):
+    # Strip code spans first so a **Status (date)** written as a format example
+    # inside a code fence is not read as a real status note.
+    out = []
+    try:
+        view = status_review_view(text)
+    except FrontmatterError:
+        return None
+    for value in STATUS_RE.findall(view):
+        try:
+            out.append(date.fromisoformat(value))
+        except ValueError:
+            continue
+    return max(out) if out else None
+
+
+def frontmatter_updated_date(fm):
+    if not fm or not fm.get("updated"):
+        return None
+    try:
+        return date.fromisoformat(fm["updated"])
+    except ValueError:
+        return None
+
+
+def normalize_markdown_target(href):
+    href = href.strip()
+    if "://" in href or href.startswith("mailto:"):
+        return None
+    href = href.split("#", 1)[0].split("?", 1)[0]
+    if href.startswith("./"):
+        href = href[2:]
+    if href.startswith("wiki/"):
+        href = href[len("wiki/"):]
+    return str(Path(href))
+
+
+def resolve_markdown_target(href, relpaths, stem_to_relpaths):
+    normalized = normalize_markdown_target(href)
+    if not normalized:
+        return None
+    if normalized in relpaths:
+        return normalized
+    matches = stem_to_relpaths.get(Path(normalized).stem, [])
+    return matches[0] if len(matches) == 1 else None
+
+
+# --------------------------- Tier 2: candidate-signal registry ---------------------------
+#
+# Tier-2 surfaces ranked review candidates, never hard failures. Each signal
+# below is a small function over a shared Tier2Context: it returns
+# (items, suppressed_delta), where items is the ranked candidate list and
+# suppressed_delta counts how many candidates were dropped because they are
+# adjudicated. run_tier2_lint() builds the shared context once, then runs each registered
+# signal in order, so the report order and counts are byte-for-byte identical to
+# the previous inlined version.
+
+
+class Tier2Context:
+    """Shared per-page state every Tier-2 signal reads.
+
+    Computed once in run_tier2_lint() (page text, tokens, word counts, the inbound and
+    outbound link graphs, and the adjudication sets), so the individual signal
+    functions stay small and never re-walk the corpus."""
+
+    __slots__ = ("pages", "data", "inbound", "outbound", "adj", "adj_used")
+
+    def __init__(self, pages, valid_slugs, adjudicated):
+        self.pages = pages
+        self.data = {}
+        self.inbound = {p: 0 for p in pages}
+        self.outbound = {}
+        for p in pages:
+            try:
+                text = p.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                # tier1 reports the encoding failure; skip for candidate signals
+                text = ""
+            fm, _ = nonblocking_frontmatter(text)
+            try:
+                ab = evidentiary_view(text)
+            except FrontmatterError:
+                ab = ""
+            status_date = latest_status_date(text)
+            dates = [d for d in (frontmatter_updated_date(fm), status_date)
+                     if d is not None]
+            self.data[p] = {
+                "fm": fm or {},
+                "status_date": status_date,
+                "freshness": max(dates) if dates else None,
+                "tokens": tokens(ab),
+                "words": len(re.findall(r"\w+", ab)),
+                # A [[link]] inside a code example is not a citation.
+                "body_links": bool(LINK_RE.search(ab)),
+                # Raw-block parse so block-style sources: lists count as cited.
+                "source_items": source_items(nonblocking_frontmatter_block(text)),
+            }
+            # Outbound links must be authored; generated "Referenced by" blocks
+            # would echo inbound links back and fabricate a bidirectional graph,
+            # and a [[link]] inside a code span is a syntax example, not an edge
+            # (the same rule the dangling scan and the rebuild apply). Fences
+            # are blanked before the section strip so a fenced "## Referenced
+            # by" example cannot swallow authored links after it.
+            try:
+                link_view = authored_link_view(text)
+            except FrontmatterError:
+                link_view = ""
+            self.outbound[p] = set(LINK_RE.findall(link_view))
+
+        stems = {p.stem: p for p in pages}
+        for p in pages:
+            for slug in self.outbound[p]:
+                if slug in stems and stems[slug] is not p:
+                    self.inbound[stems[slug]] += 1
+
+        # adjudicated is always supplied by the sole caller (tier2 <- main, which
+        # passes load_adjudications()); load_adjudications already returns the
+        # empty template when the file is absent, so no fallback is needed here.
+        self.adj = adjudicated
+        # Which adjudication entries actually suppressed a candidate this run.
+        # Signals record usage as they suppress; signal_adjudication_dead (kept
+        # last in TIER2_SIGNALS) reports the entries that suppressed nothing.
+        self.adj_used = {key: set() for key in adjudicated}
+
+
+def signal_quote_mismatch(ctx):
+    """Quoted text attributed to a source that is not verbatim in the cited page."""
+    return quote_mismatches(ctx.pages, ctx.adj["quotes"], ctx.adj_used["quotes"])
+
+
+def signal_orphans(ctx):
+    """Pages with no inbound links."""
+    orphans = [str(p.relative_to(WIKI_ROOT)) for p in ctx.pages if ctx.inbound[p] == 0]
+    out, suppressed = [], 0
+    for o in sorted(orphans):
+        if o in ctx.adj["orphans"]:
+            ctx.adj_used["orphans"].add(o)
+            suppressed += 1
+        else:
+            out.append(o)
+    return out, suppressed
+
+
+def signal_near_duplicate(ctx):
+    """Derived-page pairs whose token sets overlap heavily (Jaccard >= 0.35).
+
+    Compares derived pages only; a source page mirroring its own concept or
+    analysis is expected overlap, not a duplicate."""
+    derived = [p for p in ctx.pages if p.parent.name != "sources"]
+    dups, suppressed = [], 0
+    for a, b in combinations(derived, 2):
+        ta, tb = ctx.data[a]["tokens"], ctx.data[b]["tokens"]
+        if not ta or not tb:
+            continue
+        j = len(ta & tb) / len(ta | tb)
+        if j >= 0.35:
+            ra, rb = str(a.relative_to(WIKI_ROOT)), str(b.relative_to(WIKI_ROOT))
+            if frozenset((ra, rb)) in ctx.adj["duplicates"]:
+                ctx.adj_used["duplicates"].add(frozenset((ra, rb)))
+                suppressed += 1
+                continue
+            dups.append((j, ra, rb))
+    return sorted(dups, reverse=True)[:15], suppressed
+
+
+def signal_uncited(ctx):
+    """Non-source pages with no sources and no body links. Checked via
+    source_items on the raw frontmatter block: the key parser flattens a
+    block-style sources: list to '', which must still count as cited."""
+    uncited = []
+    for p in ctx.pages:
+        if p.parent.name == "sources":
+            continue
+        if not ctx.data[p]["source_items"] and not ctx.data[p]["body_links"]:
+            uncited.append(str(p.relative_to(WIKI_ROOT)))
+    return sorted(uncited), 0
+
+
+def signal_thin(ctx):
+    """Pages under 80 authored words."""
+    return sorted(
+        f"{p.relative_to(WIKI_ROOT)} ({ctx.data[p]['words']}w)"
+        for p in ctx.pages if ctx.data[p]["words"] < 80
+    ), 0
+
+
+def signal_confidence_upgrade(ctx):
+    """confidence:low pages with >=2 inbound links (candidates to upgrade)."""
+    upgrade, suppressed = [], 0
+    for p in ctx.pages:
+        if p.parent.name == "sources":
+            continue
+        fm = ctx.data[p]["fm"]
+        if fm.get("confidence") == "low" and ctx.inbound[p] >= 2:
+            rel = str(p.relative_to(WIKI_ROOT))
+            if rel in ctx.adj["confidence"]:
+                ctx.adj_used["confidence"].add(rel)
+                suppressed += 1
+                continue
+            upgrade.append(f"{p.relative_to(WIKI_ROOT)} ({ctx.inbound[p]} inbound)")
+    return sorted(upgrade), suppressed
+
+
+def signal_missing_related(ctx):
+    """Page pairs whose outbound link profiles overlap heavily but are not linked.
+
+    Scores co-citation by normalized overlap (Jaccard of outbound link sets), not
+    absolute shared count: an absolute count grows with page size, so link-rich
+    pages dominate regardless of relationship strength. The 0.5 bar means the
+    pair's link profiles mostly coincide; the floor of 3 shared links keeps
+    trivially small pages out. Above-bar only, so an empty list is achievable and
+    means "nothing worth reviewing"."""
+    cocite, suppressed = [], 0
+    for a, b in combinations(ctx.pages, 2):
+        if a.parent.name == "sources" and b.parent.name == "sources":
+            continue
+        shared = ctx.outbound[a] & ctx.outbound[b]
+        shared.discard(a.stem)
+        shared.discard(b.stem)
+        if len(shared) < 3 or b.stem in ctx.outbound[a] or a.stem in ctx.outbound[b]:
+            continue
+        union = (ctx.outbound[a] | ctx.outbound[b]) - {a.stem, b.stem}
+        score = len(shared) / len(union) if union else 0.0
+        if score < 0.5:
+            continue
+        ra, rb = str(a.relative_to(WIKI_ROOT)), str(b.relative_to(WIKI_ROOT))
+        if ra in ctx.adj["hubs"] or rb in ctx.adj["hubs"] or frozenset((ra, rb)) in ctx.adj["pairs"]:
+            for hub in (ra, rb):
+                if hub in ctx.adj["hubs"]:
+                    ctx.adj_used["hubs"].add(hub)
+            if frozenset((ra, rb)) in ctx.adj["pairs"]:
+                ctx.adj_used["pairs"].add(frozenset((ra, rb)))
+            suppressed += 1
+            continue
+        cocite.append((score, len(shared), ra, rb))
+    return sorted(cocite, reverse=True), suppressed
+
+
+def signal_log_rotation_due(ctx):
+    """Log file has crossed the documented rotation warning threshold."""
+    _ = ctx
+    path = WIKI_ROOT / "log.md"
+    if not path.exists():
+        return [], 0
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return [], 0  # meta-page encoding is outside this maintenance signal
+    line_count = len(text.splitlines())
+    if line_count <= LOG_ROTATION_WARN_LINES:
+        return [], 0
+    return ([f"{path} has {line_count} lines; threshold is {LOG_ROTATION_WARN_LINES}"], 0)
+
+
+def signal_sourcing_queue_count_drift(ctx):
+    """Entity-count markers in sourcing-queue.md that disagree with the corpus."""
+    _ = ctx
+    markers, fails = parse_sourcing_queue_count_markers()
+    if fails:
+        return [], 0  # Tier-1 reports malformed markers
+    if not markers:
+        return [], 0
+    counts = {}
+    for page in get_entity_pages(WIKI_ROOT):
+        counts[page.parent.name] = counts.get(page.parent.name, 0) + 1
+    out = []
+    for folder, declared, _line in markers:
+        actual = counts.get(folder, 0)
+        if declared != actual:
+            out.append(
+                f"{WIKI_ROOT / 'sourcing-queue.md'}: folder {folder} "
+                f"declares {declared} but actual count is {actual}"
+            )
+    return out, 0
+
+
+def signal_recompile_candidates(ctx):
+    """Compiled pages older than authored source links they already depend on.
+
+    This is a review prompt, not a stale-page verdict. It only follows direct
+    authored links from non-source pages to source pages; reverse source-to-page
+    links are intentionally left out until the noisier direction has a proven
+    precision case.
+    """
+    stem_to_pages = {}
+    for p in ctx.pages:
+        stem_to_pages.setdefault(p.stem, []).append(p)
+
+    out, suppressed = [], 0
+    for p in sorted(ctx.pages):
+        if p.parent.name == "sources":
+            continue
+        page_freshness = ctx.data[p].get("freshness")
+        if page_freshness is None:
+            continue
+        page_rel = str(p.relative_to(WIKI_ROOT))
+        source_hits = []
+        for slug in sorted(ctx.outbound.get(p, set())):
+            matches = stem_to_pages.get(slug, [])
+            if len(matches) != 1:
+                continue
+            source = matches[0]
+            if source.parent.name != "sources":
+                continue
+            source_updated = frontmatter_updated_date(ctx.data[source]["fm"])
+            if source_updated is None or source_updated <= page_freshness:
+                continue
+            source_rel = str(source.relative_to(WIKI_ROOT))
+            pair = (page_rel, source_rel)
+            if pair in ctx.adj["recompile"]:
+                ctx.adj_used["recompile"].add(pair)
+                suppressed += 1
+                continue
+            source_hits.append((source_rel, source_updated))
+        if source_hits:
+            hits = "; ".join(
+                f"{source_rel} {source_updated.isoformat()}"
+                for source_rel, source_updated in source_hits
+            )
+            out.append(
+                f"{page_rel} (page {page_freshness.isoformat()}): "
+                f"newer sources: {hits}"
+            )
+    return out, suppressed
+
+
+def signal_glossary_volatile_status(ctx):
+    """Glossary entries restating volatile status.
+
+    Definitions should be durable. When a glossary entry says something is
+    still pending or remains open, the claim can rot without any source page
+    changing. Resolve by rewriting to a dated fact or delegating to the owner
+    page. Adjudicate only durable definitional or rhetorical usage.
+    """
+    out = []
+    suppressed = 0
+    hits = dict.fromkeys(
+        (term, m.group(0).lower())
+        for term, line in glossary_entry_lines()
+        for m in VOLATILE_STATUS_RE.finditer(line)
+    )
+    for term, phrase in hits:
+        if (term, phrase) in ctx.adj["glossary_volatile"]:
+            ctx.adj_used["glossary_volatile"].add((term, phrase))
+            suppressed += 1
+            continue
+        out.append(f"glossary.md '{term}': \"{phrase}\" (rewrite to a dated "
+                   "fact or delegate to the owner page)")
+    return out, suppressed
+
+
+def signal_authority_missing(ctx):
+    """Pages likely needing authority metadata but lacking authority_kind.
+
+    The template version only uses generic signals available in every configured
+    wiki: dated Status notes and review_by checkpoints. Domain-specific owner
+    registries can add stricter checks later through an explicit tooling change.
+    """
+    candidates = []
+    suppressed = 0
+    for p in sorted(ctx.pages):
+        rel = str(p.relative_to(WIKI_ROOT))
+        if p.parent.name == "sources":
+            continue
+        fm = ctx.data[p]["fm"]
+        if "authority_kind" in fm:
+            continue
+
+        priority = None
+        reason = None
+        if ctx.data[p].get("status_date") is not None:
+            priority = 0
+            reason = "has dated Status note"
+        elif fm.get("review_by"):
+            priority = 1
+            reason = "has review_by"
+        if reason is None:
+            continue
+
+        if rel in ctx.adj["authority_missing"]:
+            ctx.adj_used["authority_missing"].add(rel)
+            suppressed += 1
+            continue
+        candidates.append((priority, rel, reason))
+
+    out = [f"{rel}: {reason}" for _priority, rel, reason in sorted(candidates)]
+    return out, suppressed
+
+
+def signal_unconsumed_sources(ctx):
+    """Source pages that no non-source entity page cites with an authored link.
+
+    A source linked only by sibling sources, meta pages, or generated
+    "Referenced by" blocks was filed but never integrated into the knowledge
+    layer. The orphan check cannot see this class because batch-ingested sources
+    can cross-link each other; accepted_orphans also suppresses this signal
+    because an intentional standalone record is accepted as unconsumed too.
+    """
+    consumed = set()
+    for p in ctx.pages:
+        if p.parent.name != "sources":
+            consumed |= ctx.outbound[p]
+
+    out, suppressed = [], 0
+    for p in sorted(ctx.pages):
+        if p.parent.name != "sources" or p.stem in consumed:
+            continue
+        rel = str(p.relative_to(WIKI_ROOT))
+        if rel in ctx.adj["unconsumed_sources"]:
+            ctx.adj_used["unconsumed_sources"].add(rel)
+            suppressed += 1
+        elif rel in ctx.adj["orphans"]:
+            ctx.adj_used["orphans"].add(rel)
+            suppressed += 1
+        else:
+            out.append(f"{rel}: no authored link from any non-source entity page")
+    return out, suppressed
+
+
+def signal_review_by_missing(ctx):
+    """Decisions with no `review_by` date (outcome-review enrollment).
+
+    Surfaces the classes that should carry a dated review checkpoint but do not.
+    Tier-2 and non-blocking: enrollment is a judgment call, and analyses stay
+    opt-in (see REVIEW_BY_REQUIRED_FOLDERS)."""
+    out = []
+    for p in ctx.pages:
+        if p.parent.name not in REVIEW_BY_REQUIRED_FOLDERS:
+            continue
+        if not ctx.data[p]["fm"].get("review_by"):
+            out.append(str(p.relative_to(WIKI_ROOT)))
+    return sorted(out), 0
+
+
+# Ingest entries since the last synthesis pass that count as a burst worth
+# distilling. The synthesize workflow stays manual and approval-gated; this only
+# surfaces the trigger.
+SYNTHESIS_BURST_THRESHOLD = 8
+
+
+def signal_synthesis_due(ctx):
+    """Ingest burst with no synthesis pass following. Counts `ingest` log
+    entries after the most recent `synthesis` entry (all of them if none); at
+    SYNTHESIS_BURST_THRESHOLD or more, surfaces a candidate so the synthesize
+    trigger does not depend on remembering to notice a burst. Self-clearing:
+    logging a synthesis pass resets the count."""
+    _ = ctx
+    path = WIKI_ROOT / "log.md"
+    if not path.exists():
+        return [], 0
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        return [], 0
+    ingests_since = 0
+    for line in lines:
+        # Type extraction shares the header grammar (parse_log_entry_type in
+        # _wiki_parse), so both live header forms are recognized identically.
+        entry_type = parse_log_entry_type(line) or ""
+        if entry_type.startswith("synthesis"):
+            ingests_since = 0
+        elif entry_type == "ingest":
+            ingests_since += 1
+    if ingests_since < SYNTHESIS_BURST_THRESHOLD:
+        return [], 0
+    return ([f"{ingests_since} ingest entries since the last synthesis pass "
+             f"(threshold {SYNTHESIS_BURST_THRESHOLD}); consider a synthesize run"], 0)
+
+
+def signal_review_due(ctx):
+    """Pages whose review_by date has passed (outcome grading due). Mirrors
+    review_due.py on the most-frequently-run surface, so a due review cannot
+    wait unseen for the next /wiki-eval; the grading itself stays the review
+    workflow's judgment. Self-clearing: grading advances or clears review_by."""
+    _ = ctx
+    due, _bad = collect_review_due(WIKI_ROOT, date.today())
+    return ([f"{rel} (review_by {val}, {overdue} day(s) overdue)"
+             for overdue, rel, val in due], 0)
+
+
+def _adjudication_entry_labels(category, entries):
+    """Human-readable labels for dead adjudication entries of one category."""
+    out = []
+    for e in sorted(entries, key=repr):
+        if isinstance(e, frozenset):
+            out.append(f"{category}: " + " ~ ".join(sorted(e)))
+        elif isinstance(e, tuple):
+            out.append(f"{category}: " + " -> ".join(str(x) for x in e))
+        else:
+            out.append(f"{category}: {e}")
+    return out
+
+
+def signal_adjudication_dead(ctx):
+    """Adjudication entries that suppressed nothing this run. A dead entry means
+    the candidate it settled no longer fires at all, so the suppression is inert
+    residue; prune it (or keep it deliberately, if the candidate is expected to
+    return). run_tier2_lint() computes this after every other signal regardless of
+    registry position, because it reads which entries those signals actually
+    consumed via ctx.adj_used.
+
+    hub_pages is excluded on purpose: it suppresses event-driven co-citation
+    candidates that can legitimately go quiet between events and re-fire later,
+    so "suppressed nothing this run" says nothing about whether the entry is
+    inert. The lint workflow documents the exclusion."""
+    out = []
+    names = {
+        "orphans": "accepted_orphans",
+        "pairs": "skipped_crossref_pairs", "confidence": "reviewed_confidence_low",
+        "duplicates": "reviewed_near_duplicates", "quotes": "reviewed_quotes",
+        "recompile": "reviewed_recompile_candidates",
+        "authority_missing": "reviewed_authority_missing",
+        "glossary_volatile": "reviewed_glossary_volatile",
+        "unconsumed_sources": "reviewed_unconsumed_sources",
+    }
+    for key, category in names.items():
+        dead = ctx.adj[key] - ctx.adj_used[key]
+        out.extend(_adjudication_entry_labels(category, dead))
+    return sorted(out), 0
+
+
+# Tier-2 signals as (output key, report label, signal fn), in report order.
+# run_tier2_lint() runs each over the shared context and records its (items,
+# suppressed_delta) under the key; main() reports them in this order using the
+# label. Key, order, and label live in one tuple so adding/removing/reordering a
+# signal is a single edit and the computation and report cannot drift. To add a
+# signal, write a small signal_*(ctx) -> (items, suppressed) function and add a
+# row here. (Meta-page dangling links moved to Tier-1 as a hard failure and are
+# no longer surfaced here.)
+TIER2_SIGNALS = (
+    ("quote_mismatch", "quote mismatches (quoted text not verbatim in cited source)", signal_quote_mismatch),
+    ("orphans", "orphans (no inbound links)", signal_orphans),
+    ("near_duplicate", "near-duplicate pairs (prefer updating over creating)", signal_near_duplicate),
+    ("uncited", "uncited (no sources, no body links)", signal_uncited),
+    ("thin", "thin pages (<80 words)", signal_thin),
+    ("confidence_upgrade", "confidence:low with >=2 inbound (upgrade?)", signal_confidence_upgrade),
+    ("missing_related", "missing cross-refs (link profiles >=50% overlapping, not linked)", signal_missing_related),
+    ("log_rotation_due", "log rotation due", signal_log_rotation_due),
+    ("sourcing_queue_count_drift", "sourcing queue entity count drift", signal_sourcing_queue_count_drift),
+    ("recompile_candidates", "compiled pages with newer source inputs (review for no-change, small update, or recompile)", signal_recompile_candidates),
+    ("glossary_volatile_status", "glossary entries restating volatile status (rewrite to a dated fact or delegate to the owner page)", signal_glossary_volatile_status),
+    ("authority_missing", "pages likely needing authority metadata but lacking authority_kind", signal_authority_missing),
+    ("unconsumed_sources", "source pages not consumed by any non-source entity page (wire an authored link or adjudicate)", signal_unconsumed_sources),
+    ("review_by_missing", "decisions with no review_by (enroll in the outcome-review loop or leave for now)", signal_review_by_missing),
+    ("review_due", "outcome reviews due (review_by has passed; run the review workflow)", signal_review_due),
+    ("synthesis_due", "ingest burst with no synthesis pass following (consider a synthesize run)", signal_synthesis_due),
+    # adjudication_dead's row sets its report position; run_tier2_lint() computes it
+    # after every other signal regardless of where this row sits, because it
+    # reads which adjudication entries the other signals consumed.
+    ("adjudication_dead", "adjudication entries suppressing nothing this run (prune or keep deliberately)", signal_adjudication_dead),
+)
+
+
+def run_tier2_lint(
+    entity_pages: Sequence[Path],
+    valid_slugs: Collection[str],
+    adjudicated: dict[str, set[object]],
+) -> dict[str, object]:
+    """Compute every ranked signal from one shared corpus context."""
+    ctx = Tier2Context(list(entity_pages), valid_slugs, adjudicated)
+
+    out = {}
+    suppressed = 0
+    for key, _label, signal in TIER2_SIGNALS:
+        if signal is signal_adjudication_dead:
+            continue
+        items, delta = signal(ctx)
+        out[key] = items
+        suppressed += delta
+
+    # Computed after the loop so it sees every other signal's adjudication
+    # consumption; the ordering is structural, not a "keep this row last" rule.
+    dead_items, dead_delta = signal_adjudication_dead(ctx)
+    out["adjudication_dead"] = dead_items
+    suppressed += dead_delta
+
+    out["_suppressed"] = suppressed
+    return out
+
+
+# --------------------------- reporting ---------------------------
+
+
+
+
+__all__ = ["TIER2_SIGNALS", "run_tier2_lint"]

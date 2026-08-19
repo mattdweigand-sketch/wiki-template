@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sys
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
 import stat
@@ -138,7 +139,7 @@ def render_page(authored_page: str, new_block: str) -> str:
     return authored_page.rstrip("\n") + "\n\n" + new_block.rstrip("\n") + "\n"
 
 
-def build_plan(
+def build_backlink_rebuild_plan(
     snapshot: dict[Path, PageSnapshot], wiki_root: Path = WIKI_ROOT
 ) -> tuple[dict[Path, str], dict[Path, int]]:
     """Compute changed outputs and inbound counts from the original snapshot."""
@@ -163,12 +164,12 @@ def build_plan(
     return changed, inbound_counts
 
 
-def apply_plan(
+def apply_backlink_rebuild_plan(
     changed_only: dict[Path, str],
     snapshot: dict[Path, PageSnapshot],
     *,
     repo_root: Path,
-    fault=None,
+    fault: Callable[[str], None] | None = None,
 ) -> list[str]:
     """Apply only changed pages as one recoverable generated generation."""
     if not changed_only:
@@ -220,8 +221,8 @@ def main() -> int:
             for message in recovery:
                 print(f"- {message}")
         snapshot = load_page_texts(all_pages)
-        changed, inbound_counts = build_plan(snapshot)
-        apply_recovery = apply_plan(
+        changed, inbound_counts = build_backlink_rebuild_plan(snapshot)
+        apply_recovery = apply_backlink_rebuild_plan(
             changed,
             snapshot,
             repo_root=Path.cwd().resolve(),

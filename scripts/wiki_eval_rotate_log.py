@@ -240,7 +240,7 @@ def case_identical_base_reused(root: Path) -> None:
     entries = [plain_entry(i, f"entry {i}") for i in range(1, 8)]
     base, archive_before = seed_base_archive(root, entries)
     write_log(root, entries)
-    plan = rotate_log.build_plan(root, 30, ROTATION_DATE)
+    plan = rotate_log.build_log_rotation_plan(root, 30, ROTATION_DATE)
     recover = run_rotate(root, "--target-lines", "30")
     archive_files = sorted((root / "archive" / "wiki-log").glob("*.md"))
     record(
@@ -267,7 +267,7 @@ def case_distinct_content_gets_suffix_and_reruns(root: Path) -> None:
     base, base_before = seed_base_archive(root, entries)
     write_log(root, entries)
     expected = base.with_name(f"{base.stem}-2.md")
-    plan = rotate_log.build_plan(root, 30, "2026-06-28")
+    plan = rotate_log.build_log_rotation_plan(root, 30, "2026-06-28")
     later = subprocess.run(
         [sys.executable, str(ROTATE), "--date", "2026-06-28", "--target-lines", "30"],
         cwd=root, text=True, capture_output=True,
@@ -293,7 +293,7 @@ def case_distinct_content_gets_suffix_and_reruns(root: Path) -> None:
         for path in sorted((root / "archive" / "wiki-log").glob("*.md"))
     }
     write_log(root, entries)
-    recovery_plan = rotate_log.build_plan(root, 30, "2026-06-28")
+    recovery_plan = rotate_log.build_log_rotation_plan(root, 30, "2026-06-28")
     recovery = subprocess.run(
         [sys.executable, str(ROTATE), "--date", "2026-06-28", "--target-lines", "30"],
         cwd=root, text=True, capture_output=True,
@@ -322,12 +322,12 @@ def case_identical_later_suffix_beats_earlier_gap(root: Path) -> None:
     entries = [plain_entry(i, f"entry {i}") for i in range(1, 8)]
     base, _base_before = seed_base_archive(root, entries)
     write_log(root, entries)
-    candidate_plan = rotate_log.build_plan(root, 30, "2026-06-28")
+    candidate_plan = rotate_log.build_log_rotation_plan(root, 30, "2026-06-28")
     assert candidate_plan.archive_lines is not None
     matching_suffix = base.with_name(f"{base.stem}-3.md")
     matching_suffix.write_text("".join(candidate_plan.archive_lines), encoding="utf-8")
 
-    selected = rotate_log.build_plan(root, 30, "2026-06-28")
+    selected = rotate_log.build_log_rotation_plan(root, 30, "2026-06-28")
     proc = subprocess.run(
         [sys.executable, str(ROTATE), "--date", "2026-06-28", "--target-lines", "30"],
         cwd=root, text=True, capture_output=True,
@@ -354,7 +354,7 @@ def case_first_unused_gap_selected(root: Path) -> None:
     occupied_later.write_text("different pre-existing archive\n", encoding="utf-8")
     write_log(root, entries)
     expected = base.with_name(f"{base.stem}-2.md")
-    plan = rotate_log.build_plan(root, 30, "2026-06-29")
+    plan = rotate_log.build_log_rotation_plan(root, 30, "2026-06-29")
     proc = subprocess.run(
         [sys.executable, str(ROTATE), "--date", "2026-06-29", "--target-lines", "30"],
         cwd=root, text=True, capture_output=True,
@@ -381,7 +381,7 @@ def case_minus_3_selected_after_occupied_minus_2(root: Path) -> None:
     occupied.write_text("different pre-existing minus-2 archive\n", encoding="utf-8")
     write_log(root, entries)
     expected = base.with_name(f"{base.stem}-3.md")
-    plan = rotate_log.build_plan(root, 30, "2026-06-29")
+    plan = rotate_log.build_log_rotation_plan(root, 30, "2026-06-29")
     proc = subprocess.run(
         [sys.executable, str(ROTATE), "--date", "2026-06-29", "--target-lines", "30"],
         cwd=root, text=True, capture_output=True,
@@ -440,10 +440,10 @@ def case_transaction_fault_recovery(root: Path) -> None:
     entries = [plain_entry(i, f"entry {i}") for i in range(1, 8)]
     write_log(root, entries)
     original = (root / "wiki/log.md").read_bytes()
-    plan = rotate_log.build_plan(root, 30, ROTATION_DATE)
+    plan = rotate_log.build_log_rotation_plan(root, 30, ROTATION_DATE)
     assert plan.archive_path is not None
     try:
-        rotate_log.write_plan(
+        rotate_log.apply_log_rotation_plan(
             root,
             plan,
             fault=lambda event: (_ for _ in ()).throw(RuntimeError("stop")) if event == "after_target:0" else None,
@@ -470,10 +470,10 @@ with_temp_root(case_transaction_fault_recovery)
 def case_transaction_forward_recovery(root: Path) -> None:
     entries = [plain_entry(i, f"entry {i}") for i in range(1, 8)]
     write_log(root, entries)
-    plan = rotate_log.build_plan(root, 30, ROTATION_DATE)
+    plan = rotate_log.build_log_rotation_plan(root, 30, ROTATION_DATE)
     assert plan.archive_path is not None and plan.archive_lines is not None and plan.live_lines is not None
     try:
-        rotate_log.write_plan(
+        rotate_log.apply_log_rotation_plan(
             root,
             plan,
             fault=lambda event: (_ for _ in ()).throw(RuntimeError("stop")) if event == "after_target:1" else None,
@@ -498,7 +498,7 @@ with_temp_root(case_transaction_forward_recovery)
 def case_concurrent_live_edit_conflicts(root: Path) -> None:
     entries = [plain_entry(i, f"entry {i}") for i in range(1, 8)]
     write_log(root, entries)
-    plan = rotate_log.build_plan(root, 30, ROTATION_DATE)
+    plan = rotate_log.build_log_rotation_plan(root, 30, ROTATION_DATE)
     third_party = b"third-party live log edit\n"
 
     def mutate(event: str) -> None:
@@ -506,7 +506,7 @@ def case_concurrent_live_edit_conflicts(root: Path) -> None:
             (root / "wiki/log.md").write_bytes(third_party)
 
     try:
-        rotate_log.write_plan(root, plan, fault=mutate)
+        rotate_log.apply_log_rotation_plan(root, plan, fault=mutate)
     except rotate_log.RotationError:
         conflicted = True
     else:
@@ -528,7 +528,7 @@ def case_reused_archive_guard_conflicts(root: Path) -> None:
     archive, _ = seed_base_archive(root, entries)
     write_log(root, entries)
     original_log = (root / "wiki/log.md").read_bytes()
-    plan = rotate_log.build_plan(root, 30, ROTATION_DATE)
+    plan = rotate_log.build_log_rotation_plan(root, 30, ROTATION_DATE)
     assert plan.archive_path == archive and plan.archive_preimage is not None
     third_party = b"third-party archive edit\n"
 
@@ -537,7 +537,7 @@ def case_reused_archive_guard_conflicts(root: Path) -> None:
             archive.write_bytes(third_party)
 
     try:
-        rotate_log.write_plan(root, plan, fault=mutate)
+        rotate_log.apply_log_rotation_plan(root, plan, fault=mutate)
     except rotate_log.RotationError:
         conflicted = True
     else:
@@ -560,9 +560,9 @@ with_temp_root(case_reused_archive_guard_conflicts)
 def case_dry_run_blocks_on_unfinished(root: Path) -> None:
     entries = [plain_entry(i, f"entry {i}") for i in range(1, 8)]
     write_log(root, entries)
-    plan = rotate_log.build_plan(root, 30, ROTATION_DATE)
+    plan = rotate_log.build_log_rotation_plan(root, 30, ROTATION_DATE)
     try:
-        rotate_log.write_plan(
+        rotate_log.apply_log_rotation_plan(
             root,
             plan,
             fault=lambda event: (_ for _ in ()).throw(RuntimeError("stop")) if event == "after_journal:COMMITTING" else None,
@@ -598,8 +598,8 @@ from pathlib import Path
 sys.path.insert(0, sys.argv[2])
 import rotate_log
 root = Path(sys.argv[1])
-plan = rotate_log.build_plan(root, 30, '2026-06-27')
-rotate_log.write_plan(root, plan, fault=lambda event: os._exit(94) if event == 'after_target:0' else None)
+plan = rotate_log.build_log_rotation_plan(root, 30, '2026-06-27')
+rotate_log.apply_log_rotation_plan(root, plan, fault=lambda event: os._exit(94) if event == 'after_target:0' else None)
 """
     proc = subprocess.run(
         [sys.executable, "-c", child_code, str(root), str(REPO_ROOT / "scripts")],

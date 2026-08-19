@@ -57,7 +57,7 @@ The main control mechanisms are:
 | Link graph | Authors maintain `## Related pages`; `scripts/rebuild_referenced_by.py` regenerates `## Referenced by` from one snapshot and applies the generation as a recoverable transaction. |
 | Deterministic lint | `scripts/lint.py --tier1` catches structural failures and malformed proof. Full lint also surfaces Tier-2 candidates for human or agent judgment. |
 | Durable writes | Stable-lock atomic ledger replacement and `.wiki-transactions/` protect interrupted, concurrent, and multi-file updates; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
-| Live evals | `/wiki-eval` runs `scripts/wiki_eval.py`, the fixture-backed checks for durable files, transactions, lint, backlinks, gates, ledgers, export, stale-text sweep proof, log rotation, review due, generated wrapper parity, and schema-doc parity. |
+| Live evals | `/wiki-eval` runs `scripts/wiki_eval.py`, the fixture-backed checks for durable files, transactions, lint, backlinks, gates, ledgers, export, stale-text sweep proof, log rotation, review due, discoverability, generated wrapper parity, and schema-doc parity. |
 | Outcome review | `scripts/review_due.py` surfaces due `review_by` checkpoints; `workflows/maintenance/review.md` records what happened and whether confidence changes. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
 | Approval gate | `scripts/capture_gate.py` guards analysis capture, artifact-promotion apply routes, and reviewed synthesis promotion (`--kind=synthesis`), then records approved boundaries in `scripts/capture-runs.jsonl`. |
@@ -113,12 +113,13 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/capture-runs.jsonl` | Append-only logical approval ledger installed through stable-lock atomic full-file replacement, never in-place append |
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the seven generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
 | `scripts/check_schema_doc_parity.py` | Verifies duplicated schema vocabulary docs stay in parity with `scripts/lint.py` constants |
+| `scripts/check_discoverability.py` | Scope-aware AST check for typed, distinctive production interfaces; eval and fixture findings remain advisory |
 | `.wiki-transactions/` | Gitignored, non-disposable recovery authority for log rotation and backlink rebuild; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
 | `scripts/fixtures/` | Fixture data for live tooling evals |
 
 ## Durable File And Transaction Boundary
 
-`scripts/_durable_files.py` owns stable advisory locks, complete writes, file and directory synchronization, same-directory replacement, and installed-byte verification. `scripts/_file_transactions.py` layers a strict journal protocol over that primitive for log rotation and backlink rebuilds. Existing byte-identical rotation archives are read-only transaction guards rather than rewritten targets.
+`scripts/_durable_files.py` owns stable advisory locks, complete writes, file and directory synchronization, same-directory replacement, and installed-byte verification. `scripts/_transaction_contract.py` owns transaction vocabulary, path confinement, and journal validation; `scripts/_file_transactions.py` remains the stable execution and recovery facade used by log rotation and backlink rebuilds. Existing byte-identical rotation archives are read-only transaction guards rather than rewritten targets.
 
 An absent or verified-clean `.wiki-transactions/` root is safe. Any unpublished preparation, unfinished cleanup, nonterminal transaction, changed guard, conflict, corruption, or unknown state blocks mutation, Tier 1, pre-commit, and export. Recovery follows only the recorded deterministic policy; third-party bytes are preserved as a conflict rather than overwritten.
 
@@ -126,9 +127,18 @@ An absent or verified-clean `.wiki-transactions/` root is safe. Any unpublished 
 
 The wiki separates deterministic capture approval from prose judgment:
 
-- `scripts/capture_gate.py` guards analysis capture, artifact promotion approval, and reviewed synthesis promotion (`--kind=synthesis`).
+- `scripts/capture_approval_policy.py` owns route classification and destination confinement; `scripts/capture_approval_records.py` owns exact durable record construction; `scripts/capture_gate.py` composes them into the stable CLI and output contract.
 - Workflow prose decides quality: what belongs in the page, which evidence matters, how links should be written, and how contradictions should be handled.
 - Do not replace route-specific workflows with scripts unless the behavior is objectively checkable.
+
+## Tooling Module Boundaries
+
+Executable tooling keeps stable CLI facades while assigning each reusable concept one owner:
+
+- `scripts/lint.py` only parses arguments and renders reports. `wiki_lint_contract.py` owns shared vocabulary, `wiki_lint_frontmatter.py` owns frontmatter/provenance parsing, `wiki_lint_repository_checks.py` owns repository-wide invariants, `wiki_lint_page_checks.py` owns ordered page rules, `wiki_lint_tier1.py` composes hard failures, and `wiki_lint_signals.py` composes review candidates.
+- Literal `__all__` declarations identify intentional cross-module interfaces. Internal registry callbacks are not public merely because Python requires a top-level definition.
+- Search-facing function names include their concept, such as `build_backlink_rebuild_plan`, `build_log_rotation_plan`, and `contains_approval_path_placeholder`; do not add generic compatibility aliases.
+- Run `python3 scripts/check_discoverability.py` after changing production interfaces. Production blockers fail; test and fixture observations are printed separately and remain advisory.
 
 ## Layer Architecture (L0-L4)
 

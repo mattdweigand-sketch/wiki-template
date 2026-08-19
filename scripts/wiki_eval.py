@@ -30,6 +30,7 @@ SUITES = {
     "schema-docs": [sys.executable, "scripts/wiki_eval_schema_docs.py"],
     "durable-files": [sys.executable, "scripts/wiki_eval_durable_files.py"],
     "transactions": [sys.executable, "scripts/wiki_eval_transactions.py"],
+    "discoverability": [sys.executable, "scripts/wiki_eval_discoverability.py"],
     "tier1": [sys.executable, "scripts/lint.py", "--tier1"],
 }
 

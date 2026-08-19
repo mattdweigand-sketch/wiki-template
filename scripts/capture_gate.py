@@ -48,59 +48,37 @@ import re
 import sys
 from pathlib import Path
 
-from _repo_paths import MAY_CREATE_FILE, RepoPathError, resolve_repo_path
-
-from ledger_common import (
-    ALLOWED_ROOT_FILES,
-    ALLOWED_ROOTS,
-    LedgerIntegrityError,
-    approved_at_now,
-    split_scope,
-    write_approval_record as _write_approval_record,
-)
+from _repo_paths import RepoPathError
 from _wiki_parse import FrontmatterError, canonical_authored_text
+from capture_approval_policy import (
+    ACTION_LABELS,
+    ANALYSES_PREFIX,
+    APPROVAL_ROUTES,
+    DraftSha256,
+    PROMOTION_TRIGGERS,
+    approval_guard,
+    classify_accepted,
+    contains_approval_path_placeholder,
+    is_analyses_path,
+    measure_draft,
+    normalize_path,
+    real_destinations,
+    scope_with_home,
+)
+from capture_approval_records import (
+    AuthoredSha256,
+    DEFAULT_APPROVAL_LEDGER,
+    LEDGER_SCHEMA_DESCRIPTION,
+    SYNTHESIS_DEFAULT_HOME,
+    append_capture_approval_record,
+    capture_approval_record,
+    synthesis_approval_record,
+)
+from ledger_common import LedgerIntegrityError, split_scope
 from validate_capture_runs import validate_approval
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_APPROVAL_LEDGER = str(REPO_ROOT / "scripts" / "capture-runs.jsonl")
-SYNTHESIS_DEFAULT_HOME = "wiki/synthesis.md"
-
-LEDGER_SCHEMA_DESCRIPTION = (
-    "Append-only operational records written by scripts/capture_gate.py after "
-    "the user approves exact analysis-capture, artifact-promotion, or synthesis "
-    "approval scopes. Free routes such as ingest, decision capture, experience "
-    "capture, and workflow updates remain unrecorded here."
-)
-
-ANALYSES_PREFIX = "wiki/analyses/"
-APPROVAL_ROUTES = {"analysis-capture", "promotion-audit"}
 FREE_PHASES = ("drafting", "source", "decision", "experience", "workflow")
-# ALLOWED_ROOTS / ALLOWED_ROOT_FILES / under_allowed_root are single-sourced in
-# ledger_common so the gate and its validator agree on the durable-root scope
-# (and the raw/ exclusion) byte-for-byte.
-
-
-PROMOTION_TRIGGERS = (
-    "reusable_distinction",
-    "ranking_or_framework",
-    "open_question_resolution",
-    "future_agent_behavior",
-    "existing_page_update",
-)
-
-ACTION_LABELS = {
-    "analysis-capture": "File a substantial research answer as an analysis page.",
-    "promotion-audit": "Apply an artifact promotion to the wiki.",
-}
-
-TRIGGER_LABELS = {
-    "reusable_distinction": "reusable distinction",
-    "ranking_or_framework": "ranking or framework",
-    "open_question_resolution": "open-question resolution",
-    "future_agent_behavior": "future-agent behavior",
-    "existing_page_update": "existing page update",
-}
 
 
 def yn(value: str) -> bool:
@@ -168,179 +146,6 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
-def is_placeholder(path: str) -> bool:
-    return "<" in path or ">" in path
-
-
-def is_analyses_path(path: str) -> bool:
-    """Case-insensitive (the repo lives on case-insensitive APFS, so a
-    case-variant spelling must not slip past the analyses rules) and
-    directory-aware: normpath turns 'wiki/analyses/' into the bare
-    'wiki/analyses', which is still the analyses folder."""
-    lowered = path.lower()
-    return lowered.startswith(ANALYSES_PREFIX) or lowered == ANALYSES_PREFIX.rstrip("/")
-
-
-def normalize_path(path: str) -> str:
-    """Validate without normalizing unsafe spellings into safe-looking paths."""
-    value = path.strip()
-    return resolve_repo_path(
-        value,
-        repo_root=Path.cwd(),
-        allowed_prefixes=(prefix.rstrip("/") for prefix in ALLOWED_ROOTS),
-        allowed_root_files=ALLOWED_ROOT_FILES,
-        mode=MAY_CREATE_FILE,
-    )
-
-
-def real_destinations(home: str, pages_touched: str) -> list[str]:
-    """Concrete declared destination paths, normalized."""
-    out: list[str] = []
-    for path in [home, *split_scope(pages_touched)]:
-        path = path.strip()
-        if not path or path == "none" or is_placeholder(path):
-            continue
-        out.append(normalize_path(path))
-    return out
-
-
-def measure_draft(path: str) -> tuple[int, str, str] | None:
-    """Measure count and exact hash, retaining decoded text from one read."""
-    p = Path(path)
-    if not p.is_file():
-        return None
-    try:
-        data = p.read_bytes()
-        text = data.decode("utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-    return (
-        len(re.findall(r"\w+", text)),
-        hashlib.sha256(data).hexdigest(),
-        text,
-    )
-
-
-def classify_accepted(args: argparse.Namespace, word_count: int) -> tuple[str, str, str]:
-    """Derive the route for --phase accepted, the only phase that can require
-    approval. word_count is the measured count from --path (0 when no path)."""
-    qualifies_analysis = (
-        args.synthesized_pages >= 3 and word_count > 300 and args.domain_context
-    )
-    if qualifies_analysis:
-        return (
-            "analysis-capture",
-            args.primary_home or "wiki/analyses/<slug>.md",
-            "Matches the research analysis criteria: 3+ pages, >300 words, domain-context question.",
-        )
-
-    if args.trigger:
-        trigger_labels = [TRIGGER_LABELS[trigger] for trigger in args.trigger]
-        return (
-            "promotion-audit",
-            args.primary_home or "wiki/<page>.md",
-            "Promotion trigger present: " + ", ".join(trigger_labels) + ".",
-        )
-
-    return (
-        "chat-only",
-        "none",
-        "Does not meet analysis-capture criteria and has no promotion trigger.",
-    )
-
-
-def scope_with_home(home: str, pages_touched: str) -> list[str]:
-    """pages_touched as a normalized, deduplicated list, guaranteeing a
-    concrete primary_home is included."""
-    scope = list(dict.fromkeys(normalize_path(p) for p in split_scope(pages_touched)))
-    home = home.strip()
-    if home and home != "none" and not is_placeholder(home) and home not in scope:
-        scope.insert(0, home)
-    return scope
-
-
-def approval_guard(args: argparse.Namespace, route: str, home: str) -> str | None:
-    """Block reasons for approval-required capture routes."""
-    if not args.artifact.strip():
-        return ("--artifact must be a non-empty description; the gate will not "
-                "write an approval record its own validator would reject.")
-    if is_placeholder(home) or not home or home == "none":
-        return (f"{route} requires a concrete --primary-home path "
-                "(no placeholder); name the real durable destination.")
-    placeholders = [p for p in split_scope(args.pages_touched) if is_placeholder(p)]
-    if placeholders:
-        return (f"approval scope must name concrete paths, not placeholders: "
-                f"{placeholders}")
-    if any(p == "none" for p in split_scope(args.pages_touched)):
-        return ("approval scope must name real files; drop the 'none' entries "
-                "from --pages-touched.")
-    analyses_targets = [d for d in real_destinations(home, args.pages_touched)
-                        if is_analyses_path(d)]
-    if route == "analysis-capture" or analyses_targets:
-        if not args.path:
-            target = analyses_targets[0] if analyses_targets else home
-            return (f"{route} targeting {target} requires --path to the drafted "
-                    "artifact so its word count is measured, not declared; any "
-                    f"{ANALYSES_PREFIX} destination in the scope triggers this.")
-    return None
-
-
-def capture_approval_record(args: argparse.Namespace, route: str, home: str, scope: list[str],
-                            word_count: int, word_count_source: str,
-                            draft_sha256: str = "",
-                            authored_sha256: str = "") -> dict[str, object]:
-    record: dict[str, object] = {
-        "record_type": "capture_approval",
-        "schema_version": 1,
-        "approval_status": "approved",
-        "approved_at": approved_at_now(),
-        "artifact": args.artifact.strip(),
-        "route": route,
-        "phase": args.phase,
-        "primary_home": home.strip(),
-        "pages_touched": scope,
-        "source_path": args.source_path.strip(),
-        "synthesized_pages": args.synthesized_pages,
-        "word_count": word_count,
-        "word_count_source": word_count_source,
-        "word_count_path": args.path.strip(),
-        "domain_context": args.domain_context,
-        "triggers": sorted(set(args.trigger)),
-    }
-    if draft_sha256:
-        record["draft_sha256"] = draft_sha256
-    if authored_sha256 and (
-        route == "analysis-capture" or any(is_analyses_path(path) for path in scope)
-    ):
-        record["authored_sha256"] = authored_sha256
-        record["authored_hash_policy"] = "strip_referenced_by_v1"
-    return record
-
-
-def synthesis_approval_record(args: argparse.Namespace, home: str, scope: list[str]) -> dict[str, object]:
-    return {
-        "record_type": "synthesis_approval",
-        "schema_version": 1,
-        "approval_status": "approved",
-        "approved_at": approved_at_now(),
-        "artifact": args.artifact.strip(),
-        "drafts": args.drafts.strip(),
-        "primary_home": home.strip(),
-        "pages_touched": scope,
-        # Fully derived: synthesis_guard has already required home in scope.
-        "ledger_update_required": home.strip() == SYNTHESIS_DEFAULT_HOME,
-    }
-
-
-def write_approval_record(record: dict[str, object], ledger: str,
-                          record_type: str) -> tuple[bool, Path, str, str]:
-    return _write_approval_record(
-        Path(ledger),
-        record,
-        record_type=record_type,
-        schema_description=LEDGER_SCHEMA_DESCRIPTION,
-        validate_approval=validate_approval,
-    )
 
 
 def print_capture_summary(args: argparse.Namespace, route: str, home: str, reason: str,
@@ -444,7 +249,7 @@ def synthesis_guard(args: argparse.Namespace, home: str, scope: list[str]) -> st
         return "Synthesis approval requires --pages-touched so the editable scope is explicit."
 
     checked_scope = scope + [home]
-    placeholders = [p for p in checked_scope if p and is_placeholder(p)]
+    placeholders = [p for p in checked_scope if p and contains_approval_path_placeholder(p)]
     if placeholders:
         return f"approval scope must name concrete paths, not placeholders: {placeholders}"
     if home not in scope:
@@ -463,7 +268,7 @@ def synthesis_guard(args: argparse.Namespace, home: str, scope: list[str]) -> st
 
 def run_synthesis(args: argparse.Namespace) -> int:
     home = args.primary_home.strip() or SYNTHESIS_DEFAULT_HOME
-    if home and not is_placeholder(home):
+    if home and not contains_approval_path_placeholder(home):
         home = normalize_path(home)
     scope = list(dict.fromkeys(normalize_path(p) for p in split_scope(args.pages_touched)))
 
@@ -478,7 +283,7 @@ def run_synthesis(args: argparse.Namespace) -> int:
         if problems:
             return blocked("refusing to write an approval record its own validator "
                            "rejects: " + "; ".join(problems), args)
-        wrote, ledger_path, label, record_hash = write_approval_record(
+        wrote, ledger_path, label, record_hash = append_capture_approval_record(
             record, args.approval_ledger, "synthesis_approval"
         )
         print("Approval: confirmed for this exact synthesis content and file scope.")
@@ -499,7 +304,7 @@ def run_free_phase(args: argparse.Namespace) -> int:
     workflows own that judgment. Two deterministic guards still apply so a
     mistaken invocation cannot legitimize a bad destination."""
     home = args.primary_home.strip()
-    if home and home != "none" and not is_placeholder(home):
+    if home and home != "none" and not contains_approval_path_placeholder(home):
         home = normalize_path(home)
 
     if any(is_analyses_path(d) for d in real_destinations(home, args.pages_touched)):
@@ -529,7 +334,7 @@ def run_capture(args: argparse.Namespace) -> int:
     # would misclassify the run as chat-only and report the wrong problem.
     word_count = 0
     word_count_source = "unmeasured"
-    draft_sha256 = ""
+    draft_sha256: DraftSha256 | None = None
     draft_text = ""
     if args.path:
         measured = measure_draft(args.path)
@@ -545,7 +350,7 @@ def run_capture(args: argparse.Namespace) -> int:
     route, home, reason = classify_accepted(args, word_count)
     # Normalize a concrete home once so every downstream check and stored record
     # see the same resolved path.
-    if home and home != "none" and not is_placeholder(home):
+    if home and home != "none" and not contains_approval_path_placeholder(home):
         home = normalize_path(home)
 
     # These guards check the DECLARED inputs, not the route-derived home: a
@@ -572,7 +377,7 @@ def run_capture(args: argparse.Namespace) -> int:
             return blocked(block, args)
 
     scope = scope_with_home(home, args.pages_touched)
-    authored_sha256 = ""
+    authored_sha256: AuthoredSha256 | None = None
     if args.path and (
         route == "analysis-capture" or any(is_analyses_path(path) for path in scope)
     ):
@@ -582,7 +387,7 @@ def run_capture(args: argparse.Namespace) -> int:
             return blocked(
                 f"--path {args.path!r} has malformed frontmatter: {exc}", args
             )
-        authored_sha256 = hashlib.sha256(authored).hexdigest()
+        authored_sha256 = AuthoredSha256(hashlib.sha256(authored).hexdigest())
     print_capture_summary(args, route, home, reason, scope)
 
     if route == "chat-only":
@@ -597,7 +402,7 @@ def run_capture(args: argparse.Namespace) -> int:
         if problems:
             return blocked("refusing to write an approval record its own validator "
                            "rejects: " + "; ".join(problems), args)
-        wrote, ledger_path, label, record_hash = write_approval_record(
+        wrote, ledger_path, label, record_hash = append_capture_approval_record(
             record, args.approval_ledger, "capture_approval"
         )
         print("Approval: confirmed for this exact route.")

@@ -604,7 +604,12 @@ check(
     ),
 )
 
-PATH_CALLERS = ("lint.py", "capture_gate.py", "ledger_common.py")
+PATH_CALLERS = (
+    "wiki_lint_frontmatter.py",
+    "wiki_lint_page_checks.py",
+    "capture_approval_policy.py",
+    "ledger_common.py",
+)
 for caller in PATH_CALLERS:
     path = REPO_ROOT / "scripts" / caller
     check(
@@ -613,7 +618,7 @@ for caller in PATH_CALLERS:
         detail=f"{caller} does not import from _repo_paths",
     )
 
-for caller in ("lint.py",):
+for caller in ("wiki_lint_page_checks.py", "wiki_lint_signals.py"):
     src = (REPO_ROOT / "scripts" / caller).read_text(encoding="utf-8")
     check(
         f"caller-uses-shared-markdown-views-{caller}",
