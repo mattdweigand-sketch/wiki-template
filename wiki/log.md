@@ -11,6 +11,16 @@ Append-only history of ingest, lint, query, and decision-capture sessions. Newes
 
 ---
 
+## [2026-08-19] maintenance | parallel-refactor follow-up
+
+Change: Folded the strongest targeted improvements from an independently implemented discoverability refactor into the modular tooling: renamed the due-review collector, typed Tier-1 and Tier-2 contexts and registries, removed confirmed dead lint remnants, and extended the discoverability check to reject generic collection interfaces and untyped explicitly exported constructors.
+Reason: Preserve the structural benefits of the modular refactor while adopting the smaller implementation's sharper contributor-facing types, naming, and cleanup.
+Rejected alternative: Replace the modular refactor with the smaller monolithic patch, which would reduce the immediate diff but restore the 2,500-line lint module and remove repository-native regression enforcement.
+Accepted tradeoff: The discoverability contract is stricter and exported context constructors must remain fully typed; fixture and test observations remain advisory.
+Validation: PASS - focused discoverability, review-due, and lint evals; full `python3 scripts/wiki_eval.py`; schema-doc parity; wrapper parity; Tier-1 lint; `git diff --check`.
+
+---
+
 ## [2026-08-19] maintenance | discoverable tooling interfaces
 
 Change: Refactored the deterministic tooling behind its stable command-line surfaces: split lint rules into concept-owned modules, separated capture approval policy from durable approval records, separated transaction contracts from execution and recovery, replaced generic helper names with concept-specific names, strengthened boundary types, and added a repository-native discoverability check and eval suite.

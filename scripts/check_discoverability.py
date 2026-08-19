@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_RELATIVE = Path("scripts")
 ALLOWED_FIXTURE_NAMES = frozenset({"scripts/fixtures/wiki-lint/wiki/index.md"})
 GENERIC_CALLABLE_NAMES = frozenset(
-    {"check", "create", "do", "get", "handle", "process", "run", "set", "validate"}
+    {"check", "collect", "create", "do", "get", "handle", "process", "run", "set", "validate"}
 )
 GENERIC_FILE_STEMS = frozenset(
     {"common", "core", "helpers", "index", "models", "types", "utils"}
@@ -122,6 +122,16 @@ def public_top_level_functions(
             yield node
 
 
+def explicitly_exported_classes(tree: ast.Module) -> Iterable[ast.ClassDef]:
+    """Yield classes named by a literal ``__all__`` declaration."""
+    declared = declared_public_names(tree)
+    if declared is None:
+        return
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name in declared:
+            yield node
+
+
 def function_annotations(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> Iterable[tuple[str, ast.expr | None]]:
@@ -186,6 +196,58 @@ def inspect_python_source(relative_path: Path, text: str) -> tuple[list[Finding]
             findings.append(
                 build_finding(relative_path, function.lineno, "generic-callable", function.name)
             )
+
+    for class_definition in explicitly_exported_classes(tree):
+        public_names.append(class_definition.name)
+        constructor = next(
+            (
+                node
+                for node in class_definition.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "__init__"
+            ),
+            None,
+        )
+        if constructor is None:
+            continue
+        annotations = [
+            (name, annotation)
+            for name, annotation in function_annotations(constructor)
+            if name not in {"self", "cls"}
+        ]
+        symbol_prefix = f"{class_definition.name}.__init__"
+        incomplete = [name for name, annotation in annotations if annotation is None]
+        if incomplete:
+            findings.append(
+                build_finding(
+                    relative_path,
+                    constructor.lineno,
+                    "incomplete-public-signature",
+                    symbol_prefix + " (" + ", ".join(incomplete) + ")",
+                )
+            )
+        for name, annotation in annotations:
+            symbol = symbol_prefix + "." + name
+            if is_bare_any(annotation):
+                findings.append(build_finding(relative_path, constructor.lineno, "bare-any", symbol))
+            if annotation_contains_any(annotation):
+                findings.append(
+                    build_finding(
+                        relative_path,
+                        constructor.lineno,
+                        "any-containing-signature",
+                        symbol,
+                    )
+                )
+            if is_dict_str_any(annotation):
+                findings.append(
+                    build_finding(
+                        relative_path,
+                        constructor.lineno,
+                        "dict-str-any-signature",
+                        symbol,
+                    )
+                )
     return findings, public_names
 
 

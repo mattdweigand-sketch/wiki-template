@@ -41,7 +41,7 @@ def iso_date_arg(value: str) -> date:
         ) from exc
 
 
-def collect(
+def collect_due_reviews(
     root: Path,
     today: date,
 ) -> tuple[list[tuple[int, str, str]], list[tuple[str, str]]]:
@@ -80,7 +80,7 @@ def main() -> int:
     args = ap.parse_args()
     today = args.today or date.today()
 
-    due, bad = collect(Path(args.root), today)
+    due, bad = collect_due_reviews(Path(args.root), today)
     print(f"Outcome review due as of {today.isoformat()}: {len(due)} page(s)")
     for overdue, rel, val in due:
         print(f"  {rel}  (review_by {val}, {overdue} day(s) overdue)")

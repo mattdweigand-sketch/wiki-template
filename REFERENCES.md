@@ -135,9 +135,9 @@ The wiki separates deterministic capture approval from prose judgment:
 
 Executable tooling keeps stable CLI facades while assigning each reusable concept one owner:
 
-- `scripts/lint.py` only parses arguments and renders reports. `wiki_lint_contract.py` owns shared vocabulary, `wiki_lint_frontmatter.py` owns frontmatter/provenance parsing, `wiki_lint_repository_checks.py` owns repository-wide invariants, `wiki_lint_page_checks.py` owns ordered page rules, `wiki_lint_tier1.py` composes hard failures, and `wiki_lint_signals.py` composes review candidates.
-- Literal `__all__` declarations identify intentional cross-module interfaces. Internal registry callbacks are not public merely because Python requires a top-level definition.
-- Search-facing function names include their concept, such as `build_backlink_rebuild_plan`, `build_log_rotation_plan`, and `contains_approval_path_placeholder`; do not add generic compatibility aliases.
+- `scripts/lint.py` only parses arguments and renders reports. `wiki_lint_contract.py` owns shared vocabulary and the typed `PageContext`; `wiki_lint_frontmatter.py` owns frontmatter/provenance parsing; `wiki_lint_repository_checks.py` owns repository-wide invariants; `wiki_lint_page_checks.py` owns the typed ordered page-rule registries; `wiki_lint_tier1.py` composes hard failures; and `wiki_lint_signals.py` owns `Tier2PageFacts`, `Tier2Context`, the typed signal registry, and review-candidate composition.
+- Literal `__all__` declarations identify intentional cross-module interfaces. Their exported class constructors are part of the checked interface; internal registry callbacks are not public merely because Python requires a top-level definition.
+- Search-facing function names include their concept, such as `build_backlink_rebuild_plan`, `build_log_rotation_plan`, `collect_due_reviews`, and `contains_approval_path_placeholder`; do not add generic compatibility aliases.
 - Run `python3 scripts/check_discoverability.py` after changing production interfaces. Production blockers fail; test and fixture observations are printed separately and remain advisory.
 
 ## Layer Architecture (L0-L4)

@@ -17,10 +17,12 @@ from wiki_lint_contract import (
     DATE_RE,
     FOLDER_TYPE,
     KEBAB_RE,
+    LintFailures,
     PageContext,
     RELATED_LABELS,
     ROOT_ALLOWED_DIRS,
     ROOT_ALLOWED_FILES,
+    Tier1Check,
     VALID_AUTHORITY_FRESHNESS,
     VALID_AUTHORITY_KIND,
     VALID_CONFIDENCE,
@@ -32,13 +34,12 @@ from wiki_lint_frontmatter import (
     authored_body,
     block_list_has_items,
     fm_scalar,
-    inline_list_items,
     source_items,
     source_repo_references,
 )
 
 
-def check_filename(ctx):
+def check_filename(ctx: PageContext) -> LintFailures:
     """Filenames are kebab-case with no date prefix (chronology lives in log.md)."""
     fails = []
     if not KEBAB_RE.match(ctx.stem):
@@ -48,14 +49,14 @@ def check_filename(ctx):
     return fails
 
 
-def check_entity_folder(ctx):
+def check_entity_folder(ctx: PageContext) -> LintFailures:
     """Every entity page sits in a known entity-type folder."""
     if ctx.folder is not None and ctx.folder not in FOLDER_TYPE:
         return [("entity-folder", ctx.rel, f"unknown folder '{ctx.folder}'")]
     return []
 
 
-def check_required_keys(ctx):
+def check_required_keys(ctx: PageContext) -> LintFailures:
     """Required frontmatter keys are present, and agent_use_cases (non-sources)
     carries real list items rather than a bare header."""
     fails = []
@@ -85,7 +86,7 @@ def check_required_keys(ctx):
     return fails
 
 
-def check_type_matches_folder(ctx):
+def check_type_matches_folder(ctx: PageContext) -> LintFailures:
     """frontmatter type matches the folder it lives in."""
     expected = FOLDER_TYPE.get(ctx.folder)
     if "type" in ctx.fm and expected and ctx.fm["type"] != expected:
@@ -93,14 +94,14 @@ def check_type_matches_folder(ctx):
     return []
 
 
-def check_confidence_value(ctx):
+def check_confidence_value(ctx: PageContext) -> LintFailures:
     """confidence is one of the allowed values."""
     if ctx.fm.get("confidence") and ctx.fm["confidence"] not in VALID_CONFIDENCE:
         return [("confidence", ctx.rel, f"invalid value '{ctx.fm['confidence']}'")]
     return []
 
 
-def check_source_type_placement(ctx):
+def check_source_type_placement(ctx: PageContext) -> LintFailures:
     """source_type is a valid value on sources, and absent elsewhere."""
     if ctx.folder == "sources":
         st = ctx.fm.get("source_type")
@@ -112,7 +113,7 @@ def check_source_type_placement(ctx):
     return []
 
 
-def check_dates(ctx):
+def check_dates(ctx: PageContext) -> LintFailures:
     """created/updated/review_by are real YYYY-MM-DD calendar dates.
 
     review_by is optional; it opts a page into the review loop. Validating the
@@ -133,7 +134,7 @@ def check_dates(ctx):
     return fails
 
 
-def check_authority_field_values(ctx):
+def check_authority_field_values(ctx: PageContext) -> LintFailures:
     """Authority metadata fields use accepted scalar values and dates."""
     fails = []
     kind = fm_scalar(ctx.fm.get("authority_kind"))
@@ -166,7 +167,7 @@ def check_authority_field_values(ctx):
     return fails
 
 
-def check_authority_kind_anchor(ctx):
+def check_authority_kind_anchor(ctx: PageContext) -> LintFailures:
     """Any authority-scoped field requires authority_kind as the anchor."""
     present = [k for k in AUTHORITY_ANCHOR_FIELDS if k in ctx.fm]
     if present and "authority_kind" not in ctx.fm:
@@ -176,7 +177,7 @@ def check_authority_kind_anchor(ctx):
     return []
 
 
-def check_authority_ref_required(ctx):
+def check_authority_ref_required(ctx: PageContext) -> LintFailures:
     """authority_kind values other than none require a non-empty authority_ref."""
     kind = fm_scalar(ctx.fm.get("authority_kind"))
     if kind in VALID_AUTHORITY_KIND and kind != "none" and not fm_scalar(ctx.fm.get("authority_ref")):
@@ -185,7 +186,7 @@ def check_authority_ref_required(ctx):
     return []
 
 
-def check_authority_ref_shape(ctx):
+def check_authority_ref_shape(ctx: PageContext) -> LintFailures:
     """authority_ref shape and cheap existence checks by authority_kind."""
     fails = []
     if "authority_kind" not in ctx.fm:
@@ -278,7 +279,7 @@ def check_authority_ref_shape(ctx):
     return fails
 
 
-def check_source_page_authority(ctx):
+def check_source_page_authority(ctx: PageContext) -> LintFailures:
     """Source pages with authority metadata stay immutable source summaries."""
     if ctx.folder != "sources" or not any(k in ctx.fm for k in AUTHORITY_METADATA_FIELDS):
         return []
@@ -294,7 +295,7 @@ def check_source_page_authority(ctx):
     return fails
 
 
-def check_predictive_review_enrollment(ctx):
+def check_predictive_review_enrollment(ctx: PageContext) -> LintFailures:
     """Predictive authority metadata must enroll in the review_by loop."""
     if fm_scalar(ctx.fm.get("authority_freshness")) == "predictive" and not ctx.fm.get("review_by"):
         return [("predictive-review-enrollment", ctx.rel,
@@ -302,7 +303,7 @@ def check_predictive_review_enrollment(ctx):
     return []
 
 
-def check_source_refs(ctx):
+def check_source_refs(ctx: PageContext) -> LintFailures:
     """Provenance refs in the sources: value must resolve. The scan is scoped to
     the sources line(s), not the whole frontmatter block, so a raw/ token inside
     a title or tag is not treated as a ref (code:lint#4). raw/ paths must exist
@@ -327,7 +328,7 @@ def check_source_refs(ctx):
     return fails
 
 
-def check_dangling_links(ctx):
+def check_dangling_links(ctx: PageContext) -> LintFailures:
     """Wikilinks resolve to a real page. Code spans are stripped (a [[link]]
     inside a code example is not a failure); the shared dangling_slugs helper
     keeps this in lockstep with the Tier-2 meta-page dangling check."""
@@ -337,7 +338,7 @@ def check_dangling_links(ctx):
             for slug in dangling_slugs(ctx.text, ctx.valid_slugs)]
 
 
-def check_synthesis_not_cited(ctx):
+def check_synthesis_not_cited(ctx: PageContext) -> LintFailures:
     """The synthesis ledger is orientation, never provenance: synthesis claims
     cite original pages, not the ledger (the rule wiki/synthesis.md states in
     prose; promoted from the ledger's 2026-06-10 standing question on
@@ -359,7 +360,7 @@ def check_synthesis_not_cited(ctx):
     return fails
 
 
-def check_related_labels(ctx):
+def check_related_labels(ctx: PageContext) -> LintFailures:
     """Related-pages relationship labels come from the fixed vocabulary
     (RELATED_LABELS here; the meanings table lives in REFERENCES.md). A bullet
     may be untyped ("- [[page]]"), but a "Label:" prefix on a bullet that carries
@@ -377,7 +378,7 @@ def check_related_labels(ctx):
     return fails
 
 
-def check_open_questions(ctx):
+def check_open_questions(ctx: PageContext) -> LintFailures:
     """Non-source pages carry an "Open questions / gaps" section (SCHEMA rule:
     required on every non-source entity type). Sources are exempt; confidence
     already flags preview-only material there. Presence-only and deterministic,
@@ -389,7 +390,7 @@ def check_open_questions(ctx):
     return []
 
 
-def check_confidence_restate(ctx):
+def check_confidence_restate(ctx: PageContext) -> LintFailures:
     """low/contested confidence is restated in the body (SCHEMA rule); contested
     pages also need a Disagreement section.
 
@@ -419,12 +420,12 @@ def check_confidence_restate(ctx):
 # runs them before frontmatter parsing and they still fire on pages whose
 # frontmatter is missing or malformed. Kept as their own tuple so the
 # pre-parse/post-parse split is structural, not a slice-plus-comment.
-TIER1_PATH_CHECKS = (
+TIER1_PATH_CHECKS: tuple[Tier1Check, ...] = (
     check_filename,
     check_entity_folder,
 )
 
-TIER1_PAGE_CHECKS = (
+TIER1_PAGE_CHECKS: tuple[Tier1Check, ...] = (
     check_required_keys,
     check_type_matches_folder,
     check_confidence_value,

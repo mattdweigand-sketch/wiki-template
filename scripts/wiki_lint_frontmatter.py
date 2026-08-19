@@ -193,12 +193,6 @@ def source_repo_references(
     return references, errors
 
 
-def inline_list_items(value: str) -> list[str]:
-    """Parse a simple inline YAML scalar or list (the tags: shape) into item
-    strings, via the shared split_quoted_csv grammar."""
-    return split_quoted_csv(value)
-
-
 def fm_scalar(value: str | None) -> str:
     """Normalize one scalar frontmatter value for deterministic lint checks."""
     if value is None:
@@ -214,7 +208,6 @@ __all__ = [
     "authored_body",
     "block_list_has_items",
     "fm_scalar",
-    "inline_list_items",
     "nonblocking_frontmatter",
     "nonblocking_frontmatter_block",
     "source_items",

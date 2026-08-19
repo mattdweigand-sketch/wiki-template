@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from datetime import date
 from itertools import combinations
 from pathlib import Path
+from typing import TypedDict
 
 from _wiki_parse import (
     FrontmatterError,
@@ -24,13 +25,12 @@ from _wiki_parse import (
     strip_body_sections,
     split_frontmatter,
 )
-from review_due import collect as collect_review_due
-from wiki_lint_adjudications import glossary_entry_lines, load_adjudications, normalize_quote
+from review_due import collect_due_reviews
+from wiki_lint_adjudications import Adjudications, glossary_entry_lines, normalize_quote
 from wiki_lint_contract import (
     ADJUDICATIONS_PATH,
     GLOSSARY_BULLET_ENTRY_RE,
     LOG_ROTATION_WARN_LINES,
-    MARKDOWN_MD_LINK_RE,
     REVIEW_BY_REQUIRED_FOLDERS,
     STATUS_RE,
     VOLATILE_STATUS_RE,
@@ -154,28 +154,6 @@ def frontmatter_updated_date(fm):
         return None
 
 
-def normalize_markdown_target(href):
-    href = href.strip()
-    if "://" in href or href.startswith("mailto:"):
-        return None
-    href = href.split("#", 1)[0].split("?", 1)[0]
-    if href.startswith("./"):
-        href = href[2:]
-    if href.startswith("wiki/"):
-        href = href[len("wiki/"):]
-    return str(Path(href))
-
-
-def resolve_markdown_target(href, relpaths, stem_to_relpaths):
-    normalized = normalize_markdown_target(href)
-    if not normalized:
-        return None
-    if normalized in relpaths:
-        return normalized
-    matches = stem_to_relpaths.get(Path(normalized).stem, [])
-    return matches[0] if len(matches) == 1 else None
-
-
 # --------------------------- Tier 2: candidate-signal registry ---------------------------
 #
 # Tier-2 surfaces ranked review candidates, never hard failures. Each signal
@@ -187,6 +165,21 @@ def resolve_markdown_target(href, relpaths, stem_to_relpaths):
 # the previous inlined version.
 
 
+class Tier2PageFacts(TypedDict):
+    fm: dict[str, str]
+    status_date: date | None
+    freshness: date | None
+    tokens: set[str]
+    words: int
+    body_links: bool
+    source_items: list[str]
+
+
+Tier2Item = str | tuple[float, str, str] | tuple[float, int, str, str]
+Tier2SignalResult = tuple[list[Tier2Item], int]
+Tier2Report = dict[str, list[Tier2Item] | int]
+
+
 class Tier2Context:
     """Shared per-page state every Tier-2 signal reads.
 
@@ -196,7 +189,19 @@ class Tier2Context:
 
     __slots__ = ("pages", "data", "inbound", "outbound", "adj", "adj_used")
 
-    def __init__(self, pages, valid_slugs, adjudicated):
+    pages: list[Path]
+    data: dict[Path, Tier2PageFacts]
+    inbound: dict[Path, int]
+    outbound: dict[Path, set[str]]
+    adj: Adjudications
+    adj_used: Adjudications
+
+    def __init__(
+        self,
+        pages: list[Path],
+        valid_slugs: Collection[str],
+        adjudicated: Adjudications,
+    ) -> None:
         self.pages = pages
         self.data = {}
         self.inbound = {p: 0 for p in pages}
@@ -254,12 +259,15 @@ class Tier2Context:
         self.adj_used = {key: set() for key in adjudicated}
 
 
-def signal_quote_mismatch(ctx):
+Tier2Signal = Callable[[Tier2Context], Tier2SignalResult]
+
+
+def signal_quote_mismatch(ctx: Tier2Context) -> Tier2SignalResult:
     """Quoted text attributed to a source that is not verbatim in the cited page."""
     return quote_mismatches(ctx.pages, ctx.adj["quotes"], ctx.adj_used["quotes"])
 
 
-def signal_orphans(ctx):
+def signal_orphans(ctx: Tier2Context) -> Tier2SignalResult:
     """Pages with no inbound links."""
     orphans = [str(p.relative_to(WIKI_ROOT)) for p in ctx.pages if ctx.inbound[p] == 0]
     out, suppressed = [], 0
@@ -272,7 +280,7 @@ def signal_orphans(ctx):
     return out, suppressed
 
 
-def signal_near_duplicate(ctx):
+def signal_near_duplicate(ctx: Tier2Context) -> Tier2SignalResult:
     """Derived-page pairs whose token sets overlap heavily (Jaccard >= 0.35).
 
     Compares derived pages only; a source page mirroring its own concept or
@@ -294,7 +302,7 @@ def signal_near_duplicate(ctx):
     return sorted(dups, reverse=True)[:15], suppressed
 
 
-def signal_uncited(ctx):
+def signal_uncited(ctx: Tier2Context) -> Tier2SignalResult:
     """Non-source pages with no sources and no body links. Checked via
     source_items on the raw frontmatter block: the key parser flattens a
     block-style sources: list to '', which must still count as cited."""
@@ -307,7 +315,7 @@ def signal_uncited(ctx):
     return sorted(uncited), 0
 
 
-def signal_thin(ctx):
+def signal_thin(ctx: Tier2Context) -> Tier2SignalResult:
     """Pages under 80 authored words."""
     return sorted(
         f"{p.relative_to(WIKI_ROOT)} ({ctx.data[p]['words']}w)"
@@ -315,7 +323,7 @@ def signal_thin(ctx):
     ), 0
 
 
-def signal_confidence_upgrade(ctx):
+def signal_confidence_upgrade(ctx: Tier2Context) -> Tier2SignalResult:
     """confidence:low pages with >=2 inbound links (candidates to upgrade)."""
     upgrade, suppressed = [], 0
     for p in ctx.pages:
@@ -332,7 +340,7 @@ def signal_confidence_upgrade(ctx):
     return sorted(upgrade), suppressed
 
 
-def signal_missing_related(ctx):
+def signal_missing_related(ctx: Tier2Context) -> Tier2SignalResult:
     """Page pairs whose outbound link profiles overlap heavily but are not linked.
 
     Scores co-citation by normalized overlap (Jaccard of outbound link sets), not
@@ -367,7 +375,7 @@ def signal_missing_related(ctx):
     return sorted(cocite, reverse=True), suppressed
 
 
-def signal_log_rotation_due(ctx):
+def signal_log_rotation_due(ctx: Tier2Context) -> Tier2SignalResult:
     """Log file has crossed the documented rotation warning threshold."""
     _ = ctx
     path = WIKI_ROOT / "log.md"
@@ -383,7 +391,7 @@ def signal_log_rotation_due(ctx):
     return ([f"{path} has {line_count} lines; threshold is {LOG_ROTATION_WARN_LINES}"], 0)
 
 
-def signal_sourcing_queue_count_drift(ctx):
+def signal_sourcing_queue_count_drift(ctx: Tier2Context) -> Tier2SignalResult:
     """Entity-count markers in sourcing-queue.md that disagree with the corpus."""
     _ = ctx
     markers, fails = parse_sourcing_queue_count_markers()
@@ -405,7 +413,7 @@ def signal_sourcing_queue_count_drift(ctx):
     return out, 0
 
 
-def signal_recompile_candidates(ctx):
+def signal_recompile_candidates(ctx: Tier2Context) -> Tier2SignalResult:
     """Compiled pages older than authored source links they already depend on.
 
     This is a review prompt, not a stale-page verdict. It only follows direct
@@ -455,7 +463,7 @@ def signal_recompile_candidates(ctx):
     return out, suppressed
 
 
-def signal_glossary_volatile_status(ctx):
+def signal_glossary_volatile_status(ctx: Tier2Context) -> Tier2SignalResult:
     """Glossary entries restating volatile status.
 
     Definitions should be durable. When a glossary entry says something is
@@ -480,7 +488,7 @@ def signal_glossary_volatile_status(ctx):
     return out, suppressed
 
 
-def signal_authority_missing(ctx):
+def signal_authority_missing(ctx: Tier2Context) -> Tier2SignalResult:
     """Pages likely needing authority metadata but lacking authority_kind.
 
     The template version only uses generic signals available in every configured
@@ -518,7 +526,7 @@ def signal_authority_missing(ctx):
     return out, suppressed
 
 
-def signal_unconsumed_sources(ctx):
+def signal_unconsumed_sources(ctx: Tier2Context) -> Tier2SignalResult:
     """Source pages that no non-source entity page cites with an authored link.
 
     A source linked only by sibling sources, meta pages, or generated
@@ -548,7 +556,7 @@ def signal_unconsumed_sources(ctx):
     return out, suppressed
 
 
-def signal_review_by_missing(ctx):
+def signal_review_by_missing(ctx: Tier2Context) -> Tier2SignalResult:
     """Decisions with no `review_by` date (outcome-review enrollment).
 
     Surfaces the classes that should carry a dated review checkpoint but do not.
@@ -569,7 +577,7 @@ def signal_review_by_missing(ctx):
 SYNTHESIS_BURST_THRESHOLD = 8
 
 
-def signal_synthesis_due(ctx):
+def signal_synthesis_due(ctx: Tier2Context) -> Tier2SignalResult:
     """Ingest burst with no synthesis pass following. Counts `ingest` log
     entries after the most recent `synthesis` entry (all of them if none); at
     SYNTHESIS_BURST_THRESHOLD or more, surfaces a candidate so the synthesize
@@ -598,13 +606,13 @@ def signal_synthesis_due(ctx):
              f"(threshold {SYNTHESIS_BURST_THRESHOLD}); consider a synthesize run"], 0)
 
 
-def signal_review_due(ctx):
+def signal_review_due(ctx: Tier2Context) -> Tier2SignalResult:
     """Pages whose review_by date has passed (outcome grading due). Mirrors
     review_due.py on the most-frequently-run surface, so a due review cannot
     wait unseen for the next /wiki-eval; the grading itself stays the review
     workflow's judgment. Self-clearing: grading advances or clears review_by."""
     _ = ctx
-    due, _bad = collect_review_due(WIKI_ROOT, date.today())
+    due, _bad = collect_due_reviews(WIKI_ROOT, date.today())
     return ([f"{rel} (review_by {val}, {overdue} day(s) overdue)"
              for overdue, rel, val in due], 0)
 
@@ -622,7 +630,7 @@ def _adjudication_entry_labels(category, entries):
     return out
 
 
-def signal_adjudication_dead(ctx):
+def signal_adjudication_dead(ctx: Tier2Context) -> Tier2SignalResult:
     """Adjudication entries that suppressed nothing this run. A dead entry means
     the candidate it settled no longer fires at all, so the suppression is inert
     residue; prune it (or keep it deliberately, if the candidate is expected to
@@ -658,7 +666,7 @@ def signal_adjudication_dead(ctx):
 # signal, write a small signal_*(ctx) -> (items, suppressed) function and add a
 # row here. (Meta-page dangling links moved to Tier-1 as a hard failure and are
 # no longer surfaced here.)
-TIER2_SIGNALS = (
+TIER2_SIGNALS: tuple[tuple[str, str, Tier2Signal], ...] = (
     ("quote_mismatch", "quote mismatches (quoted text not verbatim in cited source)", signal_quote_mismatch),
     ("orphans", "orphans (no inbound links)", signal_orphans),
     ("near_duplicate", "near-duplicate pairs (prefer updating over creating)", signal_near_duplicate),
@@ -685,8 +693,8 @@ TIER2_SIGNALS = (
 def run_tier2_lint(
     entity_pages: Sequence[Path],
     valid_slugs: Collection[str],
-    adjudicated: dict[str, set[object]],
-) -> dict[str, object]:
+    adjudicated: Adjudications,
+) -> Tier2Report:
     """Compute every ranked signal from one shared corpus context."""
     ctx = Tier2Context(list(entity_pages), valid_slugs, adjudicated)
 
@@ -714,4 +722,12 @@ def run_tier2_lint(
 
 
 
-__all__ = ["TIER2_SIGNALS", "run_tier2_lint"]
+__all__ = [
+    "TIER2_SIGNALS",
+    "Tier2Context",
+    "Tier2PageFacts",
+    "Tier2Report",
+    "Tier2Signal",
+    "Tier2SignalResult",
+    "run_tier2_lint",
+]

@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Collection
 from datetime import date
 from pathlib import Path
-from typing import Collection
 
 from _wiki_parse import FrontmatterError, META_PAGES, frontmatter_block, split_frontmatter
 
@@ -73,7 +73,6 @@ AUTHORITY_METADATA_FIELDS = ("authority_kind",) + AUTHORITY_ANCHOR_FIELDS
 BASE_KEYS = {"title", "type", "created", "updated", "sources", "tags", "confidence"}
 RELATED_LABELS = {"Supports", "Contradicts", "Depends on", "Derived from", "Part of", "Related"}
 
-MARKDOWN_MD_LINK_RE = re.compile(r"\]\(([^)]+?\.md(?:[?#][^)]*)?)\)")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 STATUS_RE = re.compile(r"\*\*Status(?: note)?\s*\((\d{4}-\d{2}-\d{2})\)")
 # Volatile status language in glossary entries. Glossary definitions are
@@ -105,8 +104,6 @@ WIKI_REPO_TOKEN_RE = re.compile(
 REVIEW_BY_REQUIRED_FOLDERS = ("decisions",)
 KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
-URI_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
-
 STOPWORDS = {
     "the", "and", "that", "this", "with", "from", "into", "your", "you",
     "are", "for", "not", "but", "what", "when", "where", "which", "they",
@@ -127,7 +124,24 @@ class PageContext:
                  "frontmatter_error",
                  "valid_slugs", "source_slugs")
 
-    def __init__(self, path, text, valid_slugs, source_slugs):
+    path: Path
+    rel: str
+    stem: str
+    folder: str | None
+    text: str
+    fm: dict[str, str] | None
+    fm_block: str
+    frontmatter_error: str | None
+    valid_slugs: Collection[str]
+    source_slugs: Collection[str]
+
+    def __init__(
+        self,
+        path: Path,
+        text: str,
+        valid_slugs: Collection[str],
+        source_slugs: Collection[str],
+    ) -> None:
         self.path = path
         self.rel = str(path.relative_to(WIKI_ROOT))
         self.stem = path.stem
@@ -145,6 +159,9 @@ class PageContext:
         self.source_slugs = source_slugs
 
 
+Tier1Check = Callable[[PageContext], LintFailures]
+
+
 
 __all__ = [
     "ADJUDICATIONS_PATH",
@@ -157,6 +174,7 @@ __all__ = [
     "REVIEW_BY_REQUIRED_FOLDERS",
     "STATUS_RE",
     "STOPWORDS",
+    "Tier1Check",
     "VOLATILE_STATUS_RE",
     "WIKI_ROOT",
 ]

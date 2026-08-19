@@ -65,6 +65,19 @@ def main() -> int:
             "    return value\n",
             encoding="utf-8",
         )
+        (scripts_dir / "review_due.py").write_text(
+            "def collect(root: str) -> list[str]:\n"
+            "    return []\n",
+            encoding="utf-8",
+        )
+        (scripts_dir / "lint_contract.py").write_text(
+            "class PageContext:\n"
+            "    def __init__(self, path):\n"
+            "        self.path = path\n"
+            "\n"
+            "__all__ = ['PageContext']\n",
+            encoding="utf-8",
+        )
         fixture_index = scripts_dir / "fixtures" / "wiki-lint" / "wiki" / "index.md"
         fixture_index.parent.mkdir(parents=True)
         fixture_index.write_text("# Miniature index\n", encoding="utf-8")
@@ -91,6 +104,22 @@ def main() -> int:
             and bool(findings_of_kind(report, "generic-callable"))
             and bool(findings_of_kind(report, "incomplete-public-signature")),
             f"returncode={result.returncode} report={json.dumps(report, sort_keys=True)}",
+        )
+        results.record(
+            "isolated-generic-collection-interface-fails",
+            any(
+                finding["symbol"] == "collect"
+                for finding in findings_of_kind(report, "generic-callable")
+            ),
+            json.dumps(report, sort_keys=True),
+        )
+        results.record(
+            "isolated-untyped-exported-constructor-fails",
+            any(
+                str(finding["symbol"]).startswith("PageContext.__init__")
+                for finding in findings_of_kind(report, "incomplete-public-signature")
+            ),
+            json.dumps(report, sort_keys=True),
         )
         results.record(
             "isolated-index-fixture-is-allowed-without-global-index-suppression",

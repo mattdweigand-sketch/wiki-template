@@ -10,6 +10,10 @@ from wiki_lint_contract import GLOSSARY_BULLET_ENTRY_RE, WIKI_ROOT
 from wiki_lint_repository_checks import read_adjudications
 
 
+AdjudicationValue = str | frozenset[str] | tuple[str, str]
+Adjudications = dict[str, set[AdjudicationValue]]
+
+
 def normalize_quote(text: str) -> str:
     """Lowercase, straighten curly quotes, collapse whitespace and punctuation
     that survives transcription differences, so verbatim matching is honest
@@ -51,13 +55,13 @@ def glossary_entry_lines() -> Iterator[tuple[str, str]]:
             yield term, line
 
 
-def load_adjudications() -> dict[str, set[object]]:
+def load_adjudications() -> Adjudications:
     """Settled Tier-2 judgments, held as data so lint stops re-surfacing them.
 
     Returns a dict of plain sets/pair-sets; empty when the file is absent so
     lint stays fully operable without it.
     """
-    empty = {
+    empty: Adjudications = {
         "orphans": set(), "hubs": set(), "pairs": set(),
         "confidence": set(), "duplicates": set(), "quotes": set(),
         "recompile": set(), "authority_missing": set(),
@@ -87,4 +91,9 @@ def load_adjudications() -> dict[str, set[object]]:
 
 
 
-__all__ = ["glossary_entry_lines", "load_adjudications", "normalize_quote"]
+__all__ = [
+    "Adjudications",
+    "glossary_entry_lines",
+    "load_adjudications",
+    "normalize_quote",
+]
