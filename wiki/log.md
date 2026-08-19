@@ -2,12 +2,22 @@
 title: Activity Log
 type: log
 created: 2026-05-17
-updated: 2026-08-17
+updated: 2026-08-19
 ---
 
 # Activity Log
 
 Append-only history of ingest, lint, query, and decision-capture sessions. Newest entries on top.
+
+---
+
+## [2026-08-19] maintenance | discoverable tooling interfaces
+
+Change: Refactored the deterministic tooling behind its stable command-line surfaces: split lint rules into concept-owned modules, separated capture approval policy from durable approval records, separated transaction contracts from execution and recovery, replaced generic helper names with concept-specific names, strengthened boundary types, and added a repository-native discoverability check and eval suite.
+Reason: Make the tooling easier for people and agents to navigate, search, and change safely without altering the wiki's public workflows or command surface.
+Rejected alternative: Rebuild the repository wholesale, which would have expanded the migration surface and risked behavioral drift across approval, recovery, lint, and export contracts.
+Accepted tradeoff: The tooling now spans more focused files, and interface changes carry an additional discoverability check; stable CLI facades preserve the existing operator experience.
+Validation: PASS - full `python3 scripts/wiki_eval.py`; `python3 scripts/check_schema_doc_parity.py`; `python3 scripts/check_wrapper_parity.py`; `python3 scripts/lint.py --tier1`; discoverability checks; `git diff --check`.
 
 ---
 

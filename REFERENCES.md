@@ -83,7 +83,7 @@ In `## Related pages`, use typed relationship labels when the relationship is cl
 | `Part of` | This page is a component of the linked larger system, project, or framework |
 | `Related` | Meaningful connection, but no stronger typed relationship fits |
 
-Format each item as `- Label: [[page]]`. The canonical label set is enforced by `RELATED_LABELS` in `scripts/lint.py`; `AGENTS.md` and `wiki/SCHEMA.md` document the same six labels. Do not invent new labels casually. To add one, update `RELATED_LABELS` and this table together; the `schema-docs` eval suite enforces the duplicated vocabulary. Existing untyped related links remain valid, but new or touched pages should prefer labels where they add signal.
+Format each item as `- Label: [[page]]`. The canonical label set is enforced by `RELATED_LABELS` in `scripts/wiki_lint_contract.py`; `AGENTS.md` and `wiki/SCHEMA.md` document the same six labels. Do not invent new labels casually. To add one, update `RELATED_LABELS` and this table together; the `schema-docs` eval suite enforces the duplicated vocabulary. Existing untyped related links remain valid, but new or touched pages should prefer labels where they add signal.
 
 When stating a specific fact, append `(source: [[source-filename]])`. When stating an opinion or inference, prefix with `Inference:` or `Hypothesis:`.
 
@@ -112,7 +112,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/lint-adjudications.json` | Settled Tier-2 lint judgments with reasons and dates; lint suppresses what it lists |
 | `scripts/capture-runs.jsonl` | Append-only logical approval ledger installed through stable-lock atomic full-file replacement, never in-place append |
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the seven generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
-| `scripts/check_schema_doc_parity.py` | Verifies duplicated schema vocabulary docs stay in parity with `scripts/lint.py` constants |
+| `scripts/check_schema_doc_parity.py` | Verifies duplicated schema vocabulary docs stay in parity with `scripts/wiki_lint_contract.py` constants |
 | `scripts/check_discoverability.py` | Scope-aware AST check for typed, distinctive production interfaces; eval and fixture findings remain advisory |
 | `.wiki-transactions/` | Gitignored, non-disposable recovery authority for log rotation and backlink rebuild; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
 | `scripts/fixtures/` | Fixture data for live tooling evals |

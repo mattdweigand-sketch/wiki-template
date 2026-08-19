@@ -1,6 +1,6 @@
 # Wiki Eval
 
-Run this workflow when the task is to verify the wiki system itself: scripts, durable file updates, recoverable transactions, gates, ledgers, backlink rebuilds, export behavior, stale-text sweep proof, wrapper parity, schema-doc parity, and the deterministic Tier-1 gate. The `SUITES` registry in `scripts/wiki_eval.py` is the authoritative list of what runs.
+Run this workflow when the task is to verify the wiki system itself: scripts, durable file updates, recoverable transactions, gates, ledgers, backlink rebuilds, export behavior, stale-text sweep proof, discoverability, wrapper parity, schema-doc parity, and the deterministic Tier-1 gate. The `SUITES` registry in `scripts/wiki_eval.py` is the authoritative list of what runs.
 
 This is different from `/wiki-lint`: lint checks wiki content; eval checks the tools that check and protect the wiki.
 
@@ -50,7 +50,7 @@ A migration keeps the shape of the existing registries: a `description` field na
 
 ## Schema Doc Parity Contract
 
-The frontmatter vocabularies (entity folders, entity types, `confidence`, `source_type`, `authority_kind`, `authority_freshness`, and related-page labels) are canonical as constants in `scripts/lint.py`. The enumerations in `wiki/SCHEMA.md`, `REFERENCES.md`, and `AGENTS.md` are documentation of those constants, each marked with a `<!-- parity:enum key=... -->` comment. When changing a vocabulary, update the constant and every marked doc site in the same change.
+The frontmatter vocabularies (entity folders, entity types, `confidence`, `source_type`, `authority_kind`, `authority_freshness`, and related-page labels) are canonical as constants in `scripts/wiki_lint_contract.py`. The enumerations in `wiki/SCHEMA.md`, `REFERENCES.md`, and `AGENTS.md` are documentation of those constants, each marked with a `<!-- parity:enum key=... -->` comment. When changing a vocabulary, update the constant and every marked doc site in the same change.
 
 `python3 scripts/check_schema_doc_parity.py` enforces set equality per marker. The `schema-docs` suite runs it via `scripts/wiki_eval_schema_docs.py`, which also seeds negative fixtures so the checker cannot go vacuous. It deliberately does not check prose meanings, table right-hand columns, or ordering: those are editorial.
 
@@ -58,7 +58,7 @@ A new doc enumeration of a canonical vocabulary must either defer to the source 
 
 ## Load / Skip
 
-- **Load:** `scripts/wiki_eval.py`; `scripts/wiki-wrapper-contract.json`, `scripts/render_wiki_wrappers.py`, and `scripts/check_wrapper_parity.py` when the task concerns wrappers; `scripts/wiki_transactions.py` when the task concerns recovery state; `scripts/check_schema_doc_parity.py` when the task concerns schema docs; any failing suite output if a run fails.
+- **Load:** `scripts/wiki_eval.py`; `scripts/wiki-wrapper-contract.json`, `scripts/render_wiki_wrappers.py`, and `scripts/check_wrapper_parity.py` when the task concerns wrappers; `scripts/wiki_transactions.py` when the task concerns recovery state; `scripts/check_schema_doc_parity.py` when the task concerns schema docs; `scripts/check_discoverability.py` when the task concerns production interfaces; any failing suite output if a run fails.
 - **Skip:** wiki entity pages, raw sources, unrelated workflow files, and Tier-2/Tier-3 content review.
 
 ## Steps

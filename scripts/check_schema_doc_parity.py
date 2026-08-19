@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Verify schema vocabulary docs stay in parity with lint.py constants.
+"""Verify schema vocabulary docs stay in parity with the lint contract.
 
-The frontmatter vocabularies are canonical as constants in scripts/lint.py.
+The frontmatter vocabularies are canonical in scripts/wiki_lint_contract.py and
+re-exported by the stable scripts/lint.py facade.
 The documentation enumerations in AGENTS.md, wiki/SCHEMA.md, and REFERENCES.md
 must carry <!-- parity:enum key=... --> markers and match those constants by
 set equality. This is the checkable half of the Schema Doc Parity Contract in
@@ -386,7 +387,7 @@ def schema_doc_parity_problems(
 
 def main() -> int:
     argparse.ArgumentParser(
-        description="Verify marked schema-document enumerations match lint.py constants.",
+        description="Verify marked schema-document enumerations match lint contract constants.",
     ).parse_args()
     problems = schema_doc_parity_problems()
     if problems:
@@ -394,7 +395,7 @@ def main() -> int:
         for problem in problems:
             print(f"  - {problem}")
         return 1
-    print("Schema-doc enumerations match lint.py constants.")
+    print("Schema-doc enumerations match lint contract constants.")
     return 0
 
 
