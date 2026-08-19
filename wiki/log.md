@@ -11,6 +11,16 @@ Append-only history of ingest, lint, query, and decision-capture sessions. Newes
 
 ---
 
+## [2026-08-19] maintenance | repository rename
+
+Change: Renamed the GitHub repository to `wiki-template` and updated the clone URL in the agent setup prompt.
+Reason: Give the reusable template a direct, purpose-specific repository name.
+Rejected alternative: Keep the refactor-era repository name and rely on GitHub redirects, which would leave new-clone guidance stale.
+Accepted tradeoff: Existing clones and links may continue through GitHub's redirect until their `origin` URLs are updated.
+Validation: PASS - live repository URL scan; full `python3 scripts/wiki_eval.py`; Tier-1 lint; `git diff --check`.
+
+---
+
 ## [2026-08-19] maintenance | adoption review polish
 
 Change: Made the direct-import discoverability regression path-specific and removed the transaction facade's nine method aliases so production and evaluation call sites use the named execution contract directly.
