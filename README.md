@@ -84,7 +84,7 @@ The checks and guardrails that protect the corpus:
 | Approval gate and ledger | `scripts/capture_gate.py` makes the agent ask before filing analyses, applying artifact promotions, or approving synthesis; `scripts/capture-runs.jsonl` records what was approved afterward. |
 | Durable file updates | Approval-ledger writes use a stable sidecar lock and atomic replacement; backlink rebuilds and log rotations use recoverable multi-file transactions that fail closed when interrupted or conflicted. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` is the single manifest for both `.claude/commands/` and `.codex/skills/`; the renderer and parity checker prevent hand-edited drift. |
-| Live evals | `/wiki-eval` runs `scripts/wiki_eval.py` to test shared parsing, durable files, recoverable transactions, backlinks, lint fixtures, stale-text sweep proof, the unified approval gate, ledger validation, export, log rotation, review due checks, generated wrapper parity, schema-doc parity, and Tier-1 lint over the live corpus. |
+| Live evals | `/wiki-eval` runs `scripts/wiki_eval.py` to test shared parsing, durable files, recoverable transactions, backlinks, lint fixtures, stale-text sweep proof, the unified approval gate, ledger validation, export, log rotation, review due checks, discoverability, generated wrapper parity, schema-doc parity, and Tier-1 lint over the live corpus. |
 
 Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task instructions live under [`workflows/`](workflows/).
 
