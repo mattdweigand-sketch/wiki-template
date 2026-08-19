@@ -9,6 +9,7 @@ from datetime import date
 from pathlib import Path
 
 from _wiki_parse import FrontmatterError, META_PAGES, frontmatter_block, split_frontmatter
+from wiki_entity_catalog import load_entity_catalog
 
 
 LintFailure = tuple[str, str, str]
@@ -24,21 +25,10 @@ STALE_SWEEP_PROOF_REQUIRED_FROM = date(2026, 7, 5)
 # META_PAGES is shared with rebuild_referenced_by.py via _wiki_parse, so the
 # corpus enumeration cannot drift between linter and rebuild.
 
-# folder name -> expected frontmatter type value
-FOLDER_TYPE = {
-    "sources": "source",
-    "products": "product",
-    "features": "feature",
-    "personas": "persona",
-    "customers": "customer",
-    "competitors": "competitor",
-    "concepts": "concept",
-    "initiatives": "initiative",
-    "decisions": "decision",
-    "metrics": "metric",
-    "people": "person",
-    "analyses": "analysis",
-}
+ENTITY_CATALOG = load_entity_catalog()
+# Stable compatibility mapping derived from the governed catalog. Callers do
+# not read entity-catalog.json directly.
+FOLDER_TYPE = ENTITY_CATALOG.folder_types
 ROOT_ALLOWED_FILES = {
     ".gitignore", "AGENTS.md", "CLAUDE.md", "CONTEXT.md", "LICENSE",
     "README.md", "REFERENCES.md", "SETUP.md",
@@ -101,7 +91,7 @@ WIKI_REPO_TOKEN_RE = re.compile(
 # template makes decisions mandatory because they carry choices that should be
 # revisited; analyses stay opt-in because many are reusable models rather than
 # dated predictions.
-REVIEW_BY_REQUIRED_FOLDERS = ("decisions",)
+REVIEW_BY_REQUIRED_FOLDERS = ENTITY_CATALOG.review_date_expected_folders
 KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 STOPWORDS = {
@@ -170,6 +160,7 @@ __all__ = [
     "BASE_KEYS",
     "DATE_PREFIX_RE",
     "DATE_RE",
+    "ENTITY_CATALOG",
     "FOLDER_TYPE",
     "GLOSSARY_BULLET_ENTRY_RE",
     "KEBAB_RE",

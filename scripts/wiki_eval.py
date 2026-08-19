@@ -31,6 +31,7 @@ SUITES = {
     "durable-files": [sys.executable, "scripts/wiki_eval_durable_files.py"],
     "transactions": [sys.executable, "scripts/wiki_eval_transactions.py"],
     "discoverability": [sys.executable, "scripts/wiki_eval_discoverability.py"],
+    "entity-catalog": [sys.executable, "scripts/wiki_eval_entity_catalog.py"],
     "tier1": [sys.executable, "scripts/lint.py", "--tier1"],
 }
 

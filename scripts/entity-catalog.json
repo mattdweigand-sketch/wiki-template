@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "description": "Governed entity-folder, preset, and authoring-semantics catalog for the wiki template.",
+  "presets": [
+    "organization"
+  ],
+  "types": [
+    {
+      "folder": "analyses",
+      "type": "analysis",
+      "purpose": "A synthesized answer, comparison, brief, or other durable output.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "competitors",
+      "type": "competitor",
+      "purpose": "A competing vendor, alternative, or substitute and its positioning.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "concepts",
+      "type": "concept",
+      "purpose": "An idea, term, framework, or mental model used in the configured domain.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "stable-meaning",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "customers",
+      "type": "customer",
+      "purpose": "A named customer or segment, its use cases, relationship, and risks.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "decisions",
+      "type": "decision",
+      "purpose": "A historical choice, its rationale, alternatives, and outcome-review checkpoint.",
+      "presets": ["organization"],
+      "review_date": "expected",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "features",
+      "type": "feature",
+      "purpose": "A specific customer-facing capability and the jobs it supports.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "initiatives",
+      "type": "initiative",
+      "purpose": "A strategic program or bet that may coordinate several projects.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "metrics",
+      "type": "metric",
+      "purpose": "A measurement definition, formula, owner, and observed values.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "people",
+      "type": "person",
+      "purpose": "An individual, stakeholder, or role and its responsibilities.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "stable-meaning",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "personas",
+      "type": "persona",
+      "purpose": "A user or buyer archetype with goals, pain points, and authority.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "stable-meaning",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "products",
+      "type": "product",
+      "purpose": "A customer-facing offering, its positioning, users, and core jobs.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "sources",
+      "type": "source",
+      "purpose": "A summary of one raw artifact and what that evidence supports.",
+      "presets": ["organization"],
+      "review_date": "optional",
+      "authority_freshness": "immutable-source",
+      "verification": "when-authority-requires"
+    }
+  ]
+}
