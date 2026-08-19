@@ -37,11 +37,11 @@ Detailed workflow ownership:
 
 | Workflow | Route | Owns |
 |---|---|---|
-| Setup | `SETUP.md` | First-session configuration: context owner, domain, active entity types, raw taxonomy, and example questions. |
+| Setup | `SETUP.md` | First-session configuration: context owner, domain, preset, supported active entity types, raw taxonomy, privacy warning, and example questions. |
 | Ingest | `workflows/ingest/CONTEXT.md` | Raw source handling, `wiki/sources/` summaries, affected entity-page updates, index rows, backlinks, Tier-1 lint, touched-page Tier-2 review, and ingest log entries. |
 | Research | `workflows/research/CONTEXT.md` | Wiki-grounded answers, selective page loading, optional analysis capture, and promotion-candidate audits. |
 | Capture | `workflows/maintenance/capture.md` | Decision or experience pages with rationale, lessons, affected entities, cross-links, verification, and log entries. |
-| Artifact promotion | `workflows/maintenance/artifact-promotion.md` | Routing useful external or conversational artifacts to source, concept, analysis, decision, initiative, workflow, script, existing page update, or discard. |
+| Artifact promotion | `workflows/maintenance/artifact-promotion.md` | Routing useful external or conversational artifacts to a source, active entity type, workflow, script, existing page update, or discard. |
 | Lint | `workflows/maintenance/lint.md` | Deterministic structure checks, Tier-2 quality candidates, judgment checks, citation evidence review, and updates to contradiction or sourcing-queue records when gaps open or close. |
 | Rotate log | `workflows/maintenance/rotate-log.md` | Manual `wiki/log.md` archival when `log_rotation_due` fires, preserving payload under `archive/wiki-log/`. |
 | Synthesis | `workflows/maintenance/synthesize.md` | Drafting and approving corpus-level distillations: overview refreshes, gap resolutions, cluster analyses, primer updates, and open questions. |
@@ -109,6 +109,8 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 |---|---|
 | `raw/README.md` | Source-artifact handling note for the ignored `raw/` corpus |
 | `scripts/raw-buckets.json` | Tracked raw bucket taxonomy read by Tier-1 lint |
+| `scripts/entity-catalog.json` | Governed entity folders, types, preset membership, and authoring semantics; consumed through `scripts/wiki_entity_catalog.py` |
+| `scripts/plan_wiki_setup.py` | Read-only JSON plan for preset selection, safe folder changes, blocked removals, and migration advisories |
 | `scripts/lint-adjudications.json` | Settled Tier-2 lint judgments with reasons and dates; lint suppresses what it lists |
 | `scripts/capture-runs.jsonl` | Append-only logical approval ledger installed through stable-lock atomic full-file replacement, never in-place append |
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the seven generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |

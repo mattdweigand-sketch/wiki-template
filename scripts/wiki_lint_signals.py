@@ -36,6 +36,7 @@ from wiki_lint_contract import (
     VOLATILE_STATUS_RE,
     WIKI_ROOT,
 )
+from wiki_entity_catalog import load_entity_catalog, validate_configured_layout
 from wiki_lint_frontmatter import authored_body, nonblocking_frontmatter, nonblocking_frontmatter_block, source_items, source_repo_references, tokens
 from wiki_lint_repository_checks import parse_sourcing_queue_count_markers
 
@@ -557,7 +558,7 @@ def signal_unconsumed_sources(ctx: Tier2Context) -> Tier2SignalResult:
 
 
 def signal_review_by_missing(ctx: Tier2Context) -> Tier2SignalResult:
-    """Decisions with no `review_by` date (outcome-review enrollment).
+    """Catalog-governed page classes missing outcome-review enrollment.
 
     Surfaces the classes that should carry a dated review checkpoint but do not.
     Tier-2 and non-blocking: enrollment is a judgment call, and analyses stay
@@ -569,6 +570,13 @@ def signal_review_by_missing(ctx: Tier2Context) -> Tier2SignalResult:
         if not ctx.data[p]["fm"].get("review_by"):
             out.append(str(p.relative_to(WIKI_ROOT)))
     return sorted(out), 0
+
+
+def signal_configuration_migration(ctx: Tier2Context) -> Tier2SignalResult:
+    """Legacy configured domains that remain valid but should migrate to v2."""
+    _ = ctx
+    validation = validate_configured_layout(Path.cwd().resolve(), load_entity_catalog())
+    return list(validation.advisories), 0
 
 
 # Ingest entries since the last synthesis pass that count as a burst worth
@@ -667,6 +675,7 @@ def signal_adjudication_dead(ctx: Tier2Context) -> Tier2SignalResult:
 # row here. (Meta-page dangling links moved to Tier-1 as a hard failure and are
 # no longer surfaced here.)
 TIER2_SIGNALS: tuple[tuple[str, str, Tier2Signal], ...] = (
+    ("configuration_migration", "legacy domain configuration migration advisories", signal_configuration_migration),
     ("quote_mismatch", "quote mismatches (quoted text not verbatim in cited source)", signal_quote_mismatch),
     ("orphans", "orphans (no inbound links)", signal_orphans),
     ("near_duplicate", "near-duplicate pairs (prefer updating over creating)", signal_near_duplicate),
@@ -680,7 +689,7 @@ TIER2_SIGNALS: tuple[tuple[str, str, Tier2Signal], ...] = (
     ("glossary_volatile_status", "glossary entries restating volatile status (rewrite to a dated fact or delegate to the owner page)", signal_glossary_volatile_status),
     ("authority_missing", "pages likely needing authority metadata but lacking authority_kind", signal_authority_missing),
     ("unconsumed_sources", "source pages not consumed by any non-source entity page (wire an authored link or adjudicate)", signal_unconsumed_sources),
-    ("review_by_missing", "decisions with no review_by (enroll in the outcome-review loop or leave for now)", signal_review_by_missing),
+    ("review_by_missing", "goals and decisions with no review_by (enroll in the outcome-review loop or leave for now)", signal_review_by_missing),
     ("review_due", "outcome reviews due (review_by has passed; run the review workflow)", signal_review_due),
     ("synthesis_due", "ingest burst with no synthesis pass following (consider a synthesize run)", signal_synthesis_due),
     # adjudication_dead's row sets its report position; run_tier2_lint() computes it
@@ -729,5 +738,6 @@ __all__ = [
     "Tier2Report",
     "Tier2Signal",
     "Tier2SignalResult",
+    "signal_configuration_migration",
     "run_tier2_lint",
 ]

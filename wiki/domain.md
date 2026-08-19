@@ -4,22 +4,11 @@ type: domain
 created: 2026-05-17
 updated: 2026-05-17
 status: unconfigured
+configuration_version: 2
 org: <Organization name>
 domain: <One-line domain summary, e.g. "developer tools for payments">
-entity_types_active:
-  - source
-  - product
-  - feature
-  - persona
-  - customer
-  - competitor
-  - concept
-  - initiative
-  - decision
-  - metric
-  - person
-  - analysis
-entity_types_custom: []
+entity_preset:
+entity_types_active: []
 raw_taxonomy: []
 example_queries: []
 ---
@@ -40,8 +29,9 @@ When `status: configured`, the wiki is ready to ingest sources and answer questi
 |---|---|
 | `org` | The organization (company, team, project) this wiki is about |
 | `domain` | One-line description of the subject area |
-| `entity_types_active` | Subset of the default entity types from [`SCHEMA.md`](SCHEMA.md) that this wiki uses. Drop any that don't fit your domain. |
-| `entity_types_custom` | Any new entity types this domain needs that aren't in the default set |
+| `configuration_version` | Version of the configured-domain contract. New configurations use `2`; missing values identify legacy configured wikis. |
+| `entity_preset` | Setup starting point: `organization`, `personal`, or `hybrid`. Required once configured. |
+| `entity_types_active` | Explicit final selection from the supported catalog in [`SCHEMA.md`](SCHEMA.md). This list, not preset membership alone, governs the configured folders. |
 | `raw_taxonomy` | Subfolder names that should exist under `raw/` for source-document organization |
 | `example_queries` | 3–5 questions the wiki should answer well — useful for sanity-checking coverage |
 

@@ -30,6 +30,7 @@ from wiki_lint_contract import (
     WIKI_ROOT,
 )
 from wiki_lint_frontmatter import fm_scalar
+from wiki_entity_catalog import load_entity_catalog, validate_configured_layout
 
 
 RawBucketRegistry = tuple[Optional[set[str]], Optional[str]]
@@ -84,6 +85,15 @@ def check_meta_utf8() -> LintFailures:
         except OSError as exc:
             fails.append(("meta-encoding", str(path), f"could not read: {exc}"))
     return fails
+
+
+def check_configured_entity_layout() -> LintFailures:
+    """Configured wikis contain exactly their declared active entity folders."""
+    validation = validate_configured_layout(Path.cwd().resolve(), load_entity_catalog())
+    return [
+        ("entity-configuration", "wiki/domain.md", problem)
+        for problem in validation.errors
+    ]
 
 
 # --------------------------- Tier 1 ---------------------------
@@ -717,6 +727,7 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
 
 
 __all__ = [
+    "check_configured_entity_layout",
     "check_folder_structure",
     "check_log_entry_headers",
     "check_meta_utf8",

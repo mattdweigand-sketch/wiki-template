@@ -1,26 +1,39 @@
 # Wiki Schema Reference
 
-Reference spec for entity types, page format, and source-type summary templates. Load during ingest and any time you author or audit a wiki page. Companion files live in `workflows/ingest/docs/`.
+Reference spec for entity types, page format, and source-type summary templates. Load during ingest and any time you author or audit a wiki page. The machine-readable catalog lives in `scripts/entity-catalog.json` and is consumed only through `scripts/wiki_entity_catalog.py`.
 
 ---
 
 ## Entity Types
 
+<!-- parity:catalog key=entity-catalog -->
 <!-- parity:enum key=entity-table-folders -->
-| Type | Location | Purpose |
-|---|---|---|
-| **Source** | `wiki/sources/` | Summary of a raw document — key facts, quotes, metadata, what it informs |
-| **Product** | `wiki/products/` | A product offered by the organization (see [[domain]]): positioning, users, core jobs, related features |
-| **Feature** | `wiki/features/` | A specific product feature: what it does, who uses it, how it's differentiated |
-| **Persona** | `wiki/personas/` | A user or buyer type: role, goals, pain points, objections, buying authority |
-| **Customer** | `wiki/customers/` | A named customer or segment: profile, use cases, expansion story, risks |
-| **Competitor** | `wiki/competitors/` | A competing vendor: positioning, strengths, weaknesses, where they win/lose |
-| **Concept** | `wiki/concepts/` | A domain concept relevant to this wiki's scope (see [[domain]]): definition, why it matters to the organization, common confusions |
-| **Initiative** | `wiki/initiatives/` | A strategic bet, launch, or program: goal, owner, status, dependencies |
-| **Decision** | `wiki/decisions/` | A decision made, the reasoning, the alternatives rejected, when it should be revisited |
-| **Metric** | `wiki/metrics/` | A KPI or North Star: definition, formula, current value, target, owner |
-| **Person/Team** | `wiki/people/` | A role, team, or stakeholder (focus on role and responsibility, not biography) |
-| **Analysis** | `wiki/analyses/` | A synthesized output: comparison, gap analysis, brief, outline |
+| Type | Location | Presets | Purpose | Review date | Authority freshness | Verification |
+|---|---|---|---|---|---|---|
+| **Analysis** | `wiki/analyses/` | organization, personal, hybrid | A synthesized answer, comparison, brief, or other durable output. | optional | contextual | when-authority-requires |
+| **Competitor** | `wiki/competitors/` | organization, hybrid | A competing vendor, alternative, or substitute and its positioning. | optional | contextual | when-authority-requires |
+| **Concept** | `wiki/concepts/` | organization, personal, hybrid | An idea, term, framework, or mental model used in the configured domain. | optional | stable-meaning | when-authority-requires |
+| **Customer** | `wiki/customers/` | organization, hybrid | A named customer or segment, its use cases, relationship, and risks. | optional | contextual | when-authority-requires |
+| **Decision** | `wiki/decisions/` | organization, personal, hybrid | A historical choice, its rationale, alternatives, and outcome-review checkpoint. | expected | contextual | when-authority-requires |
+| **Feature** | `wiki/features/` | organization, hybrid | A specific customer-facing capability and the jobs it supports. | optional | contextual | when-authority-requires |
+| **Goal** | `wiki/goals/` | organization, personal, hybrid | A desired outcome with status, blockers, and a dated outcome review. | expected | current-state | before-consequential-action |
+| **Health** | `wiki/health/` | personal, hybrid | Health protocols, experiments, practices, and current context; not medical advice. | optional | current-state | before-consequential-action |
+| **Initiative** | `wiki/initiatives/` | organization, hybrid | A strategic program or bet that may coordinate several projects. | optional | contextual | when-authority-requires |
+| **Investment** | `wiki/investments/` | personal, hybrid | An investment thesis, position, current view, risks, and open questions; not financial advice. | optional | current-state | before-consequential-action |
+| **Learning** | `wiki/learnings/` | organization, personal, hybrid | A durable lesson tied to evidence or lived experience. | optional | stable-meaning | when-authority-requires |
+| **Metric** | `wiki/metrics/` | organization, hybrid | A measurement definition, formula, owner, and observed values. | optional | contextual | when-authority-requires |
+| **Partner** | `wiki/partners/` | organization, hybrid | A vendor, integration partner, channel partner, or collaborator. | optional | contextual | when-authority-requires |
+| **Person** | `wiki/people/` | organization, personal, hybrid | An individual, stakeholder, or role and its responsibilities. | optional | stable-meaning | when-authority-requires |
+| **Persona** | `wiki/personas/` | organization, hybrid | A user or buyer archetype with goals, pain points, and authority. | optional | stable-meaning | when-authority-requires |
+| **Policy** | `wiki/policies/` | organization, hybrid | A currently binding rule, its scope, authority, exceptions, and review expectations. | optional | contextual | when-authority-requires |
+| **Process** | `wiki/processes/` | organization, hybrid | An organizational procedure with triggers, inputs, steps, outputs, owners, and exceptions. | optional | contextual | when-authority-requires |
+| **Product** | `wiki/products/` | organization, hybrid | A customer-facing offering, its positioning, users, and core jobs. | optional | contextual | when-authority-requires |
+| **Project** | `wiki/projects/` | organization, personal, hybrid | Bounded work with a concrete output or completion condition. | optional | contextual | when-authority-requires |
+| **Property** | `wiki/properties/` | personal, hybrid | An owner manual for a residence or operated property: systems, maintenance, vendors, records, and status. | optional | current-state | before-consequential-action |
+| **Skill** | `wiki/skills/` | organization, personal, hybrid | A demonstrated capability and the evidence behind proficiency. | optional | stable-meaning | when-authority-requires |
+| **Source** | `wiki/sources/` | organization, personal, hybrid | A summary of one raw artifact and what that evidence supports. | optional | immutable-source | when-authority-requires |
+| **System** | `wiki/systems/` | organization, hybrid | A technical or operational dependency with ownership, interfaces, and failure modes. | optional | contextual | when-authority-requires |
+| **Team** | `wiki/teams/` | organization, hybrid | An organizational group with responsibilities and interfaces. | optional | contextual | when-authority-requires |
 
 ---
 
@@ -34,7 +47,7 @@ The parity-marker comments shown in this reference are doc-tooling markers, not 
 ---
 title: <page title>
 <!-- parity:enum key=entity-type -->
-type: source | product | feature | persona | customer | competitor | concept | initiative | decision | metric | person | analysis
+type: analysis | competitor | concept | customer | decision | feature | goal | health | initiative | investment | learning | metric | partner | person | persona | policy | process | product | project | property | skill | source | system | team
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 review_by: YYYY-MM-DD         # OPTIONAL — outcome-review checkpoint, especially for decisions
@@ -54,7 +67,7 @@ agent_use_cases:                  # which downstream-agent questions this page i
 
 `sources:` accepts, per item: a `raw/` path, a bare kebab-case slug naming a `wiki/sources/` page, a URL, or free-text provenance prefixed `experience`, `web`, `deliverable`, or `source` followed by a colon or space (for example `experience: <brief description>`). `scripts/lint.py` checks the machine-checkable subset of this grammar: `raw/` paths must exist on disk, and bare kebab-case slugs must resolve to source pages.
 
-`review_by` is optional on most pages and recommended when a claim, forecast, or decision should be graded against future outcomes. Decisions should carry a `review_by` checkpoint unless there is a clear reason not to enroll them in the outcome-review loop.
+`review_by` is optional on most pages and recommended when a claim or forecast should be graded against future outcomes. Decisions and goals should carry a checkpoint unless there is a clear reason not to enroll them in the outcome-review loop.
 
 Optional authority metadata:
 
@@ -76,8 +89,8 @@ Freshness defaults guide authoring; lint does not infer them. Write `authority_f
 | authority_freshness | Default for |
 |---|---|
 | `immutable-source` | `sources/` pages |
-| `stable-meaning` | `concepts/`, `people/`, settled `decisions/` |
-| `current-state` | live `products/`, `features/`, `initiatives/`, `metrics/`, or other configured owner pages |
+| `stable-meaning` | `concepts/`, `people/`, `skills/`, `learnings/`, or settled `decisions/` |
+| `current-state` | goals and live health, investment, property, product, feature, initiative, metric, or other configured owner pages |
 | `event-log` | ledger-style pages where newest dated entry matters |
 | `predictive` | opt-in forward-looking `analyses/` or `decisions/`; requires `review_by` |
 | `deprecated` | no default; always explicit |

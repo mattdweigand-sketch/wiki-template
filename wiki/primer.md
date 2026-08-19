@@ -23,8 +23,8 @@ Routing into the wiki by question type. When an agent gets a question, this page
 |---|---|
 | "What is <entity>?" | `wiki/<entity-type>/<slug>.md` directly, or [`index.md`](index.md) if the slug is unknown |
 | "How does X compare to Y?" | Both entity pages; then check [`analyses/`](analyses/) for an existing comparison |
-| "What's our position on X?" | [`decisions/`](decisions/), then [`initiatives/`](initiatives/) |
-| "Who uses X?" | [`customers/`](customers/) and [`personas/`](personas/) |
+| "What's our position on X?" | [`decisions/`](decisions/), then [`index.md`](index.md) for a related active goal, project, or initiative type |
+| "Who is involved?" | [`people/`](people/), then [`index.md`](index.md) for any active team, customer, persona, or partner type |
 | "What does <term> mean here?" | [`glossary.md`](glossary.md) |
 
 Add domain-specific routing rows below as the wiki grows.

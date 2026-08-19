@@ -56,7 +56,7 @@ Collaborative drafting is chat-only by default. Requests like "work with me," "l
 | Concept | `wiki/concepts/` | The artifact names a reusable idea or model | Artifact promotion |
 | Analysis | `wiki/analyses/` | The artifact synthesizes multiple pages or answers a durable question | Competitive comparison |
 | Decision | `wiki/decisions/` | The artifact records a choice and rationale | Adopt typed relationship labels |
-| Initiative update | `wiki/initiatives/` | The artifact changes an active initiative record | Launch scope update |
+| Domain entity update | `wiki/<active-folder>/` | The artifact changes or justifies an entity in the configured active catalog | Goal update, project brief, partner record, system note |
 | Operating style rule | `AGENTS.md`, `REFERENCES.md`, or `workflows/` | The artifact governs writing or naming style for future agents | Naming pattern |
 | Operating rule | `AGENTS.md`, `CONTEXT.md`, `REFERENCES.md`, or `workflows/` | The artifact should change how future agents behave | New maintenance workflow |
 | Script | `scripts/` | The artifact is deterministic and repeatable | Link rebuild, lint check |
@@ -104,7 +104,7 @@ Use this decision order:
 5. **Is it a durable answer or synthesis that does not meet analysis capture?** If yes, audit before deciding whether to update an existing analysis or keep it chat-only.
 6. **Is it a reusable model?** If yes, create or update `wiki/concepts/<slug>.md`.
 7. **Is it a decision?** If yes, create or update `wiki/decisions/<slug>.md`.
-8. **Is it an initiative state change?** If yes, update the relevant `wiki/initiatives/` page.
+8. **Does it change or justify a domain entity?** If yes, update or create the relevant page under a folder listed in `wiki/domain.md` `entity_types_active`.
 9. **Is it an operating instruction for future agents?** If yes, update `AGENTS.md`, root `CONTEXT.md`, `REFERENCES.md`, or the relevant `workflows/` file.
 10. **Is it deterministic repeatable logic?** If yes, propose or add a script under `scripts/`.
 11. **If none apply, discard it and log only if the user asked for a durable check.**

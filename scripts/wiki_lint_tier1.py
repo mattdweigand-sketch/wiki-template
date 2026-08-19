@@ -20,6 +20,7 @@ from wiki_lint_contract import (
 )
 from wiki_lint_page_checks import TIER1_PAGE_CHECKS, TIER1_PATH_CHECKS
 from wiki_lint_repository_checks import (
+    check_configured_entity_layout,
     check_folder_structure,
     check_log_entry_headers,
     check_meta_utf8,
@@ -65,6 +66,7 @@ def run_tier1_lint(
     """Compose repository and page checks while preserving failure order."""
     fails = []  # (check, page_relpath, detail)
     fails.extend(check_folder_structure())
+    fails.extend(check_configured_entity_layout())
     fails.extend(check_no_tracked_raw())
     fails.extend(check_meta_utf8())
     fails.extend(check_stray_tool_tags())

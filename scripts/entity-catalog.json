@@ -1,15 +1,13 @@
 {
   "schema_version": 1,
   "description": "Governed entity-folder, preset, and authoring-semantics catalog for the wiki template.",
-  "presets": [
-    "organization"
-  ],
+  "presets": ["organization", "personal", "hybrid"],
   "types": [
     {
       "folder": "analyses",
       "type": "analysis",
       "purpose": "A synthesized answer, comparison, brief, or other durable output.",
-      "presets": ["organization"],
+      "presets": ["organization", "personal", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "contextual",
       "verification": "when-authority-requires"
@@ -18,7 +16,7 @@
       "folder": "competitors",
       "type": "competitor",
       "purpose": "A competing vendor, alternative, or substitute and its positioning.",
-      "presets": ["organization"],
+      "presets": ["organization", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "contextual",
       "verification": "when-authority-requires"
@@ -27,7 +25,7 @@
       "folder": "concepts",
       "type": "concept",
       "purpose": "An idea, term, framework, or mental model used in the configured domain.",
-      "presets": ["organization"],
+      "presets": ["organization", "personal", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "stable-meaning",
       "verification": "when-authority-requires"
@@ -36,7 +34,7 @@
       "folder": "customers",
       "type": "customer",
       "purpose": "A named customer or segment, its use cases, relationship, and risks.",
-      "presets": ["organization"],
+      "presets": ["organization", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "contextual",
       "verification": "when-authority-requires"
@@ -45,7 +43,7 @@
       "folder": "decisions",
       "type": "decision",
       "purpose": "A historical choice, its rationale, alternatives, and outcome-review checkpoint.",
-      "presets": ["organization"],
+      "presets": ["organization", "personal", "hybrid"],
       "review_date": "expected",
       "authority_freshness": "contextual",
       "verification": "when-authority-requires"
@@ -54,25 +52,70 @@
       "folder": "features",
       "type": "feature",
       "purpose": "A specific customer-facing capability and the jobs it supports.",
-      "presets": ["organization"],
+      "presets": ["organization", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
+      "folder": "goals",
+      "type": "goal",
+      "purpose": "A desired outcome with status, blockers, and a dated outcome review.",
+      "presets": ["organization", "personal", "hybrid"],
+      "review_date": "expected",
+      "authority_freshness": "current-state",
+      "verification": "before-consequential-action"
+    },
+    {
+      "folder": "health",
+      "type": "health",
+      "purpose": "Health protocols, experiments, practices, and current context; not medical advice.",
+      "presets": ["personal", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "current-state",
+      "verification": "before-consequential-action"
+    },
+    {
       "folder": "initiatives",
       "type": "initiative",
       "purpose": "A strategic program or bet that may coordinate several projects.",
-      "presets": ["organization"],
+      "presets": ["organization", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "investments",
+      "type": "investment",
+      "purpose": "An investment thesis, position, current view, risks, and open questions; not financial advice.",
+      "presets": ["personal", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "current-state",
+      "verification": "before-consequential-action"
+    },
+    {
+      "folder": "learnings",
+      "type": "learning",
+      "purpose": "A durable lesson tied to evidence or lived experience.",
+      "presets": ["organization", "personal", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "stable-meaning",
       "verification": "when-authority-requires"
     },
     {
       "folder": "metrics",
       "type": "metric",
       "purpose": "A measurement definition, formula, owner, and observed values.",
-      "presets": ["organization"],
+      "presets": ["organization", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "partners",
+      "type": "partner",
+      "purpose": "A vendor, integration partner, channel partner, or collaborator.",
+      "presets": ["organization", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "contextual",
       "verification": "when-authority-requires"
@@ -81,7 +124,7 @@
       "folder": "people",
       "type": "person",
       "purpose": "An individual, stakeholder, or role and its responsibilities.",
-      "presets": ["organization"],
+      "presets": ["organization", "personal", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "stable-meaning",
       "verification": "when-authority-requires"
@@ -90,27 +133,90 @@
       "folder": "personas",
       "type": "persona",
       "purpose": "A user or buyer archetype with goals, pain points, and authority.",
-      "presets": ["organization"],
+      "presets": ["organization", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "stable-meaning",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "policies",
+      "type": "policy",
+      "purpose": "A currently binding rule, its scope, authority, exceptions, and review expectations.",
+      "presets": ["organization", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "processes",
+      "type": "process",
+      "purpose": "An organizational procedure with triggers, inputs, steps, outputs, owners, and exceptions.",
+      "presets": ["organization", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
       "folder": "products",
       "type": "product",
       "purpose": "A customer-facing offering, its positioning, users, and core jobs.",
-      "presets": ["organization"],
+      "presets": ["organization", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "projects",
+      "type": "project",
+      "purpose": "Bounded work with a concrete output or completion condition.",
+      "presets": ["organization", "personal", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "properties",
+      "type": "property",
+      "purpose": "An owner manual for a residence or operated property: systems, maintenance, vendors, records, and status.",
+      "presets": ["personal", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "current-state",
+      "verification": "before-consequential-action"
+    },
+    {
+      "folder": "skills",
+      "type": "skill",
+      "purpose": "A demonstrated capability and the evidence behind proficiency.",
+      "presets": ["organization", "personal", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "stable-meaning",
       "verification": "when-authority-requires"
     },
     {
       "folder": "sources",
       "type": "source",
       "purpose": "A summary of one raw artifact and what that evidence supports.",
-      "presets": ["organization"],
+      "presets": ["organization", "personal", "hybrid"],
       "review_date": "optional",
       "authority_freshness": "immutable-source",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "systems",
+      "type": "system",
+      "purpose": "A technical or operational dependency with ownership, interfaces, and failure modes.",
+      "presets": ["organization", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
+      "verification": "when-authority-requires"
+    },
+    {
+      "folder": "teams",
+      "type": "team",
+      "purpose": "An organizational group with responsibilities and interfaces.",
+      "presets": ["organization", "hybrid"],
+      "review_date": "optional",
+      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     }
   ]

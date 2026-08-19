@@ -1925,6 +1925,64 @@ run_case(
     absent=("decisions/target.md",),
 )
 
+
+def seed_goal_without_review_by(root):
+    (root / "wiki" / "goals").mkdir(exist_ok=True)
+    (root / "wiki" / "goals" / "target-goal.md").write_text(
+        '---\ntitle: "Target Goal"\ntype: goal\ncreated: 2026-06-01\nupdated: 2026-06-01\n'
+        'sources: ["experience: lint eval fixture"]\ntags: [fixture]\nconfidence: medium\n'
+        'agent_use_cases:\n  - lint eval fixture\n---\n\n'
+        f'{DECISION_BODY}\n\n'
+        '## Open questions / gaps\n\n- Fixture page; no real questions.\n')
+    append(root, "wiki/index.md", "| [target-goal.md](goals/target-goal.md) | fixture goal |\n")
+    append(root, "wiki/concepts/alpha.md", "- Related: [[target-goal]]\n")
+
+
+run_case(
+    "goal-review-by-missing-fires",
+    seed_goal_without_review_by,
+    args=(), expect_code=0,
+    expect=("goals and decisions with no review_by", "goals/target-goal.md"),
+)
+run_case(
+    "goal-review-by-present-not-flagged",
+    lambda r: (
+        seed_goal_without_review_by(r),
+        edit(r, "wiki/goals/target-goal.md", "confidence: medium",
+             "confidence: medium\nauthority_kind: none\nreview_by: 2026-12-31"),
+    ),
+    args=(), expect_code=0,
+    absent=("goals/target-goal.md",),
+)
+
+
+def configure_fixture_domain(root, active_types, *, preset="personal", version=True):
+    lines = [
+        "---", "title: Domain Config", "type: domain", "created: 2026-06-01",
+        "updated: 2026-06-01", "status: configured",
+    ]
+    if version:
+        lines.extend(("configuration_version: 2", f"entity_preset: {preset}"))
+    lines.append("entity_types_active:")
+    lines.extend(f"  - {value}" for value in active_types)
+    lines.extend(("raw_taxonomy: []", "example_queries: []", "---", "", "# Domain Config", ""))
+    (root / "wiki" / "domain.md").write_text("\n".join(lines))
+
+
+run_case(
+    "configured-layout-drift-fails-tier1",
+    lambda r: configure_fixture_domain(r, ("source",)),
+    expect_code=1,
+    expect=("entity-configuration", "inactive entity folders present: concepts"),
+)
+run_case(
+    "legacy-configuration-surfaces-tier2-advisory",
+    lambda r: configure_fixture_domain(r, ("source", "concept"), version=False),
+    args=(), expect_code=0,
+    expect=("legacy domain configuration migration advisories",
+            "legacy configuration has no configuration_version or entity_preset"),
+)
+
 # ---- Tier 1: meta-page dangling links (promoted from Tier-2; gates commit) ----
 run_case(
     "meta-dangling-link-fires",
