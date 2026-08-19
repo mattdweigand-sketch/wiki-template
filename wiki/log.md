@@ -11,6 +11,16 @@ Append-only history of ingest, lint, query, and decision-capture sessions. Newes
 
 ---
 
+## [2026-08-19] maintenance | governed domain refactor
+
+Change: Replaced duplicated entity assumptions with a validated 24-type catalog, organization/personal/hybrid presets, a read-only setup planner, exact configured-layout validation, and goal/decision review guidance. Added exact catalog/schema and related-label parity, operational-document reachability, archive-aware audit reporting, strict local-only raw-source policy, and current root/source/design/setup documentation. Consolidated seven unreachable legacy workflow guides into the live routes and removed the detached copies.
+Reason: Make the template configurable for organization, personal, and hybrid wikis without letting setup invent migrations, lint infer authority, or duplicated documentation drift from production contracts.
+Rejected alternative: Let each consumer read catalog JSON independently, perform automatic multi-file setup migrations, retain legacy guides as standalone references, or infer authority metadata from entity folders.
+Accepted tradeoff: Catalog and route changes now require coordinated contract/eval updates, and setup remains a deliberate plan/apply/post-validate workflow; this adds maintenance ceremony in exchange for deterministic boundaries and protection of nonempty user folders.
+Validation: PASS - full eval on Python 3.11.15 and 3.12.13; Python 3.9/3.11 CI matrix configured; 24-row schema parity; document reachability and audit-contract adversarial cases; discoverability; wrapper parity; Tier-1 lint; Markdown targets; transaction status; `git diff --check`.
+
+---
+
 ## [2026-08-19] maintenance | public personal-account port
 
 Change: Published the complete repository history at `mattdweigand-sketch/wiki-template`, made that public repository the canonical clone URL, and retained the organization-hosted repository as a synchronized secondary remote.

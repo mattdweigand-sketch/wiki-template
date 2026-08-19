@@ -4,7 +4,10 @@ Source artifacts live here, organized by source type. Drop a file into the right
 
 `raw/` is immutable. Never edit a file already here. New sources append; existing files stay as the canonical artifact that wiki citations point back to.
 
-This folder is gitignored by default since source documents can be sensitive. Only `.gitkeep` and this README are tracked unless a source artifact is intentionally force-added for a committed example.
+This folder is gitignored because source documents can be sensitive. Only
+`.gitkeep` and this README are tracked. Raw bucket directories and source
+artifacts stay local and must not be force-added; use the export workflow when
+you need a complete local or explicitly approved off-device backup.
 
 ## Subfolders
 

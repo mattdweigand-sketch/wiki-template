@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Verify schema vocabulary docs stay in parity with the lint contract.
+"""Verify schema documentation stays in parity with production authorities.
 
-The frontmatter vocabularies are canonical in scripts/wiki_lint_contract.py and
-re-exported by the stable scripts/lint.py facade.
-The documentation enumerations in AGENTS.md, wiki/SCHEMA.md, and REFERENCES.md
-must carry <!-- parity:enum key=... --> markers and match those constants by
-set equality. This is the checkable half of the Schema Doc Parity Contract in
-workflows/maintenance/eval.md.
+The entity catalog is canonical in scripts/entity-catalog.json and is consumed
+through scripts/wiki_entity_catalog.py. Other frontmatter vocabularies are
+canonical in scripts/wiki_lint_contract.py. Duplicated documentation in
+AGENTS.md, wiki/SCHEMA.md, and REFERENCES.md carries parity markers and must
+match those authorities. This is the checkable half of the Schema Doc Parity
+Contract in workflows/maintenance/eval.md.
 
 Run directly, or via the schema-docs suite in scripts/wiki_eval.py (which also
 runs seeded negative cases from scripts/wiki_eval_schema_docs.py):
@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 import wiki_lint_contract
+from wiki_entity_catalog import CatalogError, EntityTypeSpec, load_entity_catalog
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -38,12 +39,15 @@ SITES = (
     ("freshness-defaults",   "wiki/SCHEMA.md", "VALID_AUTHORITY_FRESHNESS", "table-first-column"),
     ("source-type-table",    "wiki/SCHEMA.md", "VALID_SOURCE_TYPE",         "table-first-column"),
     ("confidence-values",    "wiki/SCHEMA.md", "VALID_CONFIDENCE",          "bullet-enum"),
+    ("related-labels-agents", "AGENTS.md",     "RELATED_LABELS",            "related-bullets"),
+    ("related-labels-schema", "wiki/SCHEMA.md", "RELATED_LABELS",           "table-related-label"),
     ("related-labels",       "REFERENCES.md",  "RELATED_LABELS",            "table-first-column"),
 )
 
 MARKER_RE = re.compile(
     r"<!--\s*parity:enum\s+key=(?P<key>[a-z0-9]+(?:-[a-z0-9]+)*)\s*-->"
 )
+CATALOG_MARKER = "<!-- parity:catalog key=entity-catalog -->"
 COMMENT_RE = re.compile(r"<!--[\s\S]*?-->")
 PIPE_ENUM_RE = re.compile(r"^(?P<field>[A-Za-z_][A-Za-z0-9_-]*):\s*(?P<values>.+)$")
 FOLDER_RE = re.compile(r"wiki/([a-z0-9]+(?:-[a-z0-9]+)*)/")
@@ -144,6 +148,8 @@ def _table_rows_after(lines: list[str], marker_index: int) -> tuple[list[list[st
         stripped = lines[i].strip()
         if not stripped:
             continue
+        if COMMENT_RE.fullmatch(stripped):
+            continue
         if stripped.startswith("|"):
             start = i
             break
@@ -240,6 +246,60 @@ def _extract_bullet_enum(lines: list[str], marker_index: int) -> tuple[set[str] 
     return values, None
 
 
+def _extract_related_bullets(
+    lines: list[str], marker_index: int
+) -> tuple[set[str] | None, str | None]:
+    start = None
+    for i in range(marker_index + 1, len(lines)):
+        stripped = lines[i].strip()
+        if not stripped:
+            continue
+        if stripped.startswith("- "):
+            start = i
+            break
+        return None, "expected relationship-label bullet list after marker"
+    if start is None:
+        return None, "expected relationship-label bullet list after marker"
+
+    values: set[str] = set()
+    start_indent = len(lines[start]) - len(lines[start].lstrip())
+    for line in lines[start:]:
+        stripped = line.strip()
+        if not stripped:
+            break
+        indent = len(line) - len(line.lstrip())
+        if indent < start_indent:
+            break
+        if not stripped.startswith("- "):
+            break
+        match = re.match(r"-\s+`([^`:]+):[^`]*`", stripped.replace("\\`", "`"))
+        if not match:
+            return None, f"relationship bullet lacks a typed label: {stripped!r}"
+        values.add(_clean_token(match.group(1)))
+    if not values:
+        return None, "relationship-label bullet list yielded no values"
+    return values, None
+
+
+def _extract_table_related_label(
+    lines: list[str], marker_index: int
+) -> tuple[set[str] | None, str | None]:
+    rows, err = _table_rows_after(lines, marker_index)
+    if err:
+        return None, err
+    assert rows is not None
+    values: set[str] = set()
+    for row in rows[1:]:
+        if _is_divider_row(row):
+            continue
+        if not row or ":" not in row[0]:
+            return None, f"relationship table row lacks a typed label: {row!r}"
+        values.add(_clean_token(row[0].split(":", 1)[0]))
+    if not values:
+        return None, "relationship-label table yielded no values"
+    return values, None
+
+
 def _extract_inline_list(lines: list[str], marker_index: int) -> tuple[set[str] | None, str | None]:
     found = _first_nonblank_after(lines, marker_index)
     if not found:
@@ -271,6 +331,10 @@ def _extract_values(
         return _extract_table_location(lines, marker_index)
     if mode == "bullet-enum":
         return _extract_bullet_enum(lines, marker_index)
+    if mode == "related-bullets":
+        return _extract_related_bullets(lines, marker_index)
+    if mode == "table-related-label":
+        return _extract_table_related_label(lines, marker_index)
     if mode == "inline-list":
         return _extract_inline_list(lines, marker_index)
     return None, f"unknown extraction mode {mode!r}"
@@ -280,15 +344,109 @@ def _format_values(values: set[str]) -> str:
     return ", ".join(sorted(values))
 
 
+def _catalog_row(entry: EntityTypeSpec) -> tuple[str, ...]:
+    return (
+        entry.type_name,
+        entry.folder,
+        ", ".join(entry.presets),
+        entry.purpose,
+        entry.review_date,
+        entry.authority_freshness,
+        entry.verification,
+    )
+
+
+def _catalog_table_problems(repo_root: Path) -> list[str]:
+    path = repo_root / "wiki/SCHEMA.md"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        return [f"wiki/SCHEMA.md: entity-catalog: cannot read catalog table: {exc}"]
+    markers = [i for i, line in enumerate(lines) if line.strip() == CATALOG_MARKER]
+    if not markers:
+        return ["wiki/SCHEMA.md: entity-catalog: missing parity marker"]
+    if len(markers) > 1:
+        return [
+            f"wiki/SCHEMA.md: entity-catalog: duplicate parity marker ({len(markers)} occurrences)"
+        ]
+    rows, err = _table_rows_after(lines, markers[0])
+    if err:
+        return [f"wiki/SCHEMA.md: entity-catalog: extraction failure: {err}"]
+    assert rows is not None
+    expected_header = [
+        "type",
+        "location",
+        "presets",
+        "purpose",
+        "review date",
+        "authority freshness",
+        "verification",
+    ]
+    if [cell.lower() for cell in rows[0]] != expected_header:
+        return ["wiki/SCHEMA.md: entity-catalog: table header differs from the contract"]
+    try:
+        catalog = load_entity_catalog(repo_root / "scripts/entity-catalog.json")
+    except CatalogError as exc:
+        return [f"scripts/entity-catalog.json: cannot validate catalog parity: {exc}"]
+
+    documented: dict[str, tuple[str, ...]] = {}
+    problems: list[str] = []
+    for row in rows[1:]:
+        if _is_divider_row(row):
+            continue
+        if len(row) != len(expected_header):
+            problems.append(
+                "wiki/SCHEMA.md: entity-catalog: table row has "
+                f"{len(row)} columns instead of {len(expected_header)}"
+            )
+            continue
+        match = FOLDER_RE.search(row[1])
+        if not match:
+            problems.append(
+                "wiki/SCHEMA.md: entity-catalog: Location cell lacks "
+                f"wiki/<folder>/ value: {row[1]!r}"
+            )
+            continue
+        folder = match.group(1)
+        if folder in documented:
+            problems.append(f"wiki/SCHEMA.md: entity-catalog: duplicate row for {folder}")
+            continue
+        documented[folder] = (
+            _clean_token(row[0]).lower(),
+            folder,
+            row[2],
+            row[3],
+            row[4],
+            row[5],
+            row[6],
+        )
+
+    expected = {entry.folder: _catalog_row(entry) for entry in catalog.entries}
+    for folder in sorted(set(expected) - set(documented)):
+        problems.append(f"wiki/SCHEMA.md: entity-catalog: missing row for {folder}")
+    for folder in sorted(set(documented) - set(expected)):
+        problems.append(f"wiki/SCHEMA.md: entity-catalog: extra row for {folder}")
+    for folder in sorted(set(expected) & set(documented)):
+        if expected[folder] == documented[folder]:
+            continue
+        for index, column in enumerate(expected_header):
+            if expected[folder][index] != documented[folder][index]:
+                problems.append(
+                    f"wiki/SCHEMA.md: entity-catalog: {folder} {column} drift; "
+                    f"expected {expected[folder][index]!r}, got {documented[folder][index]!r}"
+                )
+    return problems
+
+
 def schema_doc_parity_problems(
     repo_root: Path = REPO_ROOT,
     constants: dict | None = None,
 ) -> list[str]:
-    """Check marked doc enumerations against their canonical constants.
+    """Check marked schema docs against their canonical production authorities.
 
-    Returns a list of human-readable problems (empty when all marked doc sites
-    match). Catches drift, missing/duplicate/unknown markers, malformed marker
-    comments, and extraction failures at registered sites.
+    Returns human-readable problems (empty when all sites match). Catches exact
+    catalog-row drift plus enum drift, missing/duplicate/unknown markers,
+    malformed marker comments, and extraction failures at registered sites.
     """
     problems: list[str] = []
     constant_sets = _live_constants() if constants is None else {
@@ -382,12 +540,13 @@ def schema_doc_parity_problems(
                 f"{file_name}: {key}: enum drift extra-in-doc: {_format_values(extra)}"
             )
 
+    problems.extend(_catalog_table_problems(repo_root))
     return problems
 
 
 def main() -> int:
     argparse.ArgumentParser(
-        description="Verify marked schema-document enumerations match lint contract constants.",
+        description="Verify marked schema documentation matches production authorities.",
     ).parse_args()
     problems = schema_doc_parity_problems()
     if problems:
@@ -395,7 +554,7 @@ def main() -> int:
         for problem in problems:
             print(f"  - {problem}")
         return 1
-    print("Schema-doc enumerations match lint contract constants.")
+    print("Schema documentation matches the entity catalog and lint-contract constants.")
     return 0
 
 

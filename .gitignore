@@ -4,8 +4,12 @@
 *.swp
 *.swo
 
+# Python evaluation caches are local runtime artifacts.
+__pycache__/
+*.py[cod]
+
 # Source documents are user-specific and may be sensitive.
-# Override per-project if you want to version your raw corpus.
+# Hooks and Tier-1 lint also reject tracked raw artifacts.
 raw/*
 !raw/.gitkeep
 !raw/README.md

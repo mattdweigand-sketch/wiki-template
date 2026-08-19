@@ -1,6 +1,6 @@
 {
   "description": "Canonical raw/ source-artifact bucket taxonomy. scripts/lint.py reads this file to validate that every raw/ subfolder is a known bucket. This tracked file is the source of truth for the taxonomy because raw/ artifacts are gitignored.",
-  "policy": "raw/ holds source artifacts. Existing raw files are immutable, and source artifacts stay local unless a user explicitly chooses to version an example. A pre-commit hook (scripts/hooks/pre-commit) and a lint Tier-1 check block committed raw artifacts while allowing raw/.gitkeep and raw/README.md.",
+  "policy": "raw/ holds source artifacts. Existing raw files are immutable, and source artifacts stay local and untracked. A pre-commit hook and a lint Tier-1 check block committed raw artifacts while allowing only raw/.gitkeep and raw/README.md. Complete backups use the export workflow.",
   "buckets": {
     "customer-research": "Customer interview notes, support findings, and user research",
     "internal-memos": "Strategy, planning, and operating memos",

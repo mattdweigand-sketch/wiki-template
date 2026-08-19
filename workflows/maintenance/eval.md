@@ -1,6 +1,6 @@
 # Wiki Eval
 
-Run this workflow when the task is to verify the wiki system itself: scripts, durable file updates, recoverable transactions, gates, ledgers, backlink rebuilds, export behavior, stale-text sweep proof, discoverability, wrapper parity, schema-doc parity, and the deterministic Tier-1 gate. The `SUITES` registry in `scripts/wiki_eval.py` is the authoritative list of what runs.
+Run this workflow when the task is to verify the wiki system itself: scripts, durable file updates, recoverable transactions, gates, ledgers, backlink rebuilds, export behavior, stale-text sweep proof, discoverability, wrapper parity, schema-doc parity, entity-catalog behavior, document reachability, and the deterministic Tier-1 gate. The `SUITES` registry in `scripts/wiki_eval.py` is the authoritative list of what runs.
 
 The tooling supports Python 3.9 and newer. The eval runner prints the exact runtime version in its first line, and CI runs the full checks on Python 3.9 and 3.11 so the user-facing `python3` commands retain that compatibility contract.
 
@@ -52,15 +52,19 @@ A migration keeps the shape of the existing registries: a `description` field na
 
 ## Schema Doc Parity Contract
 
-The frontmatter vocabularies (entity folders, entity types, `confidence`, `source_type`, `authority_kind`, `authority_freshness`, and related-page labels) are canonical as constants in `scripts/wiki_lint_contract.py`. The enumerations in `wiki/SCHEMA.md`, `REFERENCES.md`, and `AGENTS.md` are documentation of those constants, each marked with a `<!-- parity:enum key=... -->` comment. When changing a vocabulary, update the constant and every marked doc site in the same change.
+Entity folders, frontmatter types, preset memberships, purposes, review-date expectations, authority-freshness guidance, and verification guidance are canonical in `scripts/entity-catalog.json` and consumed through `scripts/wiki_entity_catalog.py`. Other frontmatter vocabularies (`confidence`, `source_type`, `authority_kind`, `authority_freshness`, and related-page labels) are canonical in `scripts/wiki_lint_contract.py`. Duplicated enumerations in `wiki/SCHEMA.md`, `REFERENCES.md`, and `AGENTS.md` carry parity markers.
 
-`python3 scripts/check_schema_doc_parity.py` enforces set equality per marker. The `schema-docs` suite runs it via `scripts/wiki_eval_schema_docs.py`, which also seeds negative fixtures so the checker cannot go vacuous. It deliberately does not check prose meanings, table right-hand columns, or ordering: those are editorial.
+`python3 scripts/check_schema_doc_parity.py` enforces the exact 24-row catalog table and set equality at every registered enum marker, including all three related-label sites. The `schema-docs` suite runs seeded field and site drift fixtures so the checker cannot go vacuous. Ordering remains editorial; catalog row content and enum membership do not.
 
 A new doc enumeration of a canonical vocabulary must either defer to the source by name without re-enumerating, or carry a parity marker. An unmarked enumeration is a review finding, not an allowed state. A parity marker outside a registered doc site is also a failure; register the site in `scripts/check_schema_doc_parity.py` when extending coverage.
 
+## Operational Document Reachability Contract
+
+`scripts/document-reachability.json` declares graph roots, operational directories, exclusions, and intentional standalone documents. `scripts/check_document_reachability.py` follows local Markdown links only and fails on missing targets or operational documents that no declared route reaches. Change the manifest only when routing scope changes; do not add an obsolete document as standalone merely to silence the check.
+
 ## Load / Skip
 
-- **Load:** `scripts/wiki_eval.py`; `scripts/wiki-wrapper-contract.json`, `scripts/render_wiki_wrappers.py`, and `scripts/check_wrapper_parity.py` when the task concerns wrappers; `scripts/wiki_transactions.py` when the task concerns recovery state; `scripts/check_schema_doc_parity.py` when the task concerns schema docs; `scripts/check_discoverability.py` when the task concerns production interfaces; any failing suite output if a run fails.
+- **Load:** `scripts/wiki_eval.py`; `scripts/wiki-wrapper-contract.json`, `scripts/render_wiki_wrappers.py`, and `scripts/check_wrapper_parity.py` when the task concerns wrappers; `scripts/wiki_transactions.py` when the task concerns recovery state; `scripts/entity-catalog.json`, `scripts/wiki_entity_catalog.py`, and `scripts/check_schema_doc_parity.py` when the task concerns configured types or schema docs; `scripts/document-reachability.json` and `scripts/check_document_reachability.py` when the task concerns document routing; `scripts/check_discoverability.py` when the task concerns production interfaces; any failing suite output if a run fails.
 - **Skip:** wiki entity pages, raw sources, unrelated workflow files, and Tier-2/Tier-3 content review.
 
 ## Steps

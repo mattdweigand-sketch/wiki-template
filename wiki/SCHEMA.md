@@ -149,6 +149,7 @@ Use lightweight labels in `## Related pages` to say why two pages are connected.
 
 Allowed labels:
 
+<!-- parity:enum key=related-labels-schema -->
 | Label | Meaning |
 |---|---|
 | `Supports: [[page]]` | This page strengthens, evidences, or confirms the linked page. |

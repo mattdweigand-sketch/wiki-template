@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "description": "Operational Markdown reachability from canonical wiki entry points.",
+  "roots": [
+    "AGENTS.md",
+    "CONTEXT.md",
+    "README.md",
+    "REFERENCES.md",
+    "SETUP.md"
+  ],
+  "operational_directories": [
+    "workflows"
+  ],
+  "excluded_directories": [
+    ".claude",
+    ".codex",
+    "archive",
+    "raw",
+    "scripts/fixtures",
+    "wiki"
+  ],
+  "standalone_documents": [
+    "wiki/SCHEMA.md",
+    "wiki/design-notes.md"
+  ]
+}

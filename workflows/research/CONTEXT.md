@@ -32,6 +32,9 @@ Analysis capture is a prose workflow with an executable approval gate. `scripts/
 
 1. Read `wiki/index.md` and `wiki/primer.md` if unsure where to start.
 2. Read only the relevant pages.
+   Start with the 3-8 pages most likely to answer the question. If that set is
+   insufficient, name the corpus gap instead of expanding into an unbounded
+   scan or silently re-deriving the answer from `raw/`.
 3. Synthesize a clear answer with citations to wiki pages using `[[page-name]]`.
 4. Follow the Analysis Capture section below when the answer should be filed as a citable analysis.
 5. Append to `wiki/log.md` only when an analysis was filed or the user explicitly asked for a durable query record:
@@ -48,6 +51,14 @@ python3 scripts/capture_gate.py --artifact "<answer summary>" --phase accepted \
 ```
 
 On `APPROVAL REQUIRED`, follow `AGENTS.md`: ask first, re-run with `--approved` after the user approves, then run `python3 scripts/validate_capture_runs.py`. Save to `wiki/analyses/<slug>.md`, add or update the `wiki/index.md` row, run `python3 scripts/rebuild_referenced_by.py`, and run `python3 scripts/lint.py --tier1`. The rebuild applies one recoverable generation; preserve `.wiki-transactions/` and diagnose any named conflict or corruption instead of deleting recovery state. Notify in one line: `Filed as analyses/<slug>.md.` If any criterion fails, answer in chat only and do not write `wiki/log.md`.
+
+Name an analysis for the question, not its presumed answer. A filed analysis
+normally runs 300-800 words and uses this body shape: `## Summary`,
+`## Question`, `## Key findings`, topic sections as needed,
+`## Open questions and gaps`, and `## Related pages`. Cite source-backed
+claims, mark inference explicitly, and make uncertainty visible. A brief may
+compress that shape to at most 400 words. If the material needs substantially
+more space, prefer multiple focused analyses or durable entity-page updates.
 
 ```text
 ## [YYYY-MM-DD] query | <question summary>

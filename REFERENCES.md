@@ -46,7 +46,7 @@ Detailed workflow ownership:
 | Rotate log | `workflows/maintenance/rotate-log.md` | Manual `wiki/log.md` archival when `log_rotation_due` fires, preserving payload under `archive/wiki-log/`. |
 | Synthesis | `workflows/maintenance/synthesize.md` | Drafting and approving corpus-level distillations: overview refreshes, gap resolutions, cluster analyses, primer updates, and open questions. |
 | Review | `workflows/maintenance/review.md` | Outcome review for due `review_by` checkpoints: realized outcome, confidence changes, next checkpoint, or closure. |
-| Export | `workflows/maintenance/export.md` | Local corpus backup, including gitignored raw sources, without reading wiki content or uploading anywhere. |
+| Export | `workflows/maintenance/export.md` | Local corpus backup, including gitignored raw sources, with an optional upload only when the user supplies an explicit destination. |
 
 The main control mechanisms are:
 
@@ -57,7 +57,7 @@ The main control mechanisms are:
 | Link graph | Authors maintain `## Related pages`; `scripts/rebuild_referenced_by.py` regenerates `## Referenced by` from one snapshot and applies the generation as a recoverable transaction. |
 | Deterministic lint | `scripts/lint.py --tier1` catches structural failures and malformed proof. Full lint also surfaces Tier-2 candidates for human or agent judgment. |
 | Durable writes | Stable-lock atomic ledger replacement and `.wiki-transactions/` protect interrupted, concurrent, and multi-file updates; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
-| Live evals | `/wiki-eval` runs `scripts/wiki_eval.py`, the fixture-backed checks for durable files, transactions, lint, backlinks, gates, ledgers, export, stale-text sweep proof, log rotation, review due, discoverability, generated wrapper parity, and schema-doc parity. |
+| Live evals | `/wiki-eval` runs `scripts/wiki_eval.py`, the fixture-backed checks for durable files, transactions, lint, backlinks, gates, ledgers, export, stale-text sweep proof, log rotation, review due, discoverability, generated wrapper parity, schema-doc parity, entity-catalog behavior, and operational-document reachability. |
 | Outcome review | `scripts/review_due.py` surfaces due `review_by` checkpoints; `workflows/maintenance/review.md` records what happened and whether confidence changes. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
 | Approval gate | `scripts/capture_gate.py` guards analysis capture, artifact-promotion apply routes, and reviewed synthesis promotion (`--kind=synthesis`), then records approved boundaries in `scripts/capture-runs.jsonl`. |
@@ -114,7 +114,9 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/lint-adjudications.json` | Settled Tier-2 lint judgments with reasons and dates; lint suppresses what it lists |
 | `scripts/capture-runs.jsonl` | Append-only logical approval ledger installed through stable-lock atomic full-file replacement, never in-place append |
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the seven generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
-| `scripts/check_schema_doc_parity.py` | Verifies duplicated schema vocabulary docs stay in parity with `scripts/wiki_lint_contract.py` constants |
+| `scripts/check_schema_doc_parity.py` | Verifies the full schema catalog table against `scripts/entity-catalog.json` and duplicated vocabularies against `scripts/wiki_lint_contract.py` constants |
+| `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
+| `scripts/check_document_reachability.py` | Follows Markdown links from declared roots and rejects missing routes or unreachable operational documents |
 | `scripts/check_discoverability.py` | Scope-aware AST check for typed, distinctive production interfaces; eval and fixture findings remain advisory |
 | `.wiki-transactions/` | Gitignored, non-disposable recovery authority for log rotation and backlink rebuild; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
 | `scripts/fixtures/` | Fixture data for live tooling evals |

@@ -2,11 +2,10 @@
 """Regression eval for check_schema_doc_parity.py.
 
 Negative controls: a minimal parity-clean fixture tree is seeded with each
-problem class the checker claims to catch (missing value, extra value, missing
-marker, duplicate marker, unknown key, malformed marker, unregistered marker,
-and unparseable following block) and each must report the corresponding
-message, so the checker cannot silently go vacuous. Positive controls: the
-clean fixture and the live repo schema docs both pass.
+problem class the checker claims to catch, including drift at all three
+relationship-label sites and in the governed catalog table. Each must report
+the corresponding message so the checker cannot silently go vacuous. Positive
+controls: the clean fixture and the live repo schema docs both pass.
 """
 
 from __future__ import annotations
@@ -17,8 +16,10 @@ from pathlib import Path
 
 from check_schema_doc_parity import _live_constants, schema_doc_parity_problems
 from eval_lib import Results
+from wiki_entity_catalog import load_entity_catalog
 
 results = Results()
+ENTITY_CATALOG_SOURCE = Path(__file__).with_name("entity-catalog.json")
 
 PREFERRED_ORDER = {
     "VALID_CONFIDENCE": ("high", "medium", "low", "contested"),
@@ -63,7 +64,13 @@ def build_clean_tree(root: Path, constants: dict[str, set[str]]) -> None:
     """A minimal parity-clean schema-doc tree, generated from constants so the
     fixture cannot drift from itself."""
     (root / "wiki").mkdir(parents=True)
+    (root / "scripts").mkdir(parents=True)
+    (root / "scripts" / "entity-catalog.json").write_text(
+        ENTITY_CATALOG_SOURCE.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
+    catalog = load_entity_catalog()
     folders = sorted(constants["FOLDER_TYPE_KEYS"])
     types = sorted(constants["FOLDER_TYPE_VALUES"])
     source_types = ordered(constants, "VALID_SOURCE_TYPE")
@@ -75,13 +82,20 @@ def build_clean_tree(root: Path, constants: dict[str, set[str]]) -> None:
     (root / "AGENTS.md").write_text(
         "# Fixture Agents\n\n"
         "<!-- parity:enum key=entity-folders -->\n"
-        f"**Entity types:** {', '.join(folders)}\n",
+        f"**Entity types:** {', '.join(folders)}\n\n"
+        "<!-- parity:enum key=related-labels-agents -->\n"
+        + "\n".join(
+            f"- `{label}: [[page]]` - Fixture meaning" for label in labels
+        )
+        + "\n",
         encoding="utf-8",
     )
 
     entity_rows = "\n".join(
-        f"| **{folder.title()}** | `wiki/{folder}/` | Fixture purpose |"
-        for folder in folders
+        f"| **{entry.type_name.title()}** | `wiki/{entry.folder}/` | "
+        f"{', '.join(entry.presets)} | {entry.purpose} | {entry.review_date} | "
+        f"{entry.authority_freshness} | {entry.verification} |"
+        for entry in catalog.entries
     )
     freshness_rows = "\n".join(
         f"| `{value}` | Fixture default |" for value in authority_freshness
@@ -96,9 +110,10 @@ def build_clean_tree(root: Path, constants: dict[str, set[str]]) -> None:
     schema = (
         "# Wiki Schema Reference\n\n"
         "## Entity Types\n\n"
+        "<!-- parity:catalog key=entity-catalog -->\n"
         "<!-- parity:enum key=entity-table-folders -->\n"
-        "| Type | Location | Purpose |\n"
-        "|---|---|---|\n"
+        "| Type | Location | Presets | Purpose | Review date | Authority freshness | Verification |\n"
+        "|---|---|---|---|---|---|---|\n"
         f"{entity_rows}\n\n"
         "## Page Format\n\n"
         "\\`\\`\\`yaml\n"
@@ -130,6 +145,13 @@ def build_clean_tree(root: Path, constants: dict[str, set[str]]) -> None:
         "**Typed relationship labels:** The vocabulary is enforced by "
         "`RELATED_LABELS` in `scripts/lint.py`, the meanings table lives in "
         "`REFERENCES.md`, and the `schema-docs` eval suite enforces this.\n\n"
+        "<!-- parity:enum key=related-labels-schema -->\n"
+        "| Label | Meaning |\n"
+        "|---|---|\n"
+        + "\n".join(
+            f"| `{label}: [[page]]` | Fixture meaning |" for label in labels
+        )
+        + "\n\n"
         "## Source-Type Summary Templates\n\n"
         "<!-- parity:enum key=source-type-table -->\n"
         "| `source_type` | Trustworthy for | Treat with care | Summary should emphasize |\n"
@@ -182,6 +204,32 @@ def add_extra_label(root: Path) -> None:
         path,
         "| `Related` | Fixture meaning |\n\n",
         "| `Related` | Fixture meaning |\n| `Bogus` | Fixture meaning |\n\n",
+    )
+
+
+def drop_agent_related_label(root: Path) -> None:
+    replace_once(
+        root / "AGENTS.md",
+        "- `Supports: [[page]]` - Fixture meaning\n",
+        "",
+    )
+
+
+def drop_schema_related_label(root: Path) -> None:
+    replace_once(
+        root / "wiki" / "SCHEMA.md",
+        "| `Supports: [[page]]` | Fixture meaning |\n",
+        "",
+    )
+
+
+def drift_catalog_purpose(root: Path) -> None:
+    catalog = load_entity_catalog()
+    purpose = catalog.entries[0].purpose
+    replace_once(
+        root / "wiki" / "SCHEMA.md",
+        f"| {purpose} |",
+        "| Drifted purpose. |",
     )
 
 
@@ -244,8 +292,8 @@ def break_inline_list(root: Path) -> None:
 def break_table_location(root: Path) -> None:
     replace_once(
         root / "wiki" / "SCHEMA.md",
-        "| Type | Location | Purpose |",
-        "| Type | Path | Purpose |",
+        "| Type | Location | Presets | Purpose | Review date | Authority freshness | Verification |",
+        "| Type | Path | Presets | Purpose | Review date | Authority freshness | Verification |",
     )
 
 
@@ -296,6 +344,21 @@ case(
     "extra-value-fires",
     add_extra_label,
     "REFERENCES.md: related-labels: enum drift extra-in-doc: Bogus",
+)
+case(
+    "agents-related-label-drift-fires",
+    drop_agent_related_label,
+    "AGENTS.md: related-labels-agents: enum drift missing-from-doc: Supports",
+)
+case(
+    "schema-related-label-drift-fires",
+    drop_schema_related_label,
+    "wiki/SCHEMA.md: related-labels-schema: enum drift missing-from-doc: Supports",
+)
+case(
+    "catalog-field-drift-fires",
+    drift_catalog_purpose,
+    "wiki/SCHEMA.md: entity-catalog: analyses purpose drift",
 )
 case(
     "missing-marker-fires",
