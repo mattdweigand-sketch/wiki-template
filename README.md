@@ -29,7 +29,7 @@ After setup, agents use `AGENTS.md`, `wiki/domain.md`, and `CONTEXT.md` to route
 Copy this into your coding agent to download and configure a local wiki from this template:
 
 ```text
-Download https://github.com/mattdweigand-sketch/wiki-solo locally as a new wiki folder.
+Download https://github.com/mweigand-pplx/wiki-pplx locally as a new wiki folder.
 
 Ask me where to put it and what to name the folder. Then clone the repo, enter it, read AGENTS.md, and follow SETUP.md because wiki/domain.md starts as status: unconfigured.
 
