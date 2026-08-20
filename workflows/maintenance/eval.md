@@ -1,6 +1,6 @@
 # Wiki Eval
 
-Run this workflow when the task is to verify the wiki system itself: scripts, durable file updates, recoverable transactions, gates, ledgers, backlink rebuilds, export behavior, stale-text sweep proof, discoverability, wrapper parity, schema-doc parity, entity-catalog behavior, document reachability, and the deterministic Tier-1 gate. The `SUITES` registry in `scripts/wiki_eval.py` is the authoritative list of what runs.
+Run this workflow when the task is to verify the wiki system itself: scripts, durable file updates, recoverable transactions, gates, ledgers, backlink rebuilds, export and verified-backup receipt behavior, exact evidence-fidelity runs, optional current-state ownership, stale-text sweep proof, discoverability, wrapper parity, schema-doc parity, entity-catalog behavior, document reachability, and the deterministic Tier-1 gate. The `SUITES` registry in `scripts/wiki_eval.py` is the authoritative list of what runs.
 
 The tooling supports Python 3.9 and newer. The eval runner prints the exact runtime version in its first line, and CI runs the full checks on Python 3.9 and 3.11 so the user-facing `python3` commands retain that compatibility contract.
 

@@ -54,6 +54,21 @@ class LedgerIntegrityError(ValueError):
         super().__init__("approval ledger integrity check failed: " + "; ".join(self.failures))
 
 
+class _DuplicateLedgerKeyError(ValueError):
+    """One JSON object repeated a key and is therefore ambiguous."""
+
+
+def _reject_duplicate_ledger_keys(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    record: dict[str, object] = {}
+    for key, value in pairs:
+        if key in record:
+            raise _DuplicateLedgerKeyError(f"duplicate JSON key: {key}")
+        record[key] = value
+    return record
+
+
 @dataclass(frozen=True)
 class ValidatedApprovalLine:
     record: dict[str, object]
@@ -167,7 +182,7 @@ def has_schema_record(path: Path) -> bool:
         if not line.strip():
             continue
         try:
-            record = json.loads(line)
+            record = json.loads(line, object_pairs_hook=_reject_duplicate_ledger_keys)
         except json.JSONDecodeError:
             continue
         if record.get("record_type") == "schema":
@@ -247,7 +262,7 @@ def validate_ledger_text(
             errors.append(f"line {line_no}: blank lines are not allowed")
             continue
         try:
-            record = json.loads(line)
+            record = json.loads(line, object_pairs_hook=_reject_duplicate_ledger_keys)
         except (ValueError, RecursionError) as exc:
             detail = getattr(exc, "msg", str(exc))
             errors.append(f"line {line_no}: invalid JSON: {detail}")

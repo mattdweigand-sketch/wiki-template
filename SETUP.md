@@ -146,6 +146,8 @@ Report the selected preset, final active types, changed files, both validation o
 - Skills and learnings use `stable-meaning` by default.
 - Lint never silently inserts or infers authority metadata. Authors record it only when it changes how a future agent should verify the page.
 
+The template ships `scripts/current-state-owners.json` disabled and empty, so a fresh or newly configured wiki receives no owner-registry warnings. A wiki that needs script-backed live-state drift detection may opt in after setup: set `enabled` to `true`, list sorted `folder/name.md` paths relative to `wiki/`, and give every registered page explicit `authority_freshness: current-state`. Tier 1 rejects malformed, duplicate, missing, or non-current-state owner entries; Tier 2 then reports dated-status drift for review. Setup does not infer or populate this registry.
+
 ## What setup does not change
 
 - `scripts/entity-catalog.json` or executable scripts

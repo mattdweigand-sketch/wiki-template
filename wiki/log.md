@@ -11,6 +11,16 @@ Append-only history of ingest, lint, query, and decision-capture sessions. Newes
 
 ---
 
+## [2026-08-19] maintenance | reusable evidence and recovery safeguards
+
+Change: Backported the reusable personal-wiki protections without personal data or destinations: approval ledgers now reject duplicate JSON keys; exports retain legitimate ZIP sources, validate dates before path creation, exclude and detect exact self-nesting, stream local hashes, and optionally stamp a destination-redacted verified-backup receipt; ingest now routes transcript evidence rules; lint now runs an exact typed evidence-fidelity harness and an explicit opt-in current-state-owner drift family.
+Reason: Turn the high-value comparison findings into template-native safeguards while keeping private corpus state, cloud targets, personal owner paths, and monolithic source implementations out of the reusable repository.
+Rejected alternative: Copy the personal scripts and registries wholesale, infer current-state ownership from entity types, treat local ZIP creation as a verified backup, or leave semantic evidence review as an unenforced shell sampling recipe.
+Accepted tradeoff: The eval surface and documented lint procedure are larger, current-state drift requires deliberate registry configuration, and backup freshness remains local advisory state; in exchange, the repository can detect silent evidence omission, stale or partial verifier runs, owner drift, ambiguous ledger JSON, and unverified off-device backups.
+Validation: PASS - full eval on Python 3.11.15 and 3.12.13; Python 3.9/3.11 CI matrix retained; focused ledger, export, backup, transcript reachability, evidence-fidelity, and current-state adversarial suites; schema parity; wrapper parity; document reachability; zero production discoverability blockers or advisories; Tier-1 lint; `git diff --check`.
+
+---
+
 ## [2026-08-19] maintenance | governed domain refactor
 
 Change: Replaced duplicated entity assumptions with a validated 24-type catalog, organization/personal/hybrid presets, a read-only setup planner, exact configured-layout validation, and goal/decision review guidance. Added exact catalog/schema and related-label parity, operational-document reachability, archive-aware audit reporting, strict local-only raw-source policy, and current root/source/design/setup documentation. Consolidated seven unreachable legacy workflow guides into the live routes and removed the detached copies.

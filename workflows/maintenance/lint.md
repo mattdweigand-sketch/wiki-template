@@ -22,7 +22,7 @@ Invoking `/lint`, `/wiki-lint`, or `wiki-lint` is an explicit request to run thi
 
    It reports two tiers. **Tier 1** is machine-checkable and exits non-zero on any failure: filename and frontmatter-key validity, type/folder match, invalid `confidence` or `source_type`, malformed dates including `review_by`, dangling `[[links]]`, stale Markdown `.md` links, index coverage, duplicate link stems, empty required block lists, raw source references, raw bucket taxonomy drift against `scripts/raw-buckets.json`, tracked raw artifacts, repo folder-structure hygiene, raw/deliverables hygiene, stray tool-call artifacts, and `.DS_Store` files. These are not judgment calls, so fix them rather than debating them.
 
-   **Tier 2** is ranked candidates and maintenance signals the script surfaces but cannot decide: near-duplicate pages, orphans, uncited pages, thin stubs, `confidence: low` pages with enough inbound links to upgrade, missing cross-references, quote/source mismatches that need review, goals or decisions missing `review_by` outcome checkpoints, due outcome reviews, legacy domain-configuration migration advisories, stale sourcing-queue entity counts, log rotation due, compiled pages with newer source inputs, source pages that no non-source entity page consumes, pages likely needing authority metadata, synthesis due after an ingest burst, and adjudication records that no longer suppress anything. Treat Tier 2 as a worklist to adjudicate, not as failures.
+   **Tier 2** is ranked candidates and maintenance signals the script surfaces but cannot decide: near-duplicate pages, orphans, uncited pages, thin stubs, `confidence: low` pages with enough inbound links to upgrade, missing cross-references, quote/source mismatches that need review, goals or decisions missing `review_by` outcome checkpoints, due outcome reviews, legacy domain-configuration migration advisories, stale sourcing-queue entity counts, log rotation due, compiled pages with newer source inputs, source pages that no non-source entity page consumes, pages likely needing authority metadata, optional current-state owner drift, synthesis due after an ingest burst, and adjudication records that no longer suppress anything. Treat Tier 2 as a worklist to adjudicate, not as failures.
 
    Do not promote Tier-2 signals to Tier-1 because the underlying risk feels important. Promote only after reviewed maintenance cycles show high precision, false positives are structural enough to suppress or model as owned data, and each finding has a deterministic fix rather than a judgment debate. `recompile_candidates` and broad citation-support checks stay Tier-2 by default. Machine-checkable shape and reference failures can gate sooner: malformed proof/config, invalid adjudication entries, impossible authority refs, predictive authority without `review_by`, and source pages marked as current-state authority.
 
@@ -36,6 +36,7 @@ Invoking `/lint`, `/wiki-lint`, or `wiki-lint` is an explicit request to run thi
    - `unconsumed_sources`: a source page has no authored link from any non-source entity page. Source-to-source links, meta-page links, and generated `## Referenced by` echoes do not count as consumption because they do not integrate the source into the knowledge layer. Wire one editorially meaningful link from the right owner page, or record a durable standalone judgment under `reviewed_unconsumed_sources`. A page already adjudicated under `accepted_orphans` is suppressed automatically.
    - `glossary_volatile_status`: `wiki/glossary.md` has volatile status language inside a glossary entry. Rewrite to a dated fact or delegate live status to the owner page; adjudicate only durable definitional or rhetorical usage under `reviewed_glossary_volatile`.
    - `authority_missing`: a non-source page has a dated Status note or `review_by` checkpoint but lacks `authority_kind`. Backfill the smallest useful authority metadata from `wiki/SCHEMA.md`, or record a durable no-change judgment under `reviewed_authority_missing`.
+   - `status_drift`, `owner_status_missing`, `owner_self_drift`, `owner_registry_empty`, and `authority_owner_mismatch`: when `scripts/current-state-owners.json` is explicitly enabled, review whether referring compiled pages or owner metadata lag a registered owner. Source pages are never the stale side. Suppress a durable no-change result only as a directional `[referring page, owner page]` pair under `reviewed_status_drift`. The disabled empty registry shipped by the template is quiet; malformed config and missing registered pages are Tier 1.
    - `review_by_missing` and `review_due`: goals and decisions should either enroll in the outcome-review loop with `review_by`, or be deliberately left out. Due reviews are collected by `scripts/review_due.py`.
    - `configuration_migration`: configured legacy domains without `configuration_version: 2` and `entity_preset` remain valid but should rerun `SETUP.md` when convenient. Populated legacy custom types require manual schema resolution.
    - `synthesis_due`: enough ingest activity has accumulated without a later synthesis pass that a human should consider running `/wiki-synthesize`.
@@ -58,19 +59,39 @@ Invoking `/lint`, `/wiki-lint`, or `wiki-lint` is an explicit request to run thi
    - Stale claims superseded by newer sources.
    - Concepts mentioned but lacking their own page.
    - Terms used inconsistently where the right canonical term is a judgment call.
-3. Run the **evidence check**: sampled verification that citations support the claims they are attached to. Tier 1 proves a `[[link]]` resolves and the `quote_mismatch` candidates prove quoted text is verbatim; this step checks the semantic rest: overextension, conflation, mismatch, unsupported inference, and quote-shaped claims whose citation sits elsewhere in the paragraph. The linting agent orchestrates but does not judge its own claims.
-   1. Build the sample with a per-run random seed the agent does not choose, so the draw is fresh each run and cannot be curated. Re-sample after a failed plant with a new seed:
+3. Run the **evidence check**: sampled verification that citations support the claims they are attached to. Tier 1 proves a `[[link]]` resolves and `quote_mismatch` surfaces possible non-verbatim quotes; this step checks overextension, conflation, mismatch, unsupported inference, and missing evidence. The linting agent orchestrates but does not judge its own claims.
+
+   1. Choose a fresh, non-sensitive run ID and let the production interface draw the sample with operating-system randomness:
 
       ```bash
-      mkdir -p tmp
-      grep -rn 'source: \[\[' wiki/ --include='*.md' | grep -v 'Referenced by' > tmp/citations.txt
-      awk -v seed="$(od -An -N4 -tu4 < /dev/urandom)" 'BEGIN{srand(seed)} {print rand() "\t" $0}' tmp/citations.txt | sort -n | head -25 | cut -f2-
+      python3 scripts/build_evidence_sample.py --run-id YYYYMMDD-HHMMSS --count 25
       ```
 
-      Drop any claim already settled in `scripts/lint-adjudications.json` under `reviewed_quotes` or logged as adjudicated in a prior lint entry.
-   2. Add one **plant**: pick one sampled claim and write a deliberately overstated paraphrase of it; include it in the verifier prompt batch as if it were real. The plant exists only in that prompt batch; never write it to a wiki page, `tmp/citations.txt`, or the log. If the verifiers fail to flag the plant, the run's clean verdicts do not count. Note it, retune the verifier prompt, and rerun before trusting the results.
-   3. Split the sample across 2-3 verifier agents in fresh contexts that have not seen this session. Contract: try to refute each claim against the cited page and, where a raw file exists, the raw file behind that page; verdicts are VERIFIED / OVEREXTENDED / CONFLATED / MISMATCH / NOT-FOUND, each with the source text or absence of source text that decides it.
-   4. Adjudicate flags with the user when needed. Confirmed findings get fixed by softening, relabeling provenance per `wiki/SCHEMA.md`, or correcting the citation. Rejected findings count as false positives; durable false positives go to `scripts/lint-adjudications.json` so they stop resurfacing. When fixing, aim for honest confidence rather than maximum hedging.
+      The immutable manifest lives at `tmp/evidence-check/<run-id>/sample.json`. Its path-and-line identities, whole-file hashes, line hashes, and manifest hash bind this run to the exact sampled snapshot. Production sampling has no caller-provided seed; deterministic seed injection exists only inside the eval suite.
+
+   2. Create exactly one hidden `plant.json` in that run directory. Select one claim from `sample.json`; copy its `claim_id` into `source_claim_id` and copy its `path`, `line_number`, and `cited_slugs` exactly. Set `schema_version` to `1`, `plant_id` to `plant-01`, `invalid_verdict` to `VERIFIED`, and `text` to a deliberately unsupported overstatement that differs from the sampled line. The plant stays only under this disposable run directory. Never write it to the corpus, reveal it in a verifier prompt, or log its text.
+
+   3. Validate the sample and plant and atomically publish two or three exact batches plus prompts:
+
+      ```bash
+      python3 scripts/build_verifier_batches.py \
+        --run-dir tmp/evidence-check/YYYYMMDD-HHMMSS --batches 3
+      ```
+
+      A partial batch/prompt install is not authoritative. If this command fails, use a fresh run ID rather than editing published batches.
+
+   4. Give each file under `prompts/` to a separate verifier agent in a fresh context. Each agent tries to refute only its assigned item IDs against the cited page and, where present, the raw evidence behind it. Save its strict JSON response as `verdicts/<matching-batch-id>.json`. The only verdicts are `VERIFIED`, `OVEREXTENDED`, `CONFLATED`, `MISMATCH`, and `NOT-FOUND`; every item requires a decisive quote and canonical evidence paths. Do not merge, omit, duplicate, or renumber items.
+
+   5. Validate exact sample-to-batch-to-verdict accounting and confirm that the source snapshot and generated prompts did not change:
+
+      ```bash
+      python3 scripts/verify_evidence_run.py \
+        --run-dir tmp/evidence-check/YYYYMMDD-HHMMSS
+      ```
+
+      Trust metrics only when the result is `PASSED`. `STALE SNAPSHOT` has no valid precision metrics. A plant verdict of `VERIFIED`, missing or extra verdict, altered prompt, duplicate key, unsafe path, or schema mismatch makes the run fail. Re-sample under a fresh run ID after a failed plant.
+
+   6. Adjudicate real flags with the user when needed. Confirmed findings get fixed by softening, relabeling provenance per `wiki/SCHEMA.md`, or correcting the citation. Rejected findings count as false positives; durable false positives go to `scripts/lint-adjudications.json` so they stop resurfacing. When fixing, aim for honest confidence rather than maximum hedging.
 4. Propose fixes for Tier-2 candidates, evidence-check findings, and judgment checks, and ask which ones to apply. Tier-1 failures are not optional. Residual Tier-2 candidates are acceptable when reviewed and judged too weak, duplicated, or under-sourced to change.
 5. After applying fixes, update the contradiction and sourcing-queue records if present.
 6. Rebuild the auto-generated inbound-link sections:

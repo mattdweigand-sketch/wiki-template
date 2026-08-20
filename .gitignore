@@ -26,5 +26,9 @@ raw/*
 # Stable approval-ledger lock. The inode persists while the ledger is replaced.
 scripts/.capture-runs.lock
 
+# Local receipt for an optional verified remote export. It contains no target,
+# but remains per-checkout state and must never claim a fresh clone was backed up.
+scripts/backup-receipt.json
+
 # Recoverable multi-file transaction authority. Never delete it to clear a gate.
 /.wiki-transactions/

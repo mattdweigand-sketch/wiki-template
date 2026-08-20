@@ -31,6 +31,12 @@ from wiki_lint_contract import (
 )
 from wiki_lint_frontmatter import fm_scalar
 from wiki_entity_catalog import load_entity_catalog, validate_configured_layout
+from wiki_current_state import (
+    CURRENT_STATE_REGISTRY_PATH,
+    CurrentStateRegistryError,
+    load_current_state_registry,
+    validate_current_state_registry,
+)
 
 
 RawBucketRegistry = tuple[Optional[set[str]], Optional[str]]
@@ -93,6 +99,18 @@ def check_configured_entity_layout() -> LintFailures:
     return [
         ("entity-configuration", "wiki/domain.md", problem)
         for problem in validation.errors
+    ]
+
+
+def check_current_state_registry() -> LintFailures:
+    """The optional owner registry is explicit, strict, and internally valid."""
+    try:
+        registry = load_current_state_registry(CURRENT_STATE_REGISTRY_PATH)
+    except CurrentStateRegistryError as exc:
+        return [("current-state-registry", str(CURRENT_STATE_REGISTRY_PATH), str(exc))]
+    return [
+        ("current-state-registry", str(CURRENT_STATE_REGISTRY_PATH), error)
+        for error in validate_current_state_registry(registry, Path.cwd().resolve())
     ]
 
 
@@ -681,7 +699,7 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
         "reviewed_confidence_low", "reviewed_near_duplicates",
         "reviewed_quotes", "reviewed_recompile_candidates",
         "reviewed_authority_missing", "reviewed_glossary_volatile",
-        "reviewed_unconsumed_sources",
+        "reviewed_unconsumed_sources", "reviewed_status_drift",
     }
     unknown = sorted(k for k in set(raw) - known_keys if not k.startswith("_"))
     if unknown:
@@ -694,7 +712,7 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
             if not isinstance(e, dict) or not isinstance(e.get("page"), str):
                 return {}, f"every '{key}' entry needs a string 'page' field"
     for key in ("skipped_crossref_pairs", "reviewed_near_duplicates",
-                "reviewed_recompile_candidates"):
+                "reviewed_recompile_candidates", "reviewed_status_drift"):
         for e in raw.get(key, []):
             pair = e.get("pair") if isinstance(e, dict) else None
             if not (isinstance(pair, list) and len(pair) == 2
@@ -728,6 +746,7 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
 
 __all__ = [
     "check_configured_entity_layout",
+    "check_current_state_registry",
     "check_folder_structure",
     "check_log_entry_headers",
     "check_meta_utf8",

@@ -21,6 +21,7 @@ from wiki_lint_contract import (
 from wiki_lint_page_checks import TIER1_PAGE_CHECKS, TIER1_PATH_CHECKS
 from wiki_lint_repository_checks import (
     check_configured_entity_layout,
+    check_current_state_registry,
     check_folder_structure,
     check_log_entry_headers,
     check_meta_utf8,
@@ -67,6 +68,7 @@ def run_tier1_lint(
     fails = []  # (check, page_relpath, detail)
     fails.extend(check_folder_structure())
     fails.extend(check_configured_entity_layout())
+    fails.extend(check_current_state_registry())
     fails.extend(check_no_tracked_raw())
     fails.extend(check_meta_utf8())
     fails.extend(check_stray_tool_tags())
@@ -162,7 +164,8 @@ def run_tier1_lint(
                     "reviewed_quotes", "reviewed_authority_missing",
                     "reviewed_unconsumed_sources"):
             referenced += [e["page"] for e in raw.get(key, [])]
-        for key in ("skipped_crossref_pairs", "reviewed_near_duplicates"):
+        for key in ("skipped_crossref_pairs", "reviewed_near_duplicates",
+                    "reviewed_status_drift"):
             for e in raw.get(key, []):
                 referenced += e["pair"]
         for page in sorted(set(referenced)):

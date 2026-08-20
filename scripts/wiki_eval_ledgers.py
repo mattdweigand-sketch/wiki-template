@@ -250,6 +250,28 @@ run_validator(
     1,
     ("invalid JSON",),
 )
+duplicate_key_line = json.dumps(
+    capture_record(), sort_keys=True, separators=(",", ":")
+).replace('"route":"analysis-capture"', '"route":"evil","route":"analysis-capture"', 1)
+run_validator(
+    "capture-duplicate-json-key-fails",
+    [approval_schema(), duplicate_key_line],
+    1,
+    ("duplicate JSON key: route",),
+)
+nested_duplicate_key_line = json.dumps(
+    capture_record(), sort_keys=True, separators=(",", ":")
+).replace(
+    '"pages_touched":[',
+    '"evidence":{"claim":"first","claim":"second"},"pages_touched":[',
+    1,
+)
+run_validator(
+    "capture-nested-duplicate-json-key-fails",
+    [approval_schema(), nested_duplicate_key_line],
+    1,
+    ("duplicate JSON key: claim",),
+)
 run_validator(
     "unhashable-record-type-fails-cleanly",
     [approval_schema(), {"record_type": []}],

@@ -9,6 +9,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import export_wiki
 from _file_transactions import run_transaction
@@ -122,6 +123,8 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         "raw/README.md",
         "raw/.gitkeep",
         "raw/customer-research/source.txt",
+        "raw/customer-research/source.zip",
+        "raw/customer-research/wiki-export-2026-06-24.zip",
         "scripts/lint.py",
         "wiki/index.md",
         "workflows/maintenance/export.md",
@@ -188,9 +191,20 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
             "wiki/.DS_Store",
         )
     )
+    legitimate_zip_sources_present = all(
+        rel in names
+        for rel in (
+            "raw/customer-research/source.zip",
+            "raw/customer-research/wiki-export-2026-06-24.zip",
+        )
+    )
     results.record(
         "build-includes-required-and-excludes-local",
-        build.returncode == 0 and required_present and prefixes_present and excluded_absent,
+        build.returncode == 0
+        and required_present
+        and prefixes_present
+        and excluded_absent
+        and legitimate_zip_sources_present,
         "stdout: " + build.stdout.replace("\n", " | ") + " names: " + repr(sorted(names)),
     )
     if zip_path.exists():
@@ -202,15 +216,45 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         )
         with zipfile.ZipFile(zip_path, "a") as zf:
             zf.writestr("tmp/wiki-export-2026-06-24.zip", "nested export")
-        nested_ok, nested_errors = export_wiki.verify_zip(zip_path, len(names) + 1)
+        nested_ok, nested_errors = export_wiki.verify_zip(
+            zip_path,
+            len(names) + 1,
+            "tmp/wiki-export-2026-06-24.zip",
+        )
         results.record(
             "verify-rejects-nested-export-path",
-            not nested_ok and any("archive contains excluded path" in e and ".zip" in e for e in nested_errors),
+            not nested_ok and any("archive unexpectedly contains itself" in e for e in nested_errors),
             f"verify_zip should reject nested export paths; ok={nested_ok} errors={nested_errors}",
         )
     else:
         results.record("verify-rejects-count-mismatch", False, "export zip was not created")
         results.record("verify-rejects-nested-export-path", False, "export zip was not created")
+
+with tempfile.TemporaryDirectory(prefix="wiki-export-date-eval-") as td:
+    root = Path(td)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(EXPORT),
+            "--repo-root",
+            str(root),
+            "--output-dir",
+            "generated",
+            "--date",
+            "x/../../../outside",
+            "--dry-run",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    results.record(
+        "export-rejects-path-shaped-date-before-writing",
+        proc.returncode == 2
+        and "not a valid YYYY-MM-DD date" in proc.stderr
+        and not (root / "generated").exists(),
+        f"exit={proc.returncode}; stdout={proc.stdout!r}; stderr={proc.stderr!r}",
+    )
 
 with tempfile.TemporaryDirectory(prefix="wiki-export-symlink-eval-") as td:
     root = Path(td)
@@ -265,6 +309,26 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-upload-first-run-eval-") as
         "upload-rclone-inits-missing-drive-remote",
         ok and (root / "config-calls.txt").read_text(encoding="utf-8") == "x",
         f"missing Drive remote should trigger one config create; ok={ok} errors={errors}",
+    )
+
+with tempfile.TemporaryDirectory(prefix="wiki-export-upload-streaming-eval-") as td:
+    root = Path(td)
+    out = root / "wiki-export.zip"
+    out.write_bytes(b"backup")
+    rclone = fake_rclone(root, configured=True)
+    try:
+        with patch.object(Path, "read_bytes", side_effect=AssertionError("whole-file read")):
+            ok, errors = export_wiki.upload_rclone(
+                out, "gdrive:wiki-exports/wiki-export.zip", str(rclone)
+            )
+        streamed = ok
+    except AssertionError:
+        streamed = False
+        errors = ["upload read the whole local archive"]
+    results.record(
+        "upload-rclone-streams-local-hash",
+        streamed,
+        f"local hashing must not call Path.read_bytes; errors={errors}",
     )
 
 with tempfile.TemporaryDirectory(prefix="wiki-export-upload-mismatch-eval-") as td:

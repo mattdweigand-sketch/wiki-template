@@ -11,7 +11,7 @@ Ingest is a normal durable write. It does not require `scripts/capture_gate.py` 
 
 ## Load / Skip
 
-- **Load:** `wiki/SCHEMA.md` (source-type templates + frontmatter), `wiki/domain.md` for active entity types and raw taxonomy, the source file(s) in `raw/`, and the specific existing pages the source touches. At the link step (Step 5), also load `REFERENCES.md` (cross-referencing rules), `wiki/index.md`, `wiki/glossary.md`, and `wiki/log.md`.
+- **Load:** `wiki/SCHEMA.md` (source-type templates + frontmatter), `wiki/domain.md` for active entity types and raw taxonomy, the source file(s) in `raw/`, and the specific existing pages the source touches. When a source contains speaker-labeled or timestamped speech, also load [transcript evidence](transcript-evidence.md). At the link step (Step 5), also load `REFERENCES.md` (cross-referencing rules), `wiki/index.md`, `wiki/glossary.md`, and `wiki/log.md`.
 - **Skip:** the rest of the wiki, the other workspaces, and `wiki/contradictions.md` unless a clash actually surfaces.
 
 ## Calibration Examples
@@ -42,7 +42,8 @@ Ingest is a normal durable write. It does not require `scripts/capture_gate.py` 
 ## Step 1 - Read and discuss
 
 1. Read the source file(s) from `raw/`.
-2. Discuss 2-3 key takeaways. Ask clarifying questions only when needed to avoid a wrong durable write; an explicit ingest request should otherwise keep moving.
+2. Classify whether the source contains transcript-like evidence. Apply [transcript evidence](transcript-evidence.md) when a claim depends on a speaker, exact wording, timestamp, sequence, interaction direction, or count of independent voices.
+3. Discuss 2-3 key takeaways. Ask clarifying questions only when needed to avoid a wrong durable write; an explicit ingest request should otherwise keep moving.
 
 ## Step 2 - Create source page
 
@@ -51,6 +52,12 @@ Create a summary page in `wiki/sources/` named after the source file. Use `sourc
 ## Step 3 - Update existing pages
 
 Identify which existing wiki pages are affected and update them.
+
+Before putting a transcript-derived claim onto a compiled page, reopen the raw
+artifact when the claim depends on speaker identity, exact wording, a
+timestamp, dialogue sequence, interaction direction, or independence counts.
+Broad claims already captured faithfully on the source page may continue to
+cite that source page without reopening raw evidence.
 
 ## Step 4 - Create new entity pages
 

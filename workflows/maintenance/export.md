@@ -22,7 +22,7 @@ description: Use this workflow when the user says "export the wiki" or wants a l
    python3 scripts/export_wiki.py --date YYYY-MM-DD
    ```
 
-   This includes `wiki/`, `raw/`, `workflows/`, `scripts/` with fixtures and ledgers, `.claude/commands/`, `.codex/skills/`, `.github/workflows/`, and the top-level docs. It excludes `.git/`, `tmp/`, `deliverables/`, Claude worktrees, local Claude settings, Finder metadata, `.env`, and generated zip files. The export refuses any symlink in the tree so it cannot silently archive content from outside the repository or omit a broken link. It also refuses nonclean `.wiki-transactions/` state before creating an archive; inspect with `python3 scripts/wiki_transactions.py status` and recover or diagnose the recorded transaction instead of deleting it.
+   This includes `wiki/`, `raw/`, `workflows/`, `scripts/` with fixtures and ledgers, `.claude/commands/`, `.codex/skills/`, `.github/workflows/`, and the top-level docs. It excludes `.git/`, `tmp/`, `deliverables/`, Claude worktrees, local Claude settings, Finder metadata, `.env`, and the local backup receipt. ZIP source artifacts are retained; only the exact output archive is excluded. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree so it cannot silently archive content from outside the repository or omit a broken link. It also refuses nonclean `.wiki-transactions/` state before creating an archive; inspect with `python3 scripts/wiki_transactions.py status` and recover or diagnose the recorded transaction instead of deleting it.
 
 2. If you need to inspect before building, run:
 
@@ -47,7 +47,15 @@ description: Use this workflow when the user says "export the wiki" or wants a l
      --upload-target gdrive:wiki-exports/wiki-export-YYYY-MM-DD.zip
    ```
 
-   The script runs `rclone copyto`, verifies the remote byte size with `rclone lsl`, verifies content identity with `rclone md5sum`, and leaves credentials in the user's local `rclone` config. Do not commit credentials, tokens, or user-specific Drive targets.
+   The script runs `rclone copyto`, verifies the remote byte size with `rclone lsl`, verifies content identity with `rclone md5sum`, and leaves credentials in the user's local `rclone` config. Only after both checks pass does it atomically update the gitignored `scripts/backup-receipt.json`. The receipt stores a UTC verification time, streamed SHA-256 content hash, byte count, and an opaque hash of the destination; it contains no provider, account, path, or URL. A local-only export or failed remote verification never advances it. Do not commit credentials, tokens, user-specific targets, or the local receipt.
+
+   Report the optional freshness state at any time without turning it into a gate:
+
+   ```bash
+   python3 scripts/backup_state.py
+   ```
+
+   Missing, invalid, stale, and future-dated receipts are advisories. A fresh clone intentionally reports no verified backup rather than shipping a false success claim.
 
 5. No `wiki/log.md` entry. The export changes no wiki content; the zip in `tmp/` is a disposable artifact until the user moves it.
 

@@ -22,6 +22,7 @@ SUITES = {
     "gate": [sys.executable, "scripts/wiki_eval_gate.py"],
     "capture-runs": [sys.executable, "scripts/validate_capture_runs.py"],
     "export": [sys.executable, "scripts/wiki_eval_export.py"],
+    "backup-state": [sys.executable, "scripts/wiki_eval_backup.py"],
     "rotate-log": [sys.executable, "scripts/wiki_eval_rotate_log.py"],
     "review-due": [sys.executable, "scripts/wiki_eval_review.py"],
     "stale-text-sweep": [sys.executable, "scripts/wiki_eval_stale_text_sweep.py"],
@@ -33,6 +34,7 @@ SUITES = {
     "discoverability": [sys.executable, "scripts/wiki_eval_discoverability.py"],
     "document-reachability": [sys.executable, "scripts/wiki_eval_document_reachability.py"],
     "entity-catalog": [sys.executable, "scripts/wiki_eval_entity_catalog.py"],
+    "evidence-fidelity": [sys.executable, "scripts/wiki_eval_evidence.py"],
     "tier1": [sys.executable, "scripts/lint.py", "--tier1"],
 }
 

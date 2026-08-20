@@ -141,7 +141,9 @@ Three provenance rules:
 2. **Vague stays vague.** If the source says "a recent study," "last month," or similar relative language, do not upgrade it to a named or dated reference. Convert relative dates only when the source supports the conversion, and preserve uncertainty in the wording.
 3. **Assembled lists are labeled.** An enumeration compiled from points scattered across a source is synthesis, not extraction. Prefix it with `Inference:` or state that the list is synthesized.
 
-**Live current-state:** Do not restate volatile values for a changing thread across many pages. Put targets, prices, statuses, dates, rates, stage labels, model states, or similar moving values on one owner page, then have other pages link that owner with stable pointer language. If a configured wiki later needs script-backed drift detection, add that as an explicit schema/tooling decision instead of inventing hidden registry requirements.
+**Live current-state:** Do not restate volatile values for a changing thread across many pages. Put targets, prices, statuses, dates, rates, stage labels, model states, or similar moving values on one owner page, then have other pages link that owner with stable pointer language.
+
+Script-backed drift detection is explicit and optional. `scripts/current-state-owners.json` ships as schema version 1 with `enabled: false` and an empty `owners` list. To opt in, use sorted unique `folder/name.md` paths relative to `wiki/`; every registered page must exist and declare `authority_freshness: current-state`. Registered owners need dated `**Status (YYYY-MM-DD):**` notes for drift checks to operate. Configuration-shape and missing-page defects are Tier 1. Missing owner status, owner self-drift, older referring pages, unregistered `owner-page` authority targets, and an enabled empty registry are Tier-2 review signals. Source pages are evidence and are never treated as the stale side. Directional no-change judgments use `reviewed_status_drift` pairs in `scripts/lint-adjudications.json`.
 
 ## Related Page Labels
 

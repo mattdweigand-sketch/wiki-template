@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import subprocess
 import sys
 import zipfile
@@ -17,6 +18,11 @@ from datetime import date
 from pathlib import Path
 
 from _file_transactions import transaction_status
+from wiki_backup_receipt import (
+    DEFAULT_BACKUP_RECEIPT_PATH,
+    BackupReceiptError,
+    record_verified_backup,
+)
 
 
 DEFAULT_EXCLUDES = (
@@ -29,6 +35,7 @@ DEFAULT_EXCLUDES = (
 DEFAULT_EXCLUDE_FILES = {
     ".claude/settings.local.json",
     ".env",
+    "scripts/backup-receipt.json",
 }
 REQUIRED_FILES = {
     ".gitignore",
@@ -49,6 +56,7 @@ REQUIRED_PREFIXES = (
     "wiki/",
     "workflows/",
 )
+ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -77,21 +85,39 @@ def parser() -> argparse.ArgumentParser:
         default="rclone",
         help="rclone executable used for optional upload and first-run auth.",
     )
+    p.add_argument(
+        "--receipt-path",
+        type=Path,
+        default=DEFAULT_BACKUP_RECEIPT_PATH,
+        help=("Local gitignored receipt to update only after a remote copy verifies. "
+              "Relative paths are resolved from --repo-root."),
+    )
     return p
 
 
 def should_exclude(rel: str) -> bool:
     if rel in DEFAULT_EXCLUDE_FILES:
         return True
-    if rel.endswith(".zip") or rel.endswith(".DS_Store"):
+    if rel.endswith(".DS_Store"):
         return True
     return any(rel.startswith(prefix) for prefix in DEFAULT_EXCLUDES)
 
 
-def export_files(repo_root: Path) -> list[Path]:
+def export_files(
+    repo_root: Path,
+    output: Path | None = None,
+    local_state: Path | None = None,
+) -> list[Path]:
+    """Return exportable files, excluding the archive and local receipt state."""
+    resolved_output = output.resolve() if output is not None else None
+    resolved_local_state = local_state.resolve() if local_state is not None else None
     files: list[Path] = []
     for path in sorted(repo_root.rglob("*")):
         if not path.is_file():
+            continue
+        if resolved_output is not None and path.resolve() == resolved_output:
+            continue
+        if resolved_local_state is not None and path.resolve() == resolved_local_state:
             continue
         rel = path.relative_to(repo_root).as_posix()
         if should_exclude(rel):
@@ -108,6 +134,18 @@ def find_symlinks(repo_root: Path) -> list[Path]:
 def zip_path(repo_root: Path, output_dir: str, stamp: str) -> Path:
     out_dir = repo_root / output_dir
     return out_dir / f"wiki-export-{stamp}.zip"
+
+
+def _validated_export_date(value: str) -> str:
+    if not ISO_DATE_RE.fullmatch(value):
+        raise ValueError(f"--date {value!r} is not a valid YYYY-MM-DD date")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"--date {value!r} is not a valid YYYY-MM-DD date") from exc
+    if parsed.isoformat() != value:
+        raise ValueError(f"--date {value!r} is not a valid YYYY-MM-DD date")
+    return value
 
 
 def build_zip(repo_root: Path, output: Path, files: list[Path]) -> None:
@@ -132,7 +170,11 @@ def validate_names(names: list[str]) -> list[str]:
     return errors
 
 
-def verify_zip(output: Path, expected_count: int) -> tuple[bool, list[str]]:
+def verify_zip(
+    output: Path,
+    expected_count: int,
+    output_rel: str | None = None,
+) -> tuple[bool, list[str]]:
     errors: list[str] = []
     if not output.exists():
         return False, [f"{output} was not created"]
@@ -141,6 +183,8 @@ def verify_zip(output: Path, expected_count: int) -> tuple[bool, list[str]]:
         corrupt = zf.testzip()
     if corrupt:
         errors.append(f"corrupt zip member: {corrupt}")
+    if output_rel is not None and output_rel in names:
+        errors.append(f"archive unexpectedly contains itself ({output_rel})")
     errors.extend(validate_names(names))
     if len(names) != expected_count:
         errors.append(f"archive file count {len(names)} did not match expected {expected_count}")
@@ -240,6 +284,14 @@ def parse_rclone_md5(stdout: str) -> tuple[str | None, list[str]]:
     return value, []
 
 
+def _stream_file_md5(path: Path) -> str:
+    digest = hashlib.md5()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def upload_rclone(
     output: Path,
     target: str,
@@ -262,7 +314,7 @@ def upload_rclone(
             return False, errors
 
     expected_size = output.stat().st_size
-    expected_md5 = hashlib.md5(output.read_bytes()).hexdigest()
+    expected_md5 = _stream_file_md5(output)
     ok, _, errors = run_rclone(rclone_bin, ["copyto", str(output), target])
     if not ok:
         return False, errors
@@ -289,6 +341,11 @@ def upload_rclone(
 
 def main() -> int:
     args = parser().parse_args()
+    try:
+        stamp = _validated_export_date(args.date)
+    except ValueError as exc:
+        print(f"Error: {exc}.", file=sys.stderr)
+        return 2
     if args.init_rclone_drive and not args.upload_target:
         print("Error: --init-rclone-drive requires --upload-target.", file=sys.stderr)
         return 1
@@ -322,8 +379,18 @@ def main() -> int:
         for link in symlinks:
             print(f"- {link.relative_to(repo_root)}", file=sys.stderr)
         return 1
-    files = export_files(repo_root)
-    output = zip_path(repo_root, args.output_dir, args.date)
+    output = zip_path(repo_root, args.output_dir, stamp)
+    receipt_path = args.receipt_path
+    if not receipt_path.is_absolute():
+        receipt_path = repo_root / receipt_path
+    if receipt_path.resolve() == output.resolve():
+        print("Error: --receipt-path must differ from the export archive path.", file=sys.stderr)
+        return 2
+    files = export_files(repo_root, output, receipt_path)
+    try:
+        output_rel = output.resolve().relative_to(repo_root).as_posix()
+    except ValueError:
+        output_rel = None
 
     if args.dry_run:
         names = [path.relative_to(repo_root).as_posix() for path in files]
@@ -337,7 +404,7 @@ def main() -> int:
         return 0 if not errors else 1
 
     build_zip(repo_root, output, files)
-    ok, errors = verify_zip(output, len(files))
+    ok, errors = verify_zip(output, len(files), output_rel)
     if not ok:
         print("Wiki export verification failed:")
         for error in errors:
@@ -361,6 +428,13 @@ def main() -> int:
             print(f"Local zip remains: {output}")
             return 1
         print(f"Upload verified: {args.upload_target}")
+        try:
+            receipt = record_verified_backup(output, args.upload_target, receipt_path)
+        except (BackupReceiptError, OSError) as exc:
+            print(f"Verified upload receipt failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Backup receipt updated: {receipt_path}")
+        print(f"Verified at: {receipt.verified_at}")
     return 0
 
 

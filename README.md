@@ -82,13 +82,14 @@ The checks and guardrails that protect the corpus:
 | Route-first workflows | Point agents from `AGENTS.md` to `CONTEXT.md` to the right workflow, so they read the instructions that match the task. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks evidence gaps so weak claims become future work instead of disappearing. |
 | Contradiction tracking | Records conflicts in `wiki/contradictions.md` instead of overwriting inconvenient claims. |
-| Three-tier lint | `scripts/lint.py` reports two deterministic tiers: Tier 1 fails on broken structure and malformed proof; Tier 2 ranks suspicious patterns for review, including compiled pages with newer source inputs, glossary status language, and pages likely needing authority metadata. Tier 3, genuine judgment, is left to the `/wiki-lint` prose workflow, not the script. |
-| Evidence review | Full `/wiki-lint` adds sampled citation checks so claims are tested against their cited source pages and raw evidence. |
+| Three-tier lint | `scripts/lint.py` reports two deterministic tiers: Tier 1 fails on broken structure and malformed proof; Tier 2 ranks suspicious patterns for review, including compiled pages with newer source inputs, glossary status language, pages likely needing authority metadata, and optional current-state owner drift. Tier 3, genuine judgment, is left to the `/wiki-lint` prose workflow, not the script. |
+| Evidence review | Full `/wiki-lint` creates an exact OS-random sample, immutable verifier batches, a hidden calibration plant, and validated verdict accounting so claims are tested against cited pages and raw evidence without trusting partial or stale runs. |
 | Lint adjudications | `scripts/lint-adjudications.json` records reviewed false positives and accepted exceptions so the same candidates are not re-litigated every lint run. |
 | Approval gate and ledger | `scripts/capture_gate.py` makes the agent ask before filing analyses, applying artifact promotions, or approving synthesis; `scripts/capture-runs.jsonl` records what was approved afterward. |
 | Durable file updates | Approval-ledger writes use a stable sidecar lock and atomic replacement; backlink rebuilds and log rotations use recoverable multi-file transactions that fail closed when interrupted or conflicted. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` is the single manifest for both `.claude/commands/` and `.codex/skills/`; the renderer and parity checker prevent hand-edited drift. |
 | Live evals | `/wiki-eval` runs `scripts/wiki_eval.py` to test shared parsing, durable files, recoverable transactions, backlinks, lint fixtures, stale-text sweep proof, the unified approval gate, ledger validation, export, log rotation, review due checks, discoverability, generated wrapper parity, exact catalog/schema parity, operational-document reachability, setup planning, and Tier-1 lint over the live corpus. |
+| Optional backup receipt | An explicit `rclone` upload advances local backup freshness only after remote size and checksum verification. `scripts/backup_state.py` reports missing, stale, invalid, future-dated, or fresh state without making backup configuration a repository gate. |
 
 Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task instructions live under [`workflows/`](workflows/).
 

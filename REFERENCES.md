@@ -112,6 +112,11 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/entity-catalog.json` | Governed entity folders, types, preset membership, and authoring semantics; consumed through `scripts/wiki_entity_catalog.py` |
 | `scripts/plan_wiki_setup.py` | Read-only JSON plan for preset selection, safe folder changes, blocked removals, and migration advisories |
 | `scripts/lint-adjudications.json` | Settled Tier-2 lint judgments with reasons and dates; lint suppresses what it lists |
+| `scripts/current-state-owners.json` | Optional, strict registry of current-state owner pages; ships disabled and empty |
+| `scripts/wiki_current_state.py` | Typed owner-registry loader, validator, and current-state drift evaluator used by lint |
+| `scripts/wiki_evidence.py` | Typed production seam for exact evidence samples, verifier batches, and run validation |
+| `scripts/build_evidence_sample.py`, `scripts/build_verifier_batches.py`, `scripts/verify_evidence_run.py` | Thin agent-neutral CLI adapters for the sampled evidence workflow |
+| `scripts/wiki_backup_receipt.py`, `scripts/backup_state.py` | Destination-redacted verified-upload receipt and nonblocking freshness reporter; the local receipt is gitignored |
 | `scripts/capture-runs.jsonl` | Append-only logical approval ledger installed through stable-lock atomic full-file replacement, never in-place append |
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the seven generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
 | `scripts/check_schema_doc_parity.py` | Verifies the full schema catalog table against `scripts/entity-catalog.json` and duplicated vocabularies against `scripts/wiki_lint_contract.py` constants |
@@ -140,6 +145,9 @@ The wiki separates deterministic capture approval from prose judgment:
 Executable tooling keeps stable CLI facades while assigning each reusable concept one owner:
 
 - `scripts/lint.py` only parses arguments and renders reports. `wiki_lint_contract.py` owns shared vocabulary and the typed `PageContext`; `wiki_lint_frontmatter.py` owns frontmatter/provenance parsing; `wiki_lint_repository_checks.py` owns repository-wide invariants; `wiki_lint_page_checks.py` owns the typed ordered page-rule registries; `wiki_lint_tier1.py` composes hard failures; and `wiki_lint_signals.py` owns `Tier2PageFacts`, `Tier2Context`, the typed signal registry, and review-candidate composition.
+- `scripts/wiki_current_state.py` is the sole production owner for current-state registry parsing and drift semantics. Tier 1 validates opt-in configuration; `wiki_lint_signals.py` adapts its already-parsed corpus context into nonblocking findings.
+- `scripts/wiki_evidence.py` is the stable evidence-fidelity interface. The build/verify scripts are CLI adapters; private modules own artifact schemas and exact validation, and verifier agents consume rendered prompts without model/provider coupling.
+- `scripts/wiki_backup_receipt.py` owns verified-backup receipt schema, redaction, hashing, atomic persistence, and freshness classification. `export_wiki.py` stamps only after remote size and checksum verification; `backup_state.py` only reports.
 - Literal `__all__` declarations identify intentional cross-module interfaces. Local imports must use names in the owner's declared interface, including module-qualified uses. Class constructors follow the same boundary; when `__all__` is absent, normal underscore visibility applies. Internal registry callbacks are not public merely because Python requires a top-level definition. The private transaction modules collaborate through one named execution contract instead of importing individual private helpers.
 - Search-facing function names include their concept, such as `build_backlink_rebuild_plan`, `build_log_rotation_plan`, `collect_due_reviews`, and `contains_approval_path_placeholder`; do not add generic compatibility aliases.
 - Run `python3 scripts/check_discoverability.py` after changing production interfaces. Production blockers fail; test and fixture observations are printed separately and remain advisory.

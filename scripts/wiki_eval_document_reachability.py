@@ -58,7 +58,7 @@ def write_fixture(root: Path, *, linked: bool) -> None:
         "# Audit\n",
         encoding="utf-8",
     )
-    (root / "scripts").mkdir()
+    (root / "scripts").mkdir(exist_ok=True)
     (root / "scripts" / "document-reachability.json").write_text(
         json.dumps(
             {
@@ -67,6 +67,35 @@ def write_fixture(root: Path, *, linked: bool) -> None:
                 "roots": ["CONTEXT.md"],
                 "operational_directories": ["workflows"],
                 "excluded_directories": ["archive", "scripts/fixtures"],
+                "standalone_documents": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_transcript_fixture(root: Path, *, linked: bool) -> None:
+    ingest = root / "workflows" / "ingest"
+    ingest.mkdir(parents=True, exist_ok=True)
+    (root / "CONTEXT.md").write_text(
+        "# Root\n\n[Ingest](workflows/ingest/CONTEXT.md)\n",
+        encoding="utf-8",
+    )
+    route = "\n[Transcript evidence](transcript-evidence.md)\n" if linked else "\n"
+    (ingest / "CONTEXT.md").write_text("# Ingest\n" + route, encoding="utf-8")
+    (ingest / "transcript-evidence.md").write_text(
+        "# Transcript Evidence\n",
+        encoding="utf-8",
+    )
+    (root / "scripts").mkdir(exist_ok=True)
+    (root / "scripts" / "document-reachability.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "description": "Transcript routing fixture.",
+                "roots": ["CONTEXT.md"],
+                "operational_directories": ["workflows"],
+                "excluded_directories": [],
                 "standalone_documents": [],
             }
         ),
@@ -124,7 +153,33 @@ def main() -> int:
             repr(problems),
         )
 
+    with tempfile.TemporaryDirectory(prefix="wiki-doc-reachability-transcript-") as td:
+        root = Path(td)
+        write_transcript_fixture(root, linked=True)
+        results.record(
+            "routed-transcript-reference-passes",
+            document_reachability_problems(root) == [],
+            repr(document_reachability_problems(root)),
+        )
+        write_transcript_fixture(root, linked=False)
+        problems = document_reachability_problems(root)
+        results.record(
+            "removed-transcript-route-fails",
+            problems == [
+                "unreachable operational document: workflows/ingest/transcript-evidence.md"
+            ],
+            repr(problems),
+        )
+
     repo_root = Path(__file__).resolve().parents[1]
+    transcript_reference = repo_root / "workflows/ingest/transcript-evidence.md"
+    ingest_route = (repo_root / "workflows/ingest/CONTEXT.md").read_text(encoding="utf-8")
+    results.record(
+        "live-transcript-reference-is-routed",
+        transcript_reference.is_file()
+        and "[transcript evidence](transcript-evidence.md)" in ingest_route.lower(),
+        "the ingest workflow must route the transcript evidence reference",
+    )
     results.record(
         "live-operational-document-graph-passes",
         document_reachability_problems(repo_root) == [],
