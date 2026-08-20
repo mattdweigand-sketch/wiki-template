@@ -4,11 +4,11 @@ Run this workflow when the task is to verify the wiki system itself: scripts, du
 
 The tooling supports Python 3.9 and newer. The eval runner prints the exact runtime version in its first line, and CI runs the full checks on Python 3.9 and 3.11 so the user-facing `python3` commands retain that compatibility contract.
 
-This is different from `/wiki-lint`: lint checks wiki content; eval checks the tools that check and protect the wiki.
+This is different from `wiki-lint`: lint checks wiki content; eval checks the tools that check and protect the wiki.
 
 ## Wrapper Surface Contract
 
-The live convenience surfaces are `.claude/commands/wiki-*.md` and `.codex/skills/wiki-*/SKILL.md`. `scripts/wiki-wrapper-contract.json` is the sole wrapper-name, description, route, and command-hint authority. The human-facing name lists in `AGENTS.md` and the README command table must match it.
+The live convenience surfaces are `.claude/commands/wiki-*.md` and `.agents/skills/wiki-*/SKILL.md`. `scripts/wiki-wrapper-contract.json` is the sole wrapper-name, description, route, and command-hint authority. The human-facing name lists in `AGENTS.md` and the README command table must match it.
 
 Canonical procedure belongs in `workflows/`. A wrapper is a deterministic render: canonical routing paths plus at most one `scripts/*.py` command hint. Deleting wrapper folders does not remove the underlying wiki workflow; it only removes that agent surface's shortcut.
 
@@ -35,7 +35,7 @@ python3 scripts/wiki_transactions.py diagnose <transaction-id>
 
 The `durable-files` and `transactions` suites exercise atomic replacement, locking, crashes, conflicts, corruption, CLI behavior, and each fail-closed guard. The gate, rebuild, and rotate-log suites add operation-specific concurrency, fault-injection, and recovery coverage.
 
-Historical note: identical global installs under `~/.codex/skills/wiki-*` once created duplicate repo-local and global slash-command entries. That one-time cleanup is complete and its removal machinery was retired 2026-07-01; if duplicate slash entries ever reappear, delete the global copies by hand.
+Do not copy these repo-local skills into `~/.agents/skills/`. Identical personal installs can create duplicate skill entries; if duplicates appear, keep the tracked repo-local copy and remove the personal duplicate by hand.
 
 ## Policy-Constant Placement Contract
 

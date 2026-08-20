@@ -1,6 +1,6 @@
 ---
 name: wiki-promote
-description: Run the wiki artifact-promotion router. Use when the user says /wiki-promote, wiki-promote, promote, save this artifact, file this, or asks where a useful output belongs in the wiki.
+description: Run the wiki artifact-promotion router. Use when the user says $wiki-promote, wiki-promote, promote, save this artifact, file this, or asks where a useful output belongs in the wiki.
 ---
 
 # Wiki Promote

@@ -35,8 +35,8 @@ def build_clean_tree(root: Path) -> None:
     contract = load_contract(root)
     names = [shortcut.name for shortcut in contract.shortcuts]
     (root / "README.md").write_text(
-        "# Fixture\n\n| Command | Use it to |\n|---|---|\n"
-        + "".join(f"| `/{name}` | Fixture. |\n" for name in names),
+        "# Fixture\n\n| Workflow | Claude Code | Codex | Use it to |\n|---|---|---|---|\n"
+        + "".join(f"| `{name}` | `/{name}` | `${name}` | Fixture. |\n" for name in names),
         encoding="utf-8",
     )
     (root / "AGENTS.md").write_text(
@@ -74,6 +74,18 @@ def parity_case(name: str, mutate, fragment: str | None) -> None:
 
 
 parity_case("clean-fixture-passes", None, None)
+
+with tempfile.TemporaryDirectory(prefix="wiki-wrapper-location-eval-") as td:
+    root = Path(td)
+    build_clean_tree(root)
+    current_skill = root / ".agents/skills/wiki-ingest/SKILL.md"
+    legacy_skill_root = root / ".codex/skills"
+    results.record(
+        "codex-repo-skills-use-agents-root",
+        current_skill.is_file() and not legacy_skill_root.exists(),
+        f"current_skill={current_skill.is_file()}, legacy_root={legacy_skill_root.exists()}",
+    )
+
 parity_case(
     "arbitrary-operational-prose-fails",
     lambda root: (root / ".claude/commands/wiki-lint.md").write_text(
@@ -86,7 +98,7 @@ parity_case(
 parity_case(
     "altered-authorization-fails",
     lambda root: replace_once(
-        root / ".codex/skills/wiki-lint/SKILL.md",
+        root / ".agents/skills/wiki-lint/SKILL.md",
         b"authorizes only the lint workflow's verifier-agent evidence check",
         b"authorizes every durable write",
     ),
@@ -121,7 +133,7 @@ parity_case(
 )
 parity_case(
     "missing-wrapper-fails",
-    lambda root: (root / ".codex/skills/wiki-export/SKILL.md").unlink(),
+    lambda root: (root / ".agents/skills/wiki-export/SKILL.md").unlink(),
     "missing generated wrapper",
 )
 parity_case(
@@ -132,13 +144,13 @@ parity_case(
 parity_case(
     "changed-codex-frontmatter-fails",
     lambda root: replace_once(
-        root / ".codex/skills/wiki-eval/SKILL.md", b"name: wiki-eval", b"name: wiki-lint"
+        root / ".agents/skills/wiki-eval/SKILL.md", b"name: wiki-eval", b"name: wiki-lint"
     ),
     "stale generated wrapper",
 )
 parity_case(
     "readme-name-drift-fails",
-    lambda root: replace_once(root / "README.md", b"/wiki-eval", b"/wiki-evaluate"),
+    lambda root: replace_once(root / "README.md", b"`wiki-eval`", b"`wiki-evaluate`"),
     "README.md shortcut names differ",
 )
 parity_case(
@@ -148,7 +160,7 @@ parity_case(
 )
 parity_case(
     "partial-render-fails-check",
-    lambda root: shutil.rmtree(root / ".codex/skills/wiki-ingest"),
+    lambda root: shutil.rmtree(root / ".agents/skills/wiki-ingest"),
     "missing generated wrapper",
 )
 

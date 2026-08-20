@@ -44,17 +44,17 @@ After setup, run the repo checks:
 Report changed files, check results, and any remaining setup choices.
 ```
 
-The repo has seven common workflow shortcuts. Claude Code and Codex expose them as slash commands; other agents use the same routes through `CONTEXT.md`.
+The repo has seven common workflow shortcuts. Claude Code exposes them as slash commands. Codex exposes them as skills, invoked with `$wiki-*` or selected through `/skills`. Other agents use the same routes through `CONTEXT.md`.
 
-| Command | Use it to |
-|---|---|
-| `/wiki-ingest` | Turn a raw source into durable wiki pages. |
-| `/wiki-capture` | Record first-person context, usually a decision or lived experience. |
-| `/wiki-promote` | Route a useful artifact into the wiki, or decide not to save it. |
-| `/wiki-lint` | Run deterministic checks, judgment candidates, compiled-page recompile review candidates, and evidence review. |
-| `/wiki-eval` | Verify that the wiki tools and guardrails still work. |
-| `/wiki-synthesize` | Draft corpus distillations for review and approved promotion. |
-| `/wiki-export` | Build a local zip export of the wiki, including raw sources; optionally upload to an explicit `rclone` target. |
+| Workflow | Claude Code | Codex | Use it to |
+|---|---|---|---|
+| `wiki-ingest` | `/wiki-ingest` | `$wiki-ingest` | Turn a raw source into durable wiki pages. |
+| `wiki-capture` | `/wiki-capture` | `$wiki-capture` | Record first-person context, usually a decision or lived experience. |
+| `wiki-promote` | `/wiki-promote` | `$wiki-promote` | Route a useful artifact into the wiki, or decide not to save it. |
+| `wiki-lint` | `/wiki-lint` | `$wiki-lint` | Run deterministic checks, judgment candidates, compiled-page recompile review candidates, and evidence review. |
+| `wiki-eval` | `/wiki-eval` | `$wiki-eval` | Verify that the wiki tools and guardrails still work. |
+| `wiki-synthesize` | `/wiki-synthesize` | `$wiki-synthesize` | Draft corpus distillations for review and approved promotion. |
+| `wiki-export` | `/wiki-export` | `$wiki-export` | Build a local zip export of the wiki, including raw sources; optionally upload to an explicit `rclone` target. |
 
 Research answers can stay in chat or become durable analyses when they are worth saving.
 
@@ -82,13 +82,13 @@ The checks and guardrails that protect the corpus:
 | Route-first workflows | Point agents from `AGENTS.md` to `CONTEXT.md` to the right workflow, so they read the instructions that match the task. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks evidence gaps so weak claims become future work instead of disappearing. |
 | Contradiction tracking | Records conflicts in `wiki/contradictions.md` instead of overwriting inconvenient claims. |
-| Three-tier lint | `scripts/lint.py` reports two deterministic tiers: Tier 1 fails on broken structure and malformed proof; Tier 2 ranks suspicious patterns for review, including compiled pages with newer source inputs, glossary status language, pages likely needing authority metadata, and optional current-state owner drift. Tier 3, genuine judgment, is left to the `/wiki-lint` prose workflow, not the script. |
-| Evidence review | Full `/wiki-lint` creates an exact OS-random sample, immutable verifier batches, a hidden calibration plant, and validated verdict accounting so claims are tested against cited pages and raw evidence without trusting partial or stale runs. |
+| Three-tier lint | `scripts/lint.py` reports two deterministic tiers: Tier 1 fails on broken structure and malformed proof; Tier 2 ranks suspicious patterns for review, including compiled pages with newer source inputs, glossary status language, pages likely needing authority metadata, and optional current-state owner drift. Tier 3, genuine judgment, is left to the `wiki-lint` prose workflow, not the script. |
+| Evidence review | Full `wiki-lint` creates an exact OS-random sample, immutable verifier batches, a hidden calibration plant, and validated verdict accounting so claims are tested against cited pages and raw evidence without trusting partial or stale runs. |
 | Lint adjudications | `scripts/lint-adjudications.json` records reviewed false positives and accepted exceptions so the same candidates are not re-litigated every lint run. |
 | Approval gate and ledger | `scripts/capture_gate.py` makes the agent ask before filing analyses, applying artifact promotions, or approving synthesis; `scripts/capture-runs.jsonl` records what was approved afterward. |
 | Durable file updates | Approval-ledger writes use a stable sidecar lock and atomic replacement; backlink rebuilds and log rotations use recoverable multi-file transactions that fail closed when interrupted or conflicted. |
-| Generated wrappers | `scripts/wiki-wrapper-contract.json` is the single manifest for both `.claude/commands/` and `.codex/skills/`; the renderer and parity checker prevent hand-edited drift. |
-| Live evals | `/wiki-eval` runs `scripts/wiki_eval.py` to test shared parsing, durable files, recoverable transactions, backlinks, lint fixtures, stale-text sweep proof, the unified approval gate, ledger validation, export, log rotation, review due checks, discoverability, generated wrapper parity, exact catalog/schema parity, operational-document reachability, setup planning, and Tier-1 lint over the live corpus. |
+| Generated wrappers | `scripts/wiki-wrapper-contract.json` is the single manifest for both `.claude/commands/` and `.agents/skills/`; the renderer and parity checker prevent hand-edited drift. |
+| Live evals | `wiki-eval` runs `scripts/wiki_eval.py` to test shared parsing, durable files, recoverable transactions, backlinks, lint fixtures, stale-text sweep proof, the unified approval gate, ledger validation, export, log rotation, review due checks, discoverability, generated wrapper parity, exact catalog/schema parity, operational-document reachability, setup planning, and Tier-1 lint over the live corpus. |
 | Optional backup receipt | An explicit `rclone` upload advances local backup freshness only after remote size and checksum verification. `scripts/backup_state.py` reports missing, stale, invalid, future-dated, or fresh state without making backup configuration a repository gate. |
 
 Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task instructions live under [`workflows/`](workflows/).
@@ -106,7 +106,7 @@ Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task inst
 |-- CLAUDE.md                  # Thin Claude Code wrapper
 |
 |-- .claude/commands/          # Claude Code slash-command wrappers
-|-- .codex/skills/             # Repo-local Codex skill wrappers
+|-- .agents/skills/            # Repo-local Codex skill wrappers
 |-- .wiki-transactions/        # Gitignored multi-file recovery authority
 |
 |-- workflows/                 # Vendor-neutral workflow instructions

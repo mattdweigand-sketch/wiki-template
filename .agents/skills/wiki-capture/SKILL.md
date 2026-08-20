@@ -1,6 +1,6 @@
 ---
 name: wiki-capture
-description: Run the wiki first-person capture workflow. Use when the user says /wiki-capture, wiki-capture, capture this decision, remember this experience, or wants a decision or lived experience saved into the wiki.
+description: Run the wiki first-person capture workflow. Use when the user says $wiki-capture, wiki-capture, capture this decision, remember this experience, or wants a decision or lived experience saved into the wiki.
 ---
 
 # Wiki Capture

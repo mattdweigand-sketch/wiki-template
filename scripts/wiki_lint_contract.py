@@ -34,7 +34,7 @@ ROOT_ALLOWED_FILES = {
     "README.md", "REFERENCES.md", "SETUP.md",
 }
 ROOT_ALLOWED_DIRS = {
-    ".claude", ".codex", ".github", ".git", ".wiki-transactions", "archive", "deliverables", "raw",
+    ".agents", ".claude", ".codex", ".github", ".git", ".wiki-transactions", "archive", "deliverables", "raw",
     "scripts", "tmp", "wiki", "workflows",
 }
 WIKI_ALLOWED_FILES = {f"{name}.md" for name in META_PAGES}

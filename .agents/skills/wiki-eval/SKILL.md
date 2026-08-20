@@ -1,6 +1,6 @@
 ---
 name: wiki-eval
-description: Run the wiki tooling eval workflow. Use when the user says /wiki-eval, wiki-eval, run wiki evals, run the live evals, verify wiki guardrails, or wants to check that the wiki tools still work.
+description: Run the wiki tooling eval workflow. Use when the user says $wiki-eval, wiki-eval, run wiki evals, run the live evals, verify wiki guardrails, or wants to check that the wiki tools still work.
 ---
 
 # Wiki Eval

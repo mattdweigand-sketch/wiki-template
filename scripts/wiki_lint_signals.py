@@ -54,7 +54,7 @@ from wiki_lint_repository_checks import parse_sourcing_queue_count_markers
 # This stays deterministic and adjacency-gated on purpose: deciding whether a
 # non-adjacent quoted phrase is an attributed source quote, the author's own
 # framing, or a rhetorical/example line is a judgment call, which the wiki keeps
-# in the /wiki-lint evidence-review prose (Tier 3), not in this script.
+# in the wiki-lint evidence-review prose (Tier 3), not in this script.
 QUOTED_CITATION_RE = re.compile(
     r'["“]([^"“”]{20,}?)["”]\s*\((?:own[^)]*?, )?source[sd]?:?\s*([^)]*\[\[[^)]*)\)',
     re.IGNORECASE,
@@ -715,7 +715,7 @@ def signal_synthesis_due(ctx: Tier2Context) -> Tier2SignalResult:
 def signal_review_due(ctx: Tier2Context) -> Tier2SignalResult:
     """Pages whose review_by date has passed (outcome grading due). Mirrors
     review_due.py on the most-frequently-run surface, so a due review cannot
-    wait unseen for the next /wiki-eval; the grading itself stays the review
+    wait unseen for the next wiki-eval; the grading itself stays the review
     workflow's judgment. Self-clearing: grading advances or clears review_by."""
     _ = ctx
     due, _bad = collect_due_reviews(WIKI_ROOT, date.today())

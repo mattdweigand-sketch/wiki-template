@@ -17,7 +17,7 @@ from render_wiki_wrappers import (
 )
 
 
-README_COMMAND_RE = re.compile(r"^\| `/((?:wiki-[a-z0-9-]+))` \|", re.MULTILINE)
+README_COMMAND_RE = re.compile(r"^\| `((?:wiki-[a-z0-9-]+))` \|", re.MULTILINE)
 AGENTS_LIST_RE = re.compile(r"default wrapped workflows: (?P<list>[^.]+)\.")
 BACKTICK_NAME_RE = re.compile(r"`(wiki-[a-z0-9-]+)`")
 
@@ -30,7 +30,7 @@ def _present_wrappers(repo_root: Path, surface: str) -> set[Path]:
             for path in root.glob("wiki-*.md")
             if path.is_file()
         } if root.is_dir() else set()
-    root = repo_root / ".codex" / "skills"
+    root = repo_root / ".agents" / "skills"
     return {
         path.relative_to(repo_root)
         for path in root.glob("wiki-*/SKILL.md")

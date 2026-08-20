@@ -118,7 +118,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         write(root / rel)
     for rel in [
         ".claude/commands/wiki-ingest.md",
-        ".codex/skills/wiki-ingest/SKILL.md",
+        ".agents/skills/wiki-ingest/SKILL.md",
         ".github/workflows/wiki-ci.yml",
         "raw/README.md",
         "raw/.gitkeep",
@@ -132,6 +132,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         write(root / rel)
     for rel in [
         ".env",
+        ".agents/local-state.json",
         ".claude/settings.local.json",
         ".claude/worktrees/private.txt",
         ".git/config",
@@ -170,7 +171,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         any(name.startswith(prefix) for name in names)
         for prefix in (
             ".claude/commands/",
-            ".codex/skills/",
+            ".agents/skills/",
             ".github/workflows/",
             "raw/",
             "scripts/",
@@ -182,6 +183,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         rel not in names
         for rel in (
             ".env",
+            ".agents/local-state.json",
             ".claude/settings.local.json",
             ".claude/worktrees/private.txt",
             ".git/config",

@@ -1,6 +1,6 @@
 # raw/
 
-Source artifacts live here, organized by source type. Drop a file into the right subfolder with a kebab-case filename, then run `/wiki-ingest` to triage, summarize, and link it into `wiki/`.
+Source artifacts live here, organized by source type. Drop a file into the right subfolder with a kebab-case filename, then run the `wiki-ingest` workflow to triage, summarize, and link it into `wiki/`.
 
 `raw/` is immutable. Never edit a file already here. New sources append; existing files stay as the canonical artifact that wiki citations point back to.
 

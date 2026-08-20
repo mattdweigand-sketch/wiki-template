@@ -34,7 +34,9 @@ from _repo_paths import MAY_CREATE_FILE, RepoPathError, resolve_repo_path
 
 # Durable roots an approved capture/promotion/synthesis may edit. raw/ is
 # excluded on purpose: source artifacts are never edited or committed.
-ALLOWED_ROOTS = ("wiki/", "scripts/", "workflows/", ".claude/", ".codex/")
+ALLOWED_ROOTS = (
+    "wiki/", "scripts/", "workflows/", ".agents/", ".claude/", ".codex/",
+)
 ALLOWED_ROOT_FILES = {"AGENTS.md", "CLAUDE.md", "CONTEXT.md", "README.md", "REFERENCES.md"}
 APPROVAL_RECORD_TYPES = frozenset({"capture_approval", "synthesis_approval"})
 # Inert identifier field on historical records; new records never generate it.

@@ -151,7 +151,7 @@ The template ships `scripts/current-state-owners.json` disabled and empty, so a 
 ## What setup does not change
 
 - `scripts/entity-catalog.json` or executable scripts
-- `.claude/commands/` or `.codex/skills/`
+- `.claude/commands/` or `.agents/skills/`
 - workflow routers or maintenance workflows
 - schema mechanics outside the configured domain fields
 - existing entity pages

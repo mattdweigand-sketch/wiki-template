@@ -1,6 +1,6 @@
 ---
 name: wiki-ingest
-description: Run the wiki ingest workflow. Use when the user says /wiki-ingest, wiki-ingest, ingest a source, drop into raw and ingest, or wants a raw artifact turned into wiki pages.
+description: Run the wiki ingest workflow. Use when the user says $wiki-ingest, wiki-ingest, ingest a source, drop into raw and ingest, or wants a raw artifact turned into wiki pages.
 ---
 
 # Wiki Ingest

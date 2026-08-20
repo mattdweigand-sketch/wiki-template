@@ -1,6 +1,6 @@
 ---
 name: wiki-synthesize
-description: Run the wiki synthesis workflow. Use when the user says /wiki-synthesize, wiki-synthesize, synthesize the wiki, run synthesis, or wants a corpus distillation pass.
+description: Run the wiki synthesis workflow. Use when the user says $wiki-synthesize, wiki-synthesize, synthesize the wiki, run synthesis, or wants a corpus distillation pass.
 ---
 
 # Wiki Synthesize

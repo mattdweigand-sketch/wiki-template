@@ -2,12 +2,22 @@
 title: Activity Log
 type: log
 created: 2026-05-17
-updated: 2026-08-19
+updated: 2026-08-20
 ---
 
 # Activity Log
 
 Append-only history of ingest, lint, query, and decision-capture sessions. Newest entries on top.
+
+---
+
+## [2026-08-20] maintenance | current Codex skill discovery
+
+Change: Moved the seven generated Codex workflow wrappers from `.codex/skills/` to the current repo-local `.agents/skills/` discovery root, kept Claude Code slash commands separate from Codex `$wiki-*` invocation, and updated wrapper parity, export coverage, structural policy, reachability scope, and live documentation.
+Reason: Current Codex discovers repository skills under `.agents/skills/`; the old renderer and parity checker agreed with each other while targeting a stale path.
+Rejected alternative: Duplicate or symlink both skill roots, package the repo-specific workflows as a plugin, move `AGENTS.md`, or treat all `.codex` configuration as obsolete.
+Accepted tradeoff: Older Codex installations that relied on the undocumented legacy skill root must update; in exchange, the tracked wrappers follow the current shared skill convention without duplicate discovery surfaces.
+Validation: PASS - path-specific red/green regression; wrapper eval 20/20; export eval 16/16; wrapper parity; document reachability; full eval on Python 3.12.13; Tier-1 lint; `git diff --check`.
 
 ---
 

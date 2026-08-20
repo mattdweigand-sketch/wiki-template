@@ -14,7 +14,7 @@ A page opts into the outcome-review loop by adding `review_by: YYYY-MM-DD` to it
 
 ## When to run
 
-Run on a recurring cadence or whenever `scripts/review_due.py` reports pages due. `/wiki-eval` also surfaces the count each run. Letting dated claims stand ungraded is the failure mode this loop exists to prevent.
+Run on a recurring cadence or whenever `scripts/review_due.py` reports pages due. `wiki-eval` also surfaces the count each run. Letting dated claims stand ungraded is the failure mode this loop exists to prevent.
 
 ## Steps
 

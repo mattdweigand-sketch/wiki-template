@@ -12,6 +12,7 @@
     "workflows"
   ],
   "excluded_directories": [
+    ".agents",
     ".claude",
     ".codex",
     "archive",

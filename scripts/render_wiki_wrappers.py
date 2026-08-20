@@ -234,7 +234,7 @@ def expected_wrappers(contract: WrapperContract) -> dict[Path, bytes]:
     rendered: dict[Path, bytes] = {}
     for shortcut in contract.shortcuts:
         rendered[Path(".claude/commands") / f"{shortcut.name}.md"] = render_claude(shortcut)
-        rendered[Path(".codex/skills") / shortcut.name / "SKILL.md"] = render_codex(shortcut)
+        rendered[Path(".agents/skills") / shortcut.name / "SKILL.md"] = render_codex(shortcut)
     return rendered
 
 

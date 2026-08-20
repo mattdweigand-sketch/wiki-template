@@ -1,6 +1,6 @@
 ---
 name: wiki-lint
-description: Run the wiki lint workflow, including its verifier-agent evidence check. Use when the user says /wiki-lint, wiki-lint, lint the wiki, run lint, or wants deterministic and judgment-oriented wiki checks.
+description: Run the wiki lint workflow, including its verifier-agent evidence check. Use when the user says $wiki-lint, wiki-lint, lint the wiki, run lint, or wants deterministic and judgment-oriented wiki checks.
 ---
 
 # Wiki Lint

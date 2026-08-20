@@ -49,7 +49,7 @@ REQUIRED_FILES = {
 }
 REQUIRED_PREFIXES = (
     ".claude/commands/",
-    ".codex/skills/",
+    ".agents/skills/",
     ".github/workflows/",
     "raw/",
     "scripts/",
@@ -100,6 +100,8 @@ def should_exclude(rel: str) -> bool:
         return True
     if rel.endswith(".DS_Store"):
         return True
+    if rel.startswith(".agents/skills/"):
+        return False
     return any(rel.startswith(prefix) for prefix in DEFAULT_EXCLUDES)
 
 

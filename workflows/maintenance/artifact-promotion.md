@@ -90,7 +90,7 @@ Do not promote when all are true:
 ### Bad
 
 - Create a new page for a useful phrase that fits cleanly inside an existing concept, initiative, decision, workflow, or analysis page.
-- Treat `/wiki-promote` as permission to save everything.
+- Treat `wiki-promote` as permission to save everything.
 - Add a new folder or entity type to hold one artifact.
 
 ## Routing Spec
@@ -124,7 +124,7 @@ Use these route labels in audit output and log entries:
 | `workflow-update` | The artifact changes how future agents should behave | Update `AGENTS.md`, `CONTEXT.md`, `REFERENCES.md`, or `workflows/` |
 | `script` | The artifact is deterministic repeatable logic | Add or update `scripts/` with tests when appropriate |
 
-If `/wiki-promote` routes into another workflow, keep the route decision in the promotion audit and then follow that workflow's Load / Skip list. Do not keep both workflows fully loaded after routing; switch to the selected workflow.
+If `wiki-promote` routes into another workflow, keep the route decision in the promotion audit and then follow that workflow's Load / Skip list. Do not keep both workflows fully loaded after routing; switch to the selected workflow.
 
 ## Audit-Only Output
 

@@ -12,7 +12,7 @@ description: Use this workflow when the user says "lint the wiki". Reads all pag
 
 Lint is split by enforcement tier. Machine-checkable rules run as a deterministic script; only the rules that need genuine judgment are read by the agent.
 
-Invoking `/lint`, `/wiki-lint`, or `wiki-lint` is an explicit request to run this full workflow, including the verifier-agent evidence check in Step 3. Do not ask for separate confirmation before using those verifier agents. If the user says "deterministic lint only", "no subagents", or "skip evidence check", skip Step 3 and say so in the final report.
+Invoking `wiki-lint` through an agent wrapper or by name is an explicit request to run this full workflow, including the verifier-agent evidence check in Step 3. Do not ask for separate confirmation before using those verifier agents. If the user says "deterministic lint only", "no subagents", or "skip evidence check", skip Step 3 and say so in the final report.
 
 1. Run the deterministic linter from the repo root:
 
@@ -39,7 +39,7 @@ Invoking `/lint`, `/wiki-lint`, or `wiki-lint` is an explicit request to run thi
    - `status_drift`, `owner_status_missing`, `owner_self_drift`, `owner_registry_empty`, and `authority_owner_mismatch`: when `scripts/current-state-owners.json` is explicitly enabled, review whether referring compiled pages or owner metadata lag a registered owner. Source pages are never the stale side. Suppress a durable no-change result only as a directional `[referring page, owner page]` pair under `reviewed_status_drift`. The disabled empty registry shipped by the template is quiet; malformed config and missing registered pages are Tier 1.
    - `review_by_missing` and `review_due`: goals and decisions should either enroll in the outcome-review loop with `review_by`, or be deliberately left out. Due reviews are collected by `scripts/review_due.py`.
    - `configuration_migration`: configured legacy domains without `configuration_version: 2` and `entity_preset` remain valid but should rerun `SETUP.md` when convenient. Populated legacy custom types require manual schema resolution.
-   - `synthesis_due`: enough ingest activity has accumulated without a later synthesis pass that a human should consider running `/wiki-synthesize`.
+   - `synthesis_due`: enough ingest activity has accumulated without a later synthesis pass that a human should consider running `wiki-synthesize`.
    - `adjudication_dead`: an entry in `scripts/lint-adjudications.json` suppressed nothing in the current run. Prune it, or keep it deliberately when the historical judgment is still useful.
 
    Authority metadata separates provenance from current truth. `sources:` says what evidence informed a page; `authority_*` says what an agent should trust or re-check before acting on volatile claims. Source pages usually point at raw evidence with `authority_kind: raw-source`. Compiled pages can point at a source page, an owner page, a URL, a local resource, a mixed authority description, or `none` when no durable authority exists. Predictive authority requires `review_by`.
