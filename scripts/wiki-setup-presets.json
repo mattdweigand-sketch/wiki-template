@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "presets": {
+    "organization": [
+      "analysis", "competitor", "concept", "customer", "decision", "feature",
+      "goal", "initiative", "learning", "metric", "partner", "person",
+      "persona", "policy", "process", "product", "project", "skill",
+      "source", "system", "team"
+    ],
+    "personal": [
+      "analysis", "concept", "decision", "goal", "health", "investment",
+      "learning", "person", "project", "property", "skill", "source"
+    ],
+    "hybrid": [
+      "analysis", "competitor", "concept", "customer", "decision", "feature",
+      "goal", "health", "initiative", "investment", "learning", "metric",
+      "partner", "person", "persona", "policy", "process", "product",
+      "project", "property", "skill", "source", "system", "team"
+    ]
+  }
+}

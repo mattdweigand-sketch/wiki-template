@@ -34,7 +34,7 @@ Ingest is a normal durable write. It does not require `scripts/capture_gate.py` 
 
 1. Check for newly provided files in `raw/` root and any subfolders.
 2. For each new file:
-   - Decide the right subfolder from `wiki/domain.md` `raw_taxonomy`; check `raw/README.md` and `ls raw/` before inventing a new subfolder.
+   - Decide the right subfolder from `scripts/raw-buckets.json`; check `raw/README.md` and `ls raw/` before inventing a new subfolder.
    - Rename to kebab-case, preserve the extension.
    - Move the file into its subfolder when it is already inside `raw/`; copy or move it into `raw/` when the user provided it elsewhere; do not alter its contents.
 3. Confirm the resulting file layout before proceeding.

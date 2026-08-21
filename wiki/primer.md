@@ -13,9 +13,9 @@ Routing into the wiki by question type. When an agent gets a question, this page
 
 | Layer | What it holds |
 |---|---|
-| Core files | Setup state, schema, index, glossary, log, sourcing queue, contradictions, and synthesis |
+| Core files | Domain declaration, schema, index, glossary, log, sourcing queue, contradictions, and synthesis |
 | Entity folders | One folder per active knowledge type listed in [`domain.md`](domain.md) and [`SCHEMA.md`](SCHEMA.md) |
-| Raw sources | Immutable source artifacts under `raw/`, organized by the configured raw taxonomy |
+| Raw sources | Immutable source artifacts under `raw/`, organized by the configured raw buckets |
 
 ## Question Routing
 
@@ -39,4 +39,4 @@ If you are a downstream agent reading this wiki:
 4. Use `[[double-bracket]]` links inside authored page bodies and `## Related pages`.
 5. If a page's `confidence` is `low` or `contested`, check [`contradictions.md`](contradictions.md) and cited sources before relying on it.
 6. Do not edit existing files in `raw/`. During ingest, newly provided sources may be placed once under the correct `raw/` subfolder, then treated as immutable.
-7. Do not create durable derived conclusions unless the user explicitly requested a write route such as setup, ingest, capture, promotion, synthesis, or workflow maintenance, or approves the destination.
+7. Do not create durable derived conclusions unless the user explicitly requested a write route such as ingest, capture, promotion, synthesis, or workflow maintenance, or approves the destination.

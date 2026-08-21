@@ -9,18 +9,37 @@ updated: 2026-08-19
 
 A running record of where this wiki diverges from the [Karpathy LLM-wiki pattern](https://karpathy.ai/zero-to-one/), and why. Useful when revisiting structural decisions later.
 
-## 2026-08-19: Governed Domain Configuration
+## 2026-08-20: One-Time Wiki Initialization
+
+### The Template Becomes the Wiki
+
+A fresh clone carries a disposable initializer. The user supplies basic answers
+in `tmp/wiki-setup-answers.json`, previews every planned change, and explicitly
+approves one apply command. Apply configures the live tree, archives only the
+exact answers and a compact receipt, validates the result, and deletes the
+initializer. It leaves ordinary working-tree changes and never commits.
+
+This is intentionally one-way at the product level. A configured wiki has no
+setup or reconfiguration command. Git can still restore uncommitted changes or
+old commits, but that is repository recovery rather than a supported wiki mode.
+
+Rejected alternatives included a permanent materializer, custom setup
+transactions, a path-role registry, migration planners, and automatic commits.
+They add a second lifecycle to a repository whose lasting job is only to be a
+wiki.
+
+## 2026-08-19: Governed Entity Catalog
 
 ### One Catalog Owns the Supported Ontology
 
-Problem: folder/type pairs, preset membership, authoring guidance, and review
+Problem: folder/type pairs, authoring guidance, and review
 expectations had become duplicated prose that could drift independently.
 
 Chosen seam: `scripts/entity-catalog.json` defines the exact 24 supported
 entity records, while `scripts/wiki_entity_catalog.py` is the only production
-interface for loading and validating the catalog, resolving presets, looking
-up folder/type pairs, planning setup, and validating configured layouts. Lint,
-setup, parity, and eval code call that interface.
+interface for loading and validating the catalog, looking up folder/type pairs,
+and validating configured layouts. Lint, parity, and eval code call that
+interface. Setup presets live only in the disposable initializer.
 
 Rejected alternative: let each consumer read the JSON or keep its own lists.
 That would make the data file visible without making its meaning authoritative.
@@ -29,37 +48,12 @@ Tradeoff: adding or changing an entity type now requires a coordinated catalog,
 schema-table, and regression-test update. In return, malformed, duplicated, or
 partially documented types fail deterministically.
 
-### Setup Planning Is Read-Only
+### Configured Layouts Are Exact
 
-Problem: setup and reconfiguration need to preview several folder changes, but
-automatic deletion or relocation would put user-authored pages at risk.
-
-Chosen seam: the planner accepts the current domain configuration, a required
-preset, and the requested active types, then returns a normalized plan with
-creates, safe empty-folder removals, blocked nonempty removals, advisories, and
-errors. It never writes. The existing setup workflow applies an accepted plan,
-reruns it for idempotency, and runs Tier-1 lint.
-
-Rejected alternative: a new multi-file setup transaction that infers and
-executes migrations. The existing workflow is already the human/agent decision
-boundary, and no process should silently move or delete entity pages.
-
-Tradeoff: setup remains a two-phase workflow rather than one command. That
-extra step makes destructive intent visible and preserves the rule that
-nonempty inactive folders require manual resolution.
-
-### Configured Layouts Are Exact; Legacy Configurations Are Explicit
-
-An unconfigured template may hold all 24 empty placeholder folders. A version-2
-configured wiki must name a preset and contain exactly its selected active
-entity folders. New configurations reject the former custom-type field. Older
-configurations without a preset remain usable in legacy mode with a migration
-advisory; an empty legacy custom field can be removed, while populated custom
-types require manual resolution.
-
-Rejected alternative: silently treating every existing folder as active. That
-would preserve accidental structure and make the declared configuration
-meaningless. The tradeoff is a deliberate migration step for older clones.
+An unconfigured template may hold all 24 empty placeholder folders. A
+configured wiki contains exactly the folders mapped from its explicit active
+types. The selected interview preset is not permanent configuration. The live
+catalog has no presets, migration mode, or reconfiguration behavior.
 
 ### Freshness and Verification Stay Authoring Guidance
 

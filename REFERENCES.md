@@ -37,7 +37,7 @@ Detailed workflow ownership:
 
 | Workflow | Route | Owns |
 |---|---|---|
-| Setup | `SETUP.md` | First-session configuration: context owner, domain, preset, supported active entity types, raw taxonomy, privacy warning, and example questions. |
+| One-time initialization | `SETUP.md` | Collects temporary answers, previews exact changes, applies once after approval, archives compact provenance, validates, and removes itself. |
 | Ingest | `workflows/ingest/CONTEXT.md` | Raw source handling, `wiki/sources/` summaries, affected entity-page updates, index rows, backlinks, Tier-1 lint, touched-page Tier-2 review, and ingest log entries. |
 | Research | `workflows/research/CONTEXT.md` | Wiki-grounded answers, selective page loading, optional analysis capture, and promotion-candidate audits. |
 | Capture | `workflows/maintenance/capture.md` | Decision or experience pages with rationale, lessons, affected entities, cross-links, verification, and log entries. |
@@ -93,7 +93,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 
 | File | Purpose |
 |---|---|
-| `wiki/domain.md` | Organization name, scope, active entity types, raw taxonomy, setup status |
+| `wiki/domain.md` | Context name, scope, active entity types, raw buckets, and template/configured status |
 | `wiki/index.md` | Master catalog: read for browsing, research, promotion, explicit lookup, and ingest link/index steps; not startup context |
 | `wiki/SCHEMA.md` | Entity types, frontmatter spec, source-type templates; read when authoring any new page |
 | `wiki/glossary.md` | Canonical term definitions |
@@ -109,8 +109,8 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 |---|---|
 | `raw/README.md` | Source-artifact handling note for the ignored `raw/` corpus |
 | `scripts/raw-buckets.json` | Tracked raw bucket taxonomy read by Tier-1 lint |
-| `scripts/entity-catalog.json` | Governed entity folders, types, preset membership, and authoring semantics; consumed through `scripts/wiki_entity_catalog.py` |
-| `scripts/plan_wiki_setup.py` | Read-only JSON plan for preset selection, safe folder changes, blocked removals, and migration advisories |
+| `scripts/entity-catalog.json` | Permanent governed entity folders, types, and authoring semantics; consumed through `scripts/wiki_entity_catalog.py` |
+| `scripts/finalize_wiki_setup.py`, `scripts/wiki_setup_initializer.py` | Disposable one-time preview and approved finalizer; both are removed from a configured wiki |
 | `scripts/lint-adjudications.json` | Settled Tier-2 lint judgments with reasons and dates; lint suppresses what it lists |
 | `scripts/current-state-owners.json` | Optional, strict registry of current-state owner pages; ships disabled and empty |
 | `scripts/wiki_current_state.py` | Typed owner-registry loader, validator, and current-state drift evaluator used by lint |
@@ -159,7 +159,7 @@ Every file in this project sits at one of five layers, defined by when it loads 
 | Layer | When loaded | Files |
 |---|---|---|
 | **L0** | Always: orientation and routing | `AGENTS.md` (`CLAUDE.md` is a pointer for Claude agents), `wiki/domain.md` status check, `CONTEXT.md` |
-| **L1** | Route entry: selected by `CONTEXT.md` | `workflows/<workspace>/CONTEXT.md`, `SETUP.md`, or `wiki/index.md` only for browsing |
+| **L1** | Route entry: selected by `CONTEXT.md` | `workflows/<workspace>/CONTEXT.md`, one-time `SETUP.md`, or `wiki/index.md` only for browsing |
 | **L2** | Task workflow: selected by route entry | `workflows/maintenance/*.md` and any task-specific workflow file named by the L1 route |
 | **L3** | Per task: stable reference, loaded on demand | `REFERENCES.md`, `wiki/index.md`, `wiki/SCHEMA.md`, `wiki/glossary.md`, `wiki/primer.md`, `wiki/design-notes.md`, `wiki/contradictions.md`, `wiki/sourcing-queue.md`, `wiki/overview.md` |
 | **L4** | During work: content read or written | `wiki/log.md`, `wiki/<entity>/*.md`, `raw/*` |

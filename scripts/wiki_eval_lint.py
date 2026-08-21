@@ -2127,16 +2127,14 @@ run_case(
 )
 
 
-def configure_fixture_domain(root, active_types, *, preset="personal", version=True):
+def configure_fixture_domain(root, active_types):
     lines = [
         "---", "title: Domain Config", "type: domain", "created: 2026-06-01",
         "updated: 2026-06-01", "status: configured",
     ]
-    if version:
-        lines.extend(("configuration_version: 2", f"entity_preset: {preset}"))
     lines.append("entity_types_active:")
     lines.extend(f"  - {value}" for value in active_types)
-    lines.extend(("raw_taxonomy: []", "example_queries: []", "---", "", "# Domain Config", ""))
+    lines.extend(("raw_buckets: []", "example_queries: []", "---", "", "# Domain Config", ""))
     (root / "wiki" / "domain.md").write_text("\n".join(lines))
 
 
@@ -2146,14 +2144,6 @@ run_case(
     expect_code=1,
     expect=("entity-configuration", "inactive entity folders present: concepts"),
 )
-run_case(
-    "legacy-configuration-surfaces-tier2-advisory",
-    lambda r: configure_fixture_domain(r, ("source", "concept"), version=False),
-    args=(), expect_code=0,
-    expect=("legacy domain configuration migration advisories",
-            "legacy configuration has no configuration_version or entity_preset"),
-)
-
 # ---- Tier 1: meta-page dangling links (promoted from Tier-2; gates commit) ----
 run_case(
     "meta-dangling-link-fires",

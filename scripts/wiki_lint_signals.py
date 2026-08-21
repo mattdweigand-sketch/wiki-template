@@ -36,7 +36,6 @@ from wiki_lint_contract import (
     VOLATILE_STATUS_RE,
     WIKI_ROOT,
 )
-from wiki_entity_catalog import load_entity_catalog, validate_configured_layout
 from wiki_current_state import (
     CurrentStateEvaluation,
     CurrentStateOwnerRegistry,
@@ -670,13 +669,6 @@ def signal_review_by_missing(ctx: Tier2Context) -> Tier2SignalResult:
     return sorted(out), 0
 
 
-def signal_configuration_migration(ctx: Tier2Context) -> Tier2SignalResult:
-    """Legacy configured domains that remain valid but should migrate to v2."""
-    _ = ctx
-    validation = validate_configured_layout(Path.cwd().resolve(), load_entity_catalog())
-    return list(validation.advisories), 0
-
-
 # Ingest entries since the last synthesis pass that count as a burst worth
 # distilling. The synthesize workflow stays manual and approval-gated; this only
 # surfaces the trigger.
@@ -774,7 +766,6 @@ def signal_adjudication_dead(ctx: Tier2Context) -> Tier2SignalResult:
 # row here. (Meta-page dangling links moved to Tier-1 as a hard failure and are
 # no longer surfaced here.)
 TIER2_SIGNALS: tuple[tuple[str, str, Tier2Signal], ...] = (
-    ("configuration_migration", "legacy domain configuration migration advisories", signal_configuration_migration),
     ("quote_mismatch", "quote mismatches (quoted text not verbatim in cited source)", signal_quote_mismatch),
     ("orphans", "orphans (no inbound links)", signal_orphans),
     ("near_duplicate", "near-duplicate pairs (prefer updating over creating)", signal_near_duplicate),
@@ -842,6 +833,5 @@ __all__ = [
     "Tier2Report",
     "Tier2Signal",
     "Tier2SignalResult",
-    "signal_configuration_migration",
     "run_tier2_lint",
 ]

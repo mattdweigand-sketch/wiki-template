@@ -79,7 +79,7 @@ def make_repo(root: Path, run_id: str = "fixture-run") -> tuple[Path, dict, dict
 
 def case(name: str, mutate=None, *, status: str = "FAILED", fragment: str | None = None) -> None:
     with tempfile.TemporaryDirectory(prefix="wiki-evidence-eval-") as td:
-        root = Path(td)
+        root = Path(td).resolve()
         run_dir, sample, plant, batches = make_repo(root)
         if mutate:
             mutate(root, run_dir, sample, plant, batches)
@@ -225,7 +225,7 @@ case("symlinked-artifact-directory-fails", symlinked_verdict_directory,
 
 
 with tempfile.TemporaryDirectory(prefix="wiki-evidence-determinism-") as td:
-    root = Path(td)
+    root = Path(td).resolve()
     (root / "wiki").mkdir()
     for source in FIXTURES.glob("*.md"):
         shutil.copyfile(source, root / "wiki" / source.name)
@@ -241,7 +241,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-determinism-") as td:
 
 
 with tempfile.TemporaryDirectory(prefix="wiki-evidence-path-") as td:
-    root = Path(td)
+    root = Path(td).resolve()
     for index, bad in enumerate(("/tmp/evidence-check/x", "tmp/evidence-check/../x", "tmp/evidence-check/x/y"), start=1):
         try:
             safe_run_dir(root, bad, create=True)
@@ -264,7 +264,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-path-") as td:
 
 
 with tempfile.TemporaryDirectory(prefix="wiki-evidence-encoding-") as td:
-    root = Path(td)
+    root = Path(td).resolve()
     (root / "wiki").mkdir()
     (root / "wiki/bad.md").write_bytes(b"\xff source: [[bad]]\n")
     try:
@@ -279,7 +279,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-encoding-") as td:
 
 
 with tempfile.TemporaryDirectory(prefix="wiki-evidence-install-fault-") as td:
-    root = Path(td)
+    root = Path(td).resolve()
     run_dir, sample, plant, batches = make_repo(root, "install-fault-base")
     shutil.rmtree(run_dir / "batches")
     shutil.rmtree(run_dir / "prompts")

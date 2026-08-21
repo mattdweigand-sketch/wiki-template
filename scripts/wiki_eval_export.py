@@ -112,7 +112,6 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         "LICENSE",
         "README.md",
         "REFERENCES.md",
-        "SETUP.md",
     ]
     for rel in required_files:
         write(root / rel)

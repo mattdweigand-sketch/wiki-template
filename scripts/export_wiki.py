@@ -45,7 +45,6 @@ REQUIRED_FILES = {
     "LICENSE",
     "README.md",
     "REFERENCES.md",
-    "SETUP.md",
 }
 REQUIRED_PREFIXES = (
     ".claude/commands/",

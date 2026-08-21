@@ -52,7 +52,7 @@ A migration keeps the shape of the existing registries: a `description` field na
 
 ## Schema Doc Parity Contract
 
-Entity folders, frontmatter types, preset memberships, purposes, review-date expectations, authority-freshness guidance, and verification guidance are canonical in `scripts/entity-catalog.json` and consumed through `scripts/wiki_entity_catalog.py`. Other frontmatter vocabularies (`confidence`, `source_type`, `authority_kind`, `authority_freshness`, and related-page labels) are canonical in `scripts/wiki_lint_contract.py`. Duplicated enumerations in `wiki/SCHEMA.md`, `REFERENCES.md`, and `AGENTS.md` carry parity markers.
+Entity folders, frontmatter types, purposes, review-date expectations, authority-freshness guidance, and verification guidance are canonical in `scripts/entity-catalog.json` and consumed through `scripts/wiki_entity_catalog.py`. Other frontmatter vocabularies (`confidence`, `source_type`, `authority_kind`, `authority_freshness`, and related-page labels) are canonical in `scripts/wiki_lint_contract.py`. Duplicated enumerations in `wiki/SCHEMA.md`, `REFERENCES.md`, and `AGENTS.md` carry parity markers.
 
 `python3 scripts/check_schema_doc_parity.py` enforces the exact 24-row catalog table and set equality at every registered enum marker, including all three related-label sites. The `schema-docs` suite runs seeded field and site drift fixtures so the checker cannot go vacuous. Ordering remains editorial; catalog row content and enum membership do not.
 

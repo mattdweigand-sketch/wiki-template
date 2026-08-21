@@ -93,7 +93,7 @@ def build_clean_tree(root: Path, constants: dict[str, set[str]]) -> None:
 
     entity_rows = "\n".join(
         f"| **{entry.type_name.title()}** | `wiki/{entry.folder}/` | "
-        f"{', '.join(entry.presets)} | {entry.purpose} | {entry.review_date} | "
+        f"{entry.purpose} | {entry.review_date} | "
         f"{entry.authority_freshness} | {entry.verification} |"
         for entry in catalog.entries
     )
@@ -112,7 +112,7 @@ def build_clean_tree(root: Path, constants: dict[str, set[str]]) -> None:
         "## Entity Types\n\n"
         "<!-- parity:catalog key=entity-catalog -->\n"
         "<!-- parity:enum key=entity-table-folders -->\n"
-        "| Type | Location | Presets | Purpose | Review date | Authority freshness | Verification |\n"
+        "| Type | Location | Purpose | Review date | Authority freshness | Verification |\n"
         "|---|---|---|---|---|---|---|\n"
         f"{entity_rows}\n\n"
         "## Page Format\n\n"
@@ -292,8 +292,8 @@ def break_inline_list(root: Path) -> None:
 def break_table_location(root: Path) -> None:
     replace_once(
         root / "wiki" / "SCHEMA.md",
-        "| Type | Location | Presets | Purpose | Review date | Authority freshness | Verification |",
-        "| Type | Path | Presets | Purpose | Review date | Authority freshness | Verification |",
+        "| Type | Location | Purpose | Review date | Authority freshness | Verification |",
+        "| Type | Path | Purpose | Review date | Authority freshness | Verification |",
     )
 
 

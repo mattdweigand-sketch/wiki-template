@@ -348,7 +348,6 @@ def _catalog_row(entry: EntityTypeSpec) -> tuple[str, ...]:
     return (
         entry.type_name,
         entry.folder,
-        ", ".join(entry.presets),
         entry.purpose,
         entry.review_date,
         entry.authority_freshness,
@@ -376,7 +375,6 @@ def _catalog_table_problems(repo_root: Path) -> list[str]:
     expected_header = [
         "type",
         "location",
-        "presets",
         "purpose",
         "review date",
         "authority freshness",
@@ -418,7 +416,6 @@ def _catalog_table_problems(repo_root: Path) -> list[str]:
             row[3],
             row[4],
             row[5],
-            row[6],
         )
 
     expected = {entry.folder: _catalog_row(entry) for entry in catalog.entries}

@@ -8,32 +8,32 @@ Reference spec for entity types, page format, and source-type summary templates.
 
 <!-- parity:catalog key=entity-catalog -->
 <!-- parity:enum key=entity-table-folders -->
-| Type | Location | Presets | Purpose | Review date | Authority freshness | Verification |
-|---|---|---|---|---|---|---|
-| **Analysis** | `wiki/analyses/` | organization, personal, hybrid | A synthesized answer, comparison, brief, or other durable output. | optional | contextual | when-authority-requires |
-| **Competitor** | `wiki/competitors/` | organization, hybrid | A competing vendor, alternative, or substitute and its positioning. | optional | contextual | when-authority-requires |
-| **Concept** | `wiki/concepts/` | organization, personal, hybrid | An idea, term, framework, or mental model used in the configured domain. | optional | stable-meaning | when-authority-requires |
-| **Customer** | `wiki/customers/` | organization, hybrid | A named customer or segment, its use cases, relationship, and risks. | optional | contextual | when-authority-requires |
-| **Decision** | `wiki/decisions/` | organization, personal, hybrid | A historical choice, its rationale, alternatives, and outcome-review checkpoint. | expected | contextual | when-authority-requires |
-| **Feature** | `wiki/features/` | organization, hybrid | A specific customer-facing capability and the jobs it supports. | optional | contextual | when-authority-requires |
-| **Goal** | `wiki/goals/` | organization, personal, hybrid | A desired outcome with status, blockers, and a dated outcome review. | expected | current-state | before-consequential-action |
-| **Health** | `wiki/health/` | personal, hybrid | Health protocols, experiments, practices, and current context; not medical advice. | optional | current-state | before-consequential-action |
-| **Initiative** | `wiki/initiatives/` | organization, hybrid | A strategic program or bet that may coordinate several projects. | optional | contextual | when-authority-requires |
-| **Investment** | `wiki/investments/` | personal, hybrid | An investment thesis, position, current view, risks, and open questions; not financial advice. | optional | current-state | before-consequential-action |
-| **Learning** | `wiki/learnings/` | organization, personal, hybrid | A durable lesson tied to evidence or lived experience. | optional | stable-meaning | when-authority-requires |
-| **Metric** | `wiki/metrics/` | organization, hybrid | A measurement definition, formula, owner, and observed values. | optional | contextual | when-authority-requires |
-| **Partner** | `wiki/partners/` | organization, hybrid | A vendor, integration partner, channel partner, or collaborator. | optional | contextual | when-authority-requires |
-| **Person** | `wiki/people/` | organization, personal, hybrid | An individual, stakeholder, or role and its responsibilities. | optional | stable-meaning | when-authority-requires |
-| **Persona** | `wiki/personas/` | organization, hybrid | A user or buyer archetype with goals, pain points, and authority. | optional | stable-meaning | when-authority-requires |
-| **Policy** | `wiki/policies/` | organization, hybrid | A currently binding rule, its scope, authority, exceptions, and review expectations. | optional | contextual | when-authority-requires |
-| **Process** | `wiki/processes/` | organization, hybrid | An organizational procedure with triggers, inputs, steps, outputs, owners, and exceptions. | optional | contextual | when-authority-requires |
-| **Product** | `wiki/products/` | organization, hybrid | A customer-facing offering, its positioning, users, and core jobs. | optional | contextual | when-authority-requires |
-| **Project** | `wiki/projects/` | organization, personal, hybrid | Bounded work with a concrete output or completion condition. | optional | contextual | when-authority-requires |
-| **Property** | `wiki/properties/` | personal, hybrid | An owner manual for a residence or operated property: systems, maintenance, vendors, records, and status. | optional | current-state | before-consequential-action |
-| **Skill** | `wiki/skills/` | organization, personal, hybrid | A demonstrated capability and the evidence behind proficiency. | optional | stable-meaning | when-authority-requires |
-| **Source** | `wiki/sources/` | organization, personal, hybrid | A summary of one raw artifact and what that evidence supports. | optional | immutable-source | when-authority-requires |
-| **System** | `wiki/systems/` | organization, hybrid | A technical or operational dependency with ownership, interfaces, and failure modes. | optional | contextual | when-authority-requires |
-| **Team** | `wiki/teams/` | organization, hybrid | An organizational group with responsibilities and interfaces. | optional | contextual | when-authority-requires |
+| Type | Location | Purpose | Review date | Authority freshness | Verification |
+|---|---|---|---|---|---|
+| **Analysis** | `wiki/analyses/` | A synthesized answer, comparison, brief, or other durable output. | optional | contextual | when-authority-requires |
+| **Competitor** | `wiki/competitors/` | A competing vendor, alternative, or substitute and its positioning. | optional | contextual | when-authority-requires |
+| **Concept** | `wiki/concepts/` | An idea, term, framework, or mental model used in the configured domain. | optional | stable-meaning | when-authority-requires |
+| **Customer** | `wiki/customers/` | A named customer or segment, its use cases, relationship, and risks. | optional | contextual | when-authority-requires |
+| **Decision** | `wiki/decisions/` | A historical choice, its rationale, alternatives, and outcome-review checkpoint. | expected | contextual | when-authority-requires |
+| **Feature** | `wiki/features/` | A specific customer-facing capability and the jobs it supports. | optional | contextual | when-authority-requires |
+| **Goal** | `wiki/goals/` | A desired outcome with status, blockers, and a dated outcome review. | expected | current-state | before-consequential-action |
+| **Health** | `wiki/health/` | Health protocols, experiments, practices, and current context; not medical advice. | optional | current-state | before-consequential-action |
+| **Initiative** | `wiki/initiatives/` | A strategic program or bet that may coordinate several projects. | optional | contextual | when-authority-requires |
+| **Investment** | `wiki/investments/` | An investment thesis, position, current view, risks, and open questions; not financial advice. | optional | current-state | before-consequential-action |
+| **Learning** | `wiki/learnings/` | A durable lesson tied to evidence or lived experience. | optional | stable-meaning | when-authority-requires |
+| **Metric** | `wiki/metrics/` | A measurement definition, formula, owner, and observed values. | optional | contextual | when-authority-requires |
+| **Partner** | `wiki/partners/` | A vendor, integration partner, channel partner, or collaborator. | optional | contextual | when-authority-requires |
+| **Person** | `wiki/people/` | An individual, stakeholder, or role and its responsibilities. | optional | stable-meaning | when-authority-requires |
+| **Persona** | `wiki/personas/` | A user or buyer archetype with goals, pain points, and authority. | optional | stable-meaning | when-authority-requires |
+| **Policy** | `wiki/policies/` | A currently binding rule, its scope, authority, exceptions, and review expectations. | optional | contextual | when-authority-requires |
+| **Process** | `wiki/processes/` | An organizational procedure with triggers, inputs, steps, outputs, owners, and exceptions. | optional | contextual | when-authority-requires |
+| **Product** | `wiki/products/` | A customer-facing offering, its positioning, users, and core jobs. | optional | contextual | when-authority-requires |
+| **Project** | `wiki/projects/` | Bounded work with a concrete output or completion condition. | optional | contextual | when-authority-requires |
+| **Property** | `wiki/properties/` | An owner manual for a residence or operated property: systems, maintenance, vendors, records, and status. | optional | current-state | before-consequential-action |
+| **Skill** | `wiki/skills/` | A demonstrated capability and the evidence behind proficiency. | optional | stable-meaning | when-authority-requires |
+| **Source** | `wiki/sources/` | A summary of one raw artifact and what that evidence supports. | optional | immutable-source | when-authority-requires |
+| **System** | `wiki/systems/` | A technical or operational dependency with ownership, interfaces, and failure modes. | optional | contextual | when-authority-requires |
+| **Team** | `wiki/teams/` | An organizational group with responsibilities and interfaces. | optional | contextual | when-authority-requires |
 
 ---
 
