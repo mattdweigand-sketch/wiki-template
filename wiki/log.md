@@ -11,6 +11,34 @@ Append-only history of ingest, lint, query, and decision-capture sessions. Newes
 
 ---
 
+## [2026-08-20] maintenance | root document drift audit
+
+Change: Audited all six root Markdown documents against the current routes, scripts, registries, recent refactors, and setup lifecycle. Expanded the maintenance summaries to name the live document-audit, tooling-eval, sourcing-queue refresh, review, and log-rotation routes. Clarified that research starts from compiled pages but may return to raw evidence, that setup markers locate template-owned fragments while the initializer owns configured replacement text, and that initialization replaces rather than appends the template log entry.
+Reason: The main setup, privacy, wrapper, entity-catalog, and safety contracts were current, but several root summaries claimed broader workflow coverage than they listed.
+Validation: PASS - initializer regression 9/9, full eval 851/851 on Python 3.9.6, document reachability, schema-document parity, wrapper parity, Tier-1 lint, and `git diff --check`.
+
+---
+
+## [2026-08-20] maintenance | marker-based setup document rendering
+
+Change: Replaced prose-dependent initializer rewrites with named setup markers across the README, agent and task routers, references, primer, index, design notes, lint contract, CI, and template log entry. Preview now rejects missing, duplicate, reversed, or unconsumed markers before approval, and apply renders all live documents before its first write. Configured titles now avoid a duplicated `Wiki` suffix and replace the task router's organization placeholder.
+Reason: Documentation wording should be editable without silently disabling setup cleanup or forcing a matching code-string update.
+Rejected alternative: Keep exact sentence replacement with stronger count assertions. That would detect drift but still make ordinary prose edits depend on initializer implementation details.
+Accepted tradeoff: Template maintainers must preserve the small marker comments around setup-owned fragments. The marker names are stable machine contracts, while the prose between them remains freely editable.
+Validation: PASS - initializer regression 9/9, schema-document parity 17/17, document reachability 10/10, discoverability 9/9, full eval on Python 3.9.6, Tier-1 lint, and `git diff --check`.
+
+---
+
+## [2026-08-20] maintenance | private repository provenance contract
+
+Change: Declared private Git repositories as the intended operating model for tracked raw sources and restored an independent exact assertion for all 24 governed folder-to-type mappings.
+Reason: A private clone and its approved private remote should preserve the complete evidence layer, not just compiled wiki pages. The catalog test must also fail if any governed folder or type drifts, even when the catalog still contains 24 entries.
+Rejected alternative: Keep raw sources local-only, which makes ordinary clones incomplete, or rely on the catalog's entry count and two irregular spot checks, which can miss a wrong but internally consistent mapping.
+Accepted tradeoff: Git retains raw-source history and offers no encryption or access control. Anyone connecting a wiki to a public or broadly shared remote must review the corpus first and accept that deleting a file later does not remove it from prior commits.
+Validation: PASS - entity-catalog eval 6/6, initializer regression 4/4, schema-document parity 17/17, full eval on Python 3.9.6, Tier-1 lint, discoverability check, and `git diff --check`.
+
+---
+
 ## [2026-08-20] maintenance | initializer documentation alignment
 
 Change: Reconciled the root documentation with the one-time initializer and tracked raw-source policy. Clarified status-based routing, catalog-ordered active types, workflow-dependent entity destinations, the complete disposable initializer file set, setup provenance under `archive/`, and the live eval registry.
@@ -273,6 +301,8 @@ Validation: PASS — backlink rebuild completed; `python3 scripts/lint.py` and `
 
 ---
 
+<!-- wiki-setup:log-template-entry:start -->
 ## [2026-05-17] template initialized
 
 Template state. Awaiting domain configuration — see [`SETUP.md`](../SETUP.md) and [`domain.md`](domain.md).
+<!-- wiki-setup:log-template-entry:end -->

@@ -4,10 +4,11 @@ Source artifacts live here, organized by source type. Drop a file into the right
 
 `raw/` is immutable. Never edit a file already here. New sources append; existing files stay as the canonical artifact that wiki citations point back to.
 
-Source artifacts are tracked with the rest of the repository and may be pushed
-to its remote. Review sensitive files before adding or pushing them. Use the
-export workflow when you need a complete local or explicitly approved
-off-device backup.
+This template assumes a private Git repository whose access is limited to the
+wiki's intended users. Source artifacts are tracked with the rest of the
+repository and may be pushed to its remote. Review sensitive files before
+adding or pushing them. Use the export workflow when you need a complete local
+or explicitly approved off-device backup.
 
 ## Subfolders
 

@@ -29,8 +29,10 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install --yes ripgrep
 
+# wiki-setup:ci-initializer-test:start
       - name: Test one-time initializer
         run: PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/wiki_setup_initializer_test.py
+# wiki-setup:ci-initializer-test:end
 
       - name: Run wiki eval suite
         run: python3 scripts/wiki_eval.py

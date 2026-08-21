@@ -26,6 +26,10 @@ SETUP_DELETE_PATHS = [
     "scripts/wiki_setup_initializer.py",
     "tmp/wiki-setup-answers.json",
 ]
+README_IDENTITY_START = "<!-- wiki-setup:readme-identity:start -->"
+README_AGENT_PROMPT_START = "<!-- wiki-setup:readme-agent-setup-prompt:start -->"
+README_AGENT_PROMPT_END = "<!-- wiki-setup:readme-agent-setup-prompt:end -->"
+README_CI_LINE_MARKER = "<!-- wiki-setup:readme-ci-row:line -->"
 
 
 def canonical_answers() -> bytes:
@@ -70,6 +74,26 @@ def template_clone() -> tuple[tempfile.TemporaryDirectory[str], Path]:
     return temporary, root
 
 
+def run_setup_preview(root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            PYTHON, "scripts/finalize_wiki_setup.py", "preview",
+            "--answers", "tmp/wiki-setup-answers.json",
+        ],
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+
+def replace_managed_marker_body(text: str, start_marker: str, end_marker: str) -> str:
+    start = text.index(start_marker) + len(start_marker)
+    end = text.index(end_marker, start)
+    return text[:start] + "\n\nReworded template prose that the initializer must ignore.\n" + text[end:]
+
+
 def main() -> int:
     results = Results()
     temporary, root = template_clone()
@@ -78,17 +102,7 @@ def main() -> int:
             ["git", "status", "--porcelain"], cwd=root, check=True,
             stdout=subprocess.PIPE, text=True,
         ).stdout
-        process = subprocess.run(
-            [
-                PYTHON, "scripts/finalize_wiki_setup.py", "preview",
-                "--answers", "tmp/wiki-setup-answers.json",
-            ],
-            cwd=root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
+        process = run_setup_preview(root)
         after = subprocess.run(
             ["git", "status", "--porcelain"], cwd=root, check=True,
             stdout=subprocess.PIPE, text=True,
@@ -131,18 +145,88 @@ def main() -> int:
             and (root / "tmp/wiki-setup-answers.json").exists(),
             f"exit={unapproved.returncode} stderr={unapproved.stderr!r}",
         )
-        (root / "wiki/teams/user-page.md").write_text("user content\n", encoding="utf-8")
-        blocked = subprocess.run(
-            [
-                PYTHON, "scripts/finalize_wiki_setup.py", "preview",
-                "--answers", "tmp/wiki-setup-answers.json",
-            ],
-            cwd=root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
+        readme_path = root / "README.md"
+        original_readme = readme_path.read_text(encoding="utf-8")
+        readme_path.write_text(
+            original_readme.replace(README_IDENTITY_START, "", 1),
+            encoding="utf-8",
         )
+        missing_marker = run_setup_preview(root)
+        missing_payload = json.loads(missing_marker.stdout) if missing_marker.stdout else {}
+        results.record(
+            "preview-rejects-missing-setup-marker",
+            missing_marker.returncode != 0
+            and missing_payload.get("valid") is False
+            and any(
+                "readme-identity" in error and "exactly one start and one end" in error
+                for error in missing_payload.get("errors", [])
+            ),
+            f"exit={missing_marker.returncode} stdout={missing_marker.stdout!r} "
+            f"stderr={missing_marker.stderr!r}",
+        )
+        readme_path.write_text(
+            original_readme.replace(
+                README_IDENTITY_START,
+                README_IDENTITY_START + "\n" + README_IDENTITY_START,
+                1,
+            ),
+            encoding="utf-8",
+        )
+        duplicate_marker = run_setup_preview(root)
+        duplicate_payload = json.loads(duplicate_marker.stdout) if duplicate_marker.stdout else {}
+        results.record(
+            "preview-rejects-duplicate-setup-marker",
+            duplicate_marker.returncode != 0
+            and duplicate_payload.get("valid") is False
+            and any(
+                "readme-identity" in error and "found 2 start and 1 end" in error
+                for error in duplicate_payload.get("errors", [])
+            ),
+            f"exit={duplicate_marker.returncode} stdout={duplicate_marker.stdout!r} "
+            f"stderr={duplicate_marker.stderr!r}",
+        )
+        readme_path.write_text(
+            original_readme
+            + "\n<!-- wiki-setup:unregistered-block:start -->\n"
+            + "Unregistered setup content.\n"
+            + "<!-- wiki-setup:unregistered-block:end -->\n",
+            encoding="utf-8",
+        )
+        unconsumed_marker = run_setup_preview(root)
+        unconsumed_payload = (
+            json.loads(unconsumed_marker.stdout) if unconsumed_marker.stdout else {}
+        )
+        results.record(
+            "preview-rejects-unconsumed-setup-marker",
+            unconsumed_marker.returncode != 0
+            and unconsumed_payload.get("valid") is False
+            and "unconsumed setup markers remain in: README.md"
+            in unconsumed_payload.get("errors", []),
+            f"exit={unconsumed_marker.returncode} stdout={unconsumed_marker.stdout!r} "
+            f"stderr={unconsumed_marker.stderr!r}",
+        )
+        readme_path.write_text(
+            original_readme.replace(README_CI_LINE_MARKER, "", 1),
+            encoding="utf-8",
+        )
+        missing_line_marker = run_setup_preview(root)
+        missing_line_payload = (
+            json.loads(missing_line_marker.stdout) if missing_line_marker.stdout else {}
+        )
+        results.record(
+            "preview-rejects-missing-setup-line-marker",
+            missing_line_marker.returncode != 0
+            and missing_line_payload.get("valid") is False
+            and any(
+                "readme-ci-row" in error and "must appear exactly once" in error
+                for error in missing_line_payload.get("errors", [])
+            ),
+            f"exit={missing_line_marker.returncode} "
+            f"stdout={missing_line_marker.stdout!r} stderr={missing_line_marker.stderr!r}",
+        )
+        readme_path.write_text(original_readme, encoding="utf-8")
+        (root / "wiki/teams/user-page.md").write_text("user content\n", encoding="utf-8")
+        blocked = run_setup_preview(root)
         blocked_payload = json.loads(blocked.stdout) if blocked.stdout else {}
         results.record(
             "preview-blocks-nonempty-inactive-folder",
@@ -157,6 +241,21 @@ def main() -> int:
 
     temporary, root = template_clone()
     try:
+        readme_path = root / "README.md"
+        readme_path.write_text(
+            replace_managed_marker_body(
+                readme_path.read_text(encoding="utf-8"),
+                README_AGENT_PROMPT_START,
+                README_AGENT_PROMPT_END,
+            ),
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "README.md"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "reword setup-managed prose"],
+            cwd=root,
+            check=True,
+        )
         head_before = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=root, check=True,
             stdout=subprocess.PIPE, text=True,
@@ -178,6 +277,7 @@ def main() -> int:
             stdout=subprocess.PIPE, text=True,
         ).stdout.strip()
         agents = (root / "AGENTS.md").read_text(encoding="utf-8")
+        context = (root / "CONTEXT.md").read_text(encoding="utf-8")
         domain = (root / "wiki/domain.md").read_text(encoding="utf-8")
         raw_readme = (root / "raw/README.md").read_text(encoding="utf-8")
         raw_registry = json.loads((root / "scripts/raw-buckets.json").read_text(encoding="utf-8"))
@@ -211,6 +311,13 @@ def main() -> int:
             for term in ("SETUP.md", "finalize_wiki_setup", "wiki_setup_initializer", "wiki-setup-presets")
             if term in path.read_text(encoding="utf-8")
         }
+        live_readme = (root / "README.md").read_text(encoding="utf-8")
+        results.record(
+            "managed-prose-change-does-not-break-apply",
+            process.returncode == 0
+            and "Reworded template prose that the initializer must ignore." not in live_readme,
+            f"exit={process.returncode} stdout={process.stdout!r} stderr={process.stderr!r}",
+        )
         results.record(
             "approved-apply-produces-live-wiki-and-removes-initializer",
             process.returncode == 0
@@ -230,6 +337,11 @@ def main() -> int:
             and "configuration_version" not in domain
             and "raw_taxonomy" not in domain
             and "unconfigured template" not in agents
+            and agents.startswith("# Matt's Wiki\n")
+            and live_readme.startswith("# Matt's Wiki\n")
+            and context.startswith("# Matt's Wiki - Task Router\n")
+            and "Matt's Wiki Wiki" not in agents + live_readme + context
+            and "This wiki assumes a private Git repository" in raw_readme
             and "Source artifacts are tracked with the rest of the repository" in raw_readme
             and raw_registry.get("policy")
             == "Raw source artifacts are immutable and may be tracked with the rest of the wiki."

@@ -12,16 +12,42 @@ from wiki_entity_catalog import CatalogError, load_entity_catalog, validate_conf
 
 
 CATALOG_PATH = Path(__file__).with_name("entity-catalog.json")
+EXPECTED_ENTITY_FOLDER_TYPES = {
+    "analyses": "analysis",
+    "competitors": "competitor",
+    "concepts": "concept",
+    "customers": "customer",
+    "decisions": "decision",
+    "features": "feature",
+    "goals": "goal",
+    "health": "health",
+    "initiatives": "initiative",
+    "investments": "investment",
+    "learnings": "learning",
+    "metrics": "metric",
+    "partners": "partner",
+    "people": "person",
+    "personas": "persona",
+    "policies": "policy",
+    "processes": "process",
+    "products": "product",
+    "projects": "project",
+    "properties": "property",
+    "skills": "skill",
+    "sources": "source",
+    "systems": "system",
+    "teams": "team",
+}
 
 
 def main() -> int:
     results = Results()
     catalog = load_entity_catalog()
     results.record(
-        "live-catalog-maps-all-governed-folders",
-        len(catalog.entries) == 24
-        and catalog.type_folders["property"] == "properties"
-        and catalog.folder_types["people"] == "person",
+        "live-catalog-matches-exact-governed-folder-type-contract",
+        catalog.folder_types == EXPECTED_ENTITY_FOLDER_TYPES
+        and catalog.type_folders
+        == {type_name: folder for folder, type_name in EXPECTED_ENTITY_FOLDER_TYPES.items()},
         repr(catalog),
     )
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))

@@ -31,7 +31,10 @@ ENTITY_CATALOG = load_entity_catalog()
 FOLDER_TYPE = ENTITY_CATALOG.folder_types
 ROOT_ALLOWED_FILES = {
     ".gitignore", "AGENTS.md", "CLAUDE.md", "CONTEXT.md", "LICENSE",
-    "README.md", "REFERENCES.md", "SETUP.md",
+    "README.md", "REFERENCES.md",
+# wiki-setup:lint-contract-setup-root:start
+    "SETUP.md",
+# wiki-setup:lint-contract-setup-root:end
 }
 ROOT_ALLOWED_DIRS = {
     ".agents", ".claude", ".codex", ".github", ".git", ".wiki-transactions", "archive", "deliverables", "raw",

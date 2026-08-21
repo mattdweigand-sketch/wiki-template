@@ -10,7 +10,7 @@ The wiki maintainer:
 
 - Ingests sources and extracts knowledge into structured wiki pages.
 - Keeps pages consistent, cross-referenced, and up to date.
-- Answers queries by reading the wiki, not by re-deriving from raw sources.
+- Answers queries from the wiki first, returning to raw evidence only when the routed workflow or an evidence check calls for it.
 - Files substantial answers back into the wiki when the research workflow criteria are met, using `scripts/capture_gate.py` before analysis capture, artifact promotion, and synthesis promotion.
 - Audits reusable artifacts for promotion when they should compound elsewhere.
 - Reviews dated predictions and decisions when `review_by` checkpoints come due.
@@ -28,7 +28,7 @@ The system has four layers of responsibility:
 
 | Layer | Owns |
 |---|---|
-| Sources | `raw/` stores source artifacts as tracked repository content. Existing raw files are immutable. |
+| Sources | `raw/` stores immutable source artifacts as tracked content in the intended private repository. |
 | Knowledge | `wiki/` stores maintained, cited pages and wiki-wide records. |
 | Workflow | `AGENTS.md`, `CONTEXT.md`, and `workflows/` route tasks and define what to load, skip, edit, and verify. |
 | Mechanisms | `scripts/` performs deterministic checks, backlink rebuilds, approval-ledger validation, exports, and wrapper validation. |
@@ -37,12 +37,15 @@ Detailed workflow ownership:
 
 | Workflow | Route | Owns |
 |---|---|---|
-| One-time initialization | `SETUP.md` | Collects temporary answers, previews exact changes, applies once after approval, archives compact provenance, validates, and removes itself. |
+| One-time initialization | `SETUP.md` | Collects temporary answers, previews exact changes, applies once after approval, archives compact provenance, validates, and removes itself. <!-- wiki-setup:references-setup-workflow:line --> |
 | Ingest | `workflows/ingest/CONTEXT.md` | Raw source handling, `wiki/sources/` summaries, affected entity-page updates, index rows, backlinks, Tier-1 lint, touched-page Tier-2 review, and ingest log entries. |
 | Research | `workflows/research/CONTEXT.md` | Wiki-grounded answers, selective page loading, optional analysis capture, and promotion-candidate audits. |
+| Root-document audit | `workflows/maintenance/audit-docs.md` | Drift checks for root operating documents and workflow routers against live files, scripts, registries, and routes. |
 | Capture | `workflows/maintenance/capture.md` | Decision or experience pages with rationale, lessons, affected entities, cross-links, verification, and log entries. |
 | Artifact promotion | `workflows/maintenance/artifact-promotion.md` | Routing useful external or conversational artifacts to a source, active entity type, workflow, script, existing page update, or discard. |
 | Lint | `workflows/maintenance/lint.md` | Deterministic structure checks, Tier-2 quality candidates, judgment checks, citation evidence review, and updates to contradiction or sourcing-queue records when gaps open or close. |
+| Tooling eval | `workflows/maintenance/eval.md` | The complete registered deterministic eval suite, plus focused reruns for failed suites. |
+| Refresh sourcing queue | `workflows/maintenance/refresh-sourcing-queue.md` | Recounts unresolved gaps, reprioritizes open items, and records the refresh without widening the task into research. |
 | Rotate log | `workflows/maintenance/rotate-log.md` | Manual `wiki/log.md` archival when `log_rotation_due` fires, preserving payload under `archive/wiki-log/`. |
 | Synthesis | `workflows/maintenance/synthesize.md` | Drafting and approving corpus-level distillations: overview refreshes, gap resolutions, cluster analyses, primer updates, and open questions. |
 | Review | `workflows/maintenance/review.md` | Outcome review for due `review_by` checkpoints: realized outcome, confidence changes, next checkpoint, or closure. |
@@ -93,7 +96,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 
 | File | Purpose |
 |---|---|
-| `wiki/domain.md` | Context name, scope, active entity types, raw buckets, and template/configured status |
+| `wiki/domain.md` | Context name, scope, active entity types, raw buckets, and template/configured status <!-- wiki-setup:references-domain-summary:line --> |
 | `wiki/index.md` | Master catalog: read for browsing, research, promotion, explicit lookup, and ingest link/index steps; not startup context |
 | `wiki/SCHEMA.md` | Entity types, frontmatter spec, source-type templates; read when authoring any new page |
 | `wiki/glossary.md` | Canonical term definitions |
@@ -110,7 +113,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `raw/README.md` | Source-artifact handling and privacy note for the tracked `raw/` corpus |
 | `scripts/raw-buckets.json` | Tracked raw bucket taxonomy read by Tier-1 lint |
 | `scripts/entity-catalog.json` | Permanent governed entity folders, types, and authoring semantics; consumed through `scripts/wiki_entity_catalog.py` |
-| `scripts/finalize_wiki_setup.py`, `scripts/wiki_setup_initializer.py`, `scripts/wiki_setup_initializer_test.py`, `scripts/wiki-setup-presets.json` | Disposable one-time setup command, implementation, regression test, and preset defaults; all four are removed from a configured wiki |
+| `scripts/finalize_wiki_setup.py`, `scripts/wiki_setup_initializer.py`, `scripts/wiki_setup_initializer_test.py`, `scripts/wiki-setup-presets.json` | Disposable one-time setup command, implementation, regression test, and preset defaults; all four are removed from a configured wiki <!-- wiki-setup:references-initializer-files:line --> |
 | `scripts/lint-adjudications.json` | Settled Tier-2 lint judgments with reasons and dates; lint suppresses what it lists |
 | `scripts/current-state-owners.json` | Optional, strict registry of current-state owner pages; ships disabled and empty |
 | `scripts/wiki_current_state.py` | Typed owner-registry loader, validator, and current-state drift evaluator used by lint |
@@ -159,9 +162,11 @@ Every file in this project sits at one of five layers, defined by when it loads 
 | Layer | When loaded | Files |
 |---|---|---|
 | **L0** | Always: orientation and status | `AGENTS.md` (`CLAUDE.md` is a pointer for Claude agents), `wiki/domain.md` status check |
-| **L1** | Route entry: selected by status or task | One-time `SETUP.md` when unconfigured; `CONTEXT.md` and then `workflows/<workspace>/CONTEXT.md` when configured; `wiki/index.md` only for browsing |
+| **L1** | Route entry: selected by status or task | One-time `SETUP.md` when unconfigured; `CONTEXT.md` and then `workflows/<workspace>/CONTEXT.md` when configured; `wiki/index.md` only for browsing <!-- wiki-setup:references-layer-one:line --> |
 | **L2** | Task workflow: selected by route entry | `workflows/maintenance/*.md` and any task-specific workflow file named by the L1 route |
 | **L3** | Per task: stable reference, loaded on demand | `REFERENCES.md`, `wiki/index.md`, `wiki/SCHEMA.md`, `wiki/glossary.md`, `wiki/primer.md`, `wiki/design-notes.md`, `wiki/contradictions.md`, `wiki/sourcing-queue.md`, `wiki/overview.md` |
 | **L4** | During work: content read or written | `wiki/log.md`, `wiki/<entity>/*.md`, `raw/*` |
 
+<!-- wiki-setup:references-loading-principle:start -->
 Loading principle: an agent starting a task should load L0. An unconfigured clone follows `SETUP.md`; a configured wiki uses `CONTEXT.md` to choose the route, then opens only the routed workflow's Load / Skip list. Pull L3 references only when the workflow calls for them. `wiki/index.md` is on-demand for browsing, research, promotion, explicit lookup, and ingest link/index steps; it is not startup context.
+<!-- wiki-setup:references-loading-principle:end -->

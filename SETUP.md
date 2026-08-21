@@ -8,7 +8,7 @@ Git remains the recovery mechanism while initialization is being reviewed: the f
 
 Before asking for personal or hybrid content, state this plainly:
 
-> Files under `raw/` and pages under `wiki/` are tracked by Git and may be pushed to a remote. Health, financial, relationship, property, and source-document content may therefore be published if this clone is connected to a public repository. Exports also include both wiki pages and raw sources. This template provides no encryption or access control.
+> This template assumes a private Git repository whose access is limited to the wiki's intended users. Files under `raw/` and pages under `wiki/` are tracked by Git and may be pushed to a remote. Health, financial, relationship, property, and source-document content may therefore be published if this clone is connected to a public repository. Exports also include both wiki pages and raw sources. This template provides no encryption or access control.
 
 Continue only after the user acknowledges that warning.
 
@@ -47,6 +47,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/finalize_wiki_setup.py preview --an
 
 Preview is read-only. Show the complete JSON result to the user. It reports the exact active types, entity and raw folders created or removed, blocked removals, files written, files deleted (including the temporary answers), validation errors, and `valid`.
 
+The initializer owns only document fragments identified by named `wiki-setup` markers. Multi-line fragments use start/end pairs; single rows carry one line marker. Preview fails if a required marker is missing, duplicated, reversed, or left unconsumed. Rewording template prose inside a marked fragment does not break marker lookup. The configured replacement text remains defined in `scripts/wiki_setup_initializer.py`.
+
 Stop if `valid` is false. The finalizer never removes a nonempty or symlinked entity folder and never invents an unsupported type.
 
 ## 5. Apply once
@@ -63,7 +65,7 @@ Apply requires a normal Git clone with no tracked working-tree changes. It:
 - updates the live operating documents;
 - creates the selected entity folders and removes only inactive placeholder folders;
 - creates the raw buckets and their registry;
-- appends the initialization entry to `wiki/log.md`;
+- replaces the template log entry with the initialization entry in `wiki/log.md`;
 - archives the exact answers and a compact receipt under `archive/setup/`;
 - deletes the temporary answers and all initializer files, including this guide;
 - runs the complete eval suite and Tier‑1 lint; and

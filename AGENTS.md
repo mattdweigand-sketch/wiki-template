@@ -1,3 +1,4 @@
+<!-- wiki-setup:agents-identity:start -->
 # <Organization> Wiki
 
 A clonable, agent-readable wiki template for an organization, project, or person's durable context layer. Grounded in sources. Structured for downstream agents. Designed to compound instead of re-deriving context from raw documents.
@@ -5,6 +6,7 @@ A clonable, agent-readable wiki template for an organization, project, or person
 `AGENTS.md` is canonical and agent-agnostic. Codex, Cursor, Claude, ChatGPT, or a raw API harness should drive this wiki the same way: read `AGENTS.md`, check `wiki/domain.md` for setup status, route through `CONTEXT.md`, then follow the vendor-neutral prose in `workflows/`. Claude Code reaches the same guidance through the thin `CLAUDE.md` wrapper and tracked `.claude/commands/`. Codex reaches the same guidance through tracked repo-local `.agents/skills/` wrappers. Nothing about core operation depends on either wrapper surface.
 
 Start by reading `wiki/domain.md` only far enough to check `status:`. If `status: unconfigured`, route to `SETUP.md` before doing wiki work. If `status: configured`, continue through `CONTEXT.md`.
+<!-- wiki-setup:agents-identity:end -->
 
 ---
 
@@ -12,27 +14,27 @@ Start by reading `wiki/domain.md` only far enough to check `status:`. If `status
 
 - `AGENTS.md` - canonical operating map (this file). `CLAUDE.md` is a thin wrapper that imports it.
 - `CONTEXT.md` - configured-wiki task router; read after the domain status check.
-- `SETUP.md` - first-session configuration workflow for a fresh clone.
+- `SETUP.md` - first-session configuration workflow for a fresh clone. <!-- wiki-setup:agents-setup-file:line -->
 - `REFERENCES.md` - stable operating model, cross-reference rules, key files, and load-layer guidance.
 - `.github/workflows/` - GitHub Actions CI for deterministic wiki checks.
-- `workflows/` - vendor-neutral prose workflows grouped into three workspaces, each with a `CONTEXT.md` entry point: `ingest/` (raw -> pages), `research/` (question -> answer), and `maintenance/` (hygiene, audits, tooling, capture, synthesis, review, and export). Single-task workspaces hold their workflow in `CONTEXT.md`; `maintenance/CONTEXT.md` is the task router for maintenance jobs.
+- `workflows/` - vendor-neutral prose workflows grouped into three workspaces, each with a `CONTEXT.md` entry point: `ingest/` (raw -> pages), `research/` (question -> answer), and `maintenance/` (document audits, lint, tooling evals, capture, artifact promotion, sourcing-queue refresh, synthesis, review, log rotation, and export). Single-task workspaces hold their workflow in `CONTEXT.md`; `maintenance/CONTEXT.md` is the task router for maintenance jobs.
 - `.claude/commands/` - tracked Claude Code slash-command wrappers for the default wrapped workflows: `wiki-ingest`, `wiki-capture`, `wiki-lint`, `wiki-eval`, `wiki-promote`, `wiki-synthesize`, and `wiki-export`. Both wrapper surfaces are deterministic renders of `scripts/wiki-wrapper-contract.json`; canonical behavior lives in `workflows/` and is routed through `CONTEXT.md`.
 - `.agents/skills/` - tracked repo-local Codex skill wrappers for the same seven wiki shortcuts. Current Codex discovers this directory while working in the repo. Generate both surfaces with `python3 scripts/render_wiki_wrappers.py --render`; `python3 scripts/check_wrapper_parity.py` verifies exact rendered parity.
-- `scripts/` - vendor-neutral deterministic tooling, self-contained. `wiki_entity_catalog.py` is the permanent interface over the validated `entity-catalog.json` vocabulary, folder mappings, authoring semantics, and configured-layout validation. `finalize_wiki_setup.py`, `wiki_setup_initializer.py`, `wiki_setup_initializer_test.py`, and `wiki-setup-presets.json` are disposable initializer files removed after approved setup. CLI files are thin entry points over concept-owned modules: `capture_gate.py` composes `capture_approval_policy.py` and `capture_approval_records.py`; `lint.py` composes the `wiki_lint_*` contract, parsing, repository, page-check, adjudication, and signal layers; `wiki_current_state.py` owns the optional current-state registry and drift evaluation; `wiki_evidence.py` owns exact sampled evidence runs behind the three evidence CLI adapters; `_file_transactions.py` is the stable execution facade over `_transaction_contract.py` through its named internal execution contract. Approved ledger writes use a stable sidecar lock and atomic full-file replacement; `capture-runs.jsonl` is the single structured approval ledger written only by approved capture-gate reruns; `validate_capture_runs.py` checks that ledger's schema and approval scope; `wiki-wrapper-contract.json` and `render_wiki_wrappers.py` own the generated wrapper surfaces; `raw-buckets.json` is the tracked raw taxonomy source; `hooks/pre-commit` blocks commits while transaction recovery state is nonclean; `export_wiki.py` builds and verifies complete corpus export zips and may stamp a gitignored, destination-redacted verified-backup receipt; `backup_state.py` reports that optional receipt without gating unrelated work; `rebuild_referenced_by.py` regenerates `## Referenced by` inbound-link sections; `rotate_log.py` archives oversized `wiki/log.md` ranges under `archive/wiki-log/`; `stale_text_sweep.py` emits read-only stale-text sweep proof for ingest logs; `lint.py --tier1` is the deterministic validation gate; `wiki_eval.py` reports its Python runtime and runs the live guard suites; `check_discoverability.py` enforces typed, distinctive production functions and classes plus declared local import boundaries; `check_wrapper_parity.py` verifies wrapper manifests and exact renders; `check_schema_doc_parity.py` verifies the complete schema table and duplicated vocabularies against the catalog and lint-contract constants; `document-reachability.json` declares the operational Markdown graph checked by `check_document_reachability.py`.
+- `scripts/` - vendor-neutral deterministic tooling, self-contained. `wiki_entity_catalog.py` is the permanent interface over the validated `entity-catalog.json` vocabulary, folder mappings, authoring semantics, and configured-layout validation.<!-- wiki-setup:agents-initializer-files:start --> `finalize_wiki_setup.py`, `wiki_setup_initializer.py`, `wiki_setup_initializer_test.py`, and `wiki-setup-presets.json` are disposable initializer files removed after approved setup. The initializer replaces named markers and rejects missing, duplicated, reversed, or unconsumed markers before writing.<!-- wiki-setup:agents-initializer-files:end --> CLI files are thin entry points over concept-owned modules: `capture_gate.py` composes `capture_approval_policy.py` and `capture_approval_records.py`; `lint.py` composes the `wiki_lint_*` contract, parsing, repository, page-check, adjudication, and signal layers; `wiki_current_state.py` owns the optional current-state registry and drift evaluation; `wiki_evidence.py` owns exact sampled evidence runs behind the three evidence CLI adapters; `_file_transactions.py` is the stable execution facade over `_transaction_contract.py` through its named internal execution contract. Approved ledger writes use a stable sidecar lock and atomic full-file replacement; `capture-runs.jsonl` is the single structured approval ledger written only by approved capture-gate reruns; `validate_capture_runs.py` checks that ledger's schema and approval scope; `wiki-wrapper-contract.json` and `render_wiki_wrappers.py` own the generated wrapper surfaces; `raw-buckets.json` is the tracked raw taxonomy source; `hooks/pre-commit` blocks commits while transaction recovery state is nonclean; `export_wiki.py` builds and verifies complete corpus export zips and may stamp a gitignored, destination-redacted verified-backup receipt; `backup_state.py` reports that optional receipt without gating unrelated work; `rebuild_referenced_by.py` regenerates `## Referenced by` inbound-link sections; `rotate_log.py` archives oversized `wiki/log.md` ranges under `archive/wiki-log/`; `stale_text_sweep.py` emits read-only stale-text sweep proof for ingest logs; `lint.py --tier1` is the deterministic validation gate; `wiki_eval.py` reports its Python runtime and runs the live guard suites; `check_discoverability.py` enforces typed, distinctive production functions and classes plus declared local import boundaries; `check_wrapper_parity.py` verifies wrapper manifests and exact renders; `check_schema_doc_parity.py` verifies the complete schema table and duplicated vocabularies against the catalog and lint-contract constants; `document-reachability.json` declares the operational Markdown graph checked by `check_document_reachability.py`.
 - `.wiki-transactions/` - gitignored recovery authority for multi-file backlink rebuilds and log rotations. It is not scratch: never empty or delete it to clear lint, a commit, or an export. Inspect with `python3 scripts/wiki_transactions.py status`, recover an interrupted clean transaction with `python3 scripts/wiki_transactions.py recover`, and diagnose preserved conflicts or corruption by transaction ID. Tier 1, pre-commit, and export fail closed while the authority is nonclean.
 - `scripts/fixtures/` - eval mini-wikis for live tooling: `wiki-rebuild` guards link-graph invariants and `wiki-lint` proves lint checks can fire.
 - `scripts/lint-adjudications.json` - settled Tier-2 lint judgments with reasons and dates, so lint stops re-surfacing what has been adjudicated.
 - `scripts/current-state-owners.json` - strict opt-in registry for pages that own evolving truth. It ships disabled and empty; enabling it enrolls the configured owner pages in Tier-2 drift checks.
 - `tmp/` - gitignored scratch space. Everything in it is disposable at all times.
 - `deliverables/` - optional gitignored one-off outputs built from wiki content. Contents are not wiki content. Keep outputs inside clearly labeled kebab-case subfolders; do not leave loose files directly under `deliverables/`.
-- `raw/` - tracked source artifacts. Existing files are immutable, and new user-provided sources may be placed once during ingest before becoming immutable. Review sensitive content before adding or pushing it.
+- `raw/` - tracked source artifacts in the template's intended private-repository operating model. Existing files are immutable, and new user-provided sources may be placed once during ingest before becoming immutable. Review sensitive content before adding or pushing it. <!-- wiki-setup:agents-private-repository:line -->
 - `wiki/` - knowledge layer: `domain.md`, `index.md`, `overview.md`, `glossary.md`, `primer.md`, `log.md`, `SCHEMA.md`, `sourcing-queue.md`, `contradictions.md`, `design-notes.md`, `synthesis.md`, and entity folders.
-- `wiki/<entity-type>/` - after setup, one folder per active entity type. The unconfigured template contains empty placeholders for every supported type.
+- `wiki/<entity-type>/` - after setup, one folder per active entity type. The unconfigured template contains empty placeholders for every supported type. <!-- wiki-setup:agents-entity-folder:line -->
 
 <!-- parity:enum key=entity-folders -->
 **Supported entity folders:** analyses, competitors, concepts, customers, decisions, features, goals, health, initiatives, investments, learnings, metrics, partners, people, personas, policies, processes, products, projects, properties, skills, sources, systems, teams
 
-Setup selects from this governed catalog. Adding a type outside it requires an explicit schema, tooling, documentation, and evaluation change.
+Setup selects from this governed catalog. Adding a type outside it requires an explicit schema, tooling, documentation, and evaluation change. <!-- wiki-setup:agents-catalog-selection:line -->
 
 ---
 
@@ -44,7 +46,7 @@ Routine workflow surface only: `wiki-ingest`, `wiki-capture`, `wiki-lint`, `wiki
 
 ## Capture Approval Gate
 
-Run `python3 scripts/capture_gate.py` before exactly three approval boundaries: filing a research answer as `wiki/analyses/`, applying an artifact promotion, and promoting reviewed synthesis output with `--kind=synthesis`. Every other route skips the gate, including ordinary source ingest, routine page updates, decision capture, experience capture, workflow updates, and setup updates, unless the work is part of one of those approval boundaries.
+Run `python3 scripts/capture_gate.py` before exactly three approval boundaries: filing a research answer as `wiki/analyses/`, applying an artifact promotion, and promoting reviewed synthesis output with `--kind=synthesis`. <!-- wiki-setup:agents-capture-free-routes:start -->Every other route skips the gate, including ordinary source ingest, routine page updates, decision capture, experience capture, workflow updates, and setup updates, unless the work is part of one of those approval boundaries.<!-- wiki-setup:agents-capture-free-routes:end -->
 
 If the script prints `APPROVAL REQUIRED`, show the full block and stop until the user approves the displayed durable action, primary destination, and allowed file scope. Plain-language approval such as "approve" or "yes" is enough when it clearly approves the displayed action, destination, and file scope. Re-run with `--approved` only after that approval.
 
@@ -58,6 +60,7 @@ Run `python3 scripts/capture_gate.py --kind=synthesis` before promoting synthesi
 
 The approved rerun writes or confirms the idempotent structured approval record in `scripts/capture-runs.jsonl`. The non-approved gate call is display-only: it must not update `wiki/synthesis.md`, `scripts/capture-runs.jsonl`, draft confidence/status, or `wiki/log.md`.
 
+<!-- wiki-setup:agents-session-start:start -->
 ## Session Start
 
 1. Read this file.
@@ -68,6 +71,7 @@ The approved rerun writes or confirms the idempotent structured approval record 
 6. Follow that workflow's Load / Skip list.
 7. Load `REFERENCES.md`, `wiki/index.md`, `wiki/log.md`, and other wiki files only when the routed workflow asks for them.
 8. If no task was provided, ask what to do after reading this file, `wiki/domain.md`, and `CONTEXT.md`.
+<!-- wiki-setup:agents-session-start:end -->
 
 ---
 
@@ -75,7 +79,9 @@ The approved rerun writes or confirms the idempotent structured approval record 
 
 All filenames are kebab-case, lowercase, no extension prefix, no date prefix. Chronology lives in `wiki/log.md`.
 
+<!-- wiki-setup:agents-raw-bucket-lint:start -->
 Repo structure is linted. `scripts/lint.py --tier1` fails on unknown repo-root entries, unknown `wiki/` root entries, unknown top-level `raw/` buckets after setup, loose top-level `raw/` or `deliverables/` files, non-kebab-case `deliverables/` subfolders, and Finder `.DS_Store` metadata outside `.git`. Fix those as structural violations; do not work around them.
+<!-- wiki-setup:agents-raw-bucket-lint:end -->
 
 | Entity | Pattern | Example |
 |---|---|---|

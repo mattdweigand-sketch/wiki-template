@@ -9,6 +9,7 @@ updated: 2026-08-19
 
 A running record of where this wiki diverges from the [Karpathy LLM-wiki pattern](https://karpathy.ai/zero-to-one/), and why. Useful when revisiting structural decisions later.
 
+<!-- wiki-setup:design-initializer-decision:start -->
 ## 2026-08-20: One-Time Wiki Initialization
 
 ### The Template Becomes the Wiki
@@ -19,6 +20,12 @@ approves one apply command. Apply configures the live tree, archives only the
 exact answers and a compact receipt, validates the result, and deletes the
 initializer. It leaves ordinary working-tree changes and never commits.
 
+Template-only document fragments use named setup markers. Multi-line fragments
+use pairs; single rows carry one line marker. Preview validates the complete
+marker contract before approval, and apply renders only those fragments.
+Rewording prose inside a managed fragment does not require the initializer to
+know the old sentence.
+
 This is intentionally one-way at the product level. A configured wiki has no
 setup or reconfiguration command. Git can still restore uncommitted changes or
 old commits, but that is repository recovery rather than a supported wiki mode.
@@ -27,6 +34,7 @@ Rejected alternatives included a permanent materializer, custom setup
 transactions, a path-role registry, migration planners, and automatic commits.
 They add a second lifecycle to a repository whose lasting job is only to be a
 wiki.
+<!-- wiki-setup:design-initializer-decision:end -->
 
 ## 2026-08-19: Governed Entity Catalog
 
@@ -35,11 +43,13 @@ wiki.
 Problem: folder/type pairs, authoring guidance, and review
 expectations had become duplicated prose that could drift independently.
 
+<!-- wiki-setup:design-catalog-owner:start -->
 Chosen seam: `scripts/entity-catalog.json` defines the exact 24 supported
 entity records, while `scripts/wiki_entity_catalog.py` is the only production
 interface for loading and validating the catalog, looking up folder/type pairs,
 and validating configured layouts. Lint, parity, and eval code call that
 interface. Setup presets live only in the disposable initializer.
+<!-- wiki-setup:design-catalog-owner:end -->
 
 Rejected alternative: let each consumer read the JSON or keep its own lists.
 That would make the data file visible without making its meaning authoritative.
@@ -50,10 +60,12 @@ partially documented types fail deterministically.
 
 ### Configured Layouts Are Exact
 
+<!-- wiki-setup:design-configured-layout:start -->
 An unconfigured template may hold all 24 empty placeholder folders. A
 configured wiki contains exactly the folders mapped from its explicit active
 types. The selected interview preset is not permanent configuration. The live
 catalog has no presets, migration mode, or reconfiguration behavior.
+<!-- wiki-setup:design-configured-layout:end -->
 
 ### Freshness and Verification Stay Authoring Guidance
 
