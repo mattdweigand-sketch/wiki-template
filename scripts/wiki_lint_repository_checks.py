@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import re
 import shlex
-import subprocess
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -213,60 +212,6 @@ def check_folder_structure() -> LintFailures:
     if not transactions_clean:
         for detail in transaction_reports:
             fails.append(("transaction-state", ".wiki-transactions/", detail))
-    return fails
-
-
-def check_no_tracked_raw() -> LintFailures:
-    """raw/ source artifacts must not be committed; raw/.gitkeep and
-    raw/README.md are tracked template exceptions. Fail Tier-1 on any other
-    tracked raw/ path. No-ops when git is unavailable or this is not a work
-    tree, so lint still runs outside a git context (e.g. eval fixtures copied
-    to a temp dir)."""
-    cwd = Path.cwd().resolve()
-    has_git_metadata = any(
-        (candidate / ".git").exists() for candidate in (cwd, *cwd.parents)
-    )
-    try:
-        worktree = subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            capture_output=True, timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        if has_git_metadata:
-            return [("raw-tracked", "raw/",
-                     f"git worktree check failed; invariant blocked: {exc}")]
-        return []
-    if worktree.returncode != 0 or worktree.stdout.strip() != b"true":
-        if has_git_metadata:
-            stderr = worktree.stderr.decode("utf-8", "replace").strip()
-            detail = "git worktree check failed inside apparent worktree"
-            if stderr:
-                detail += f": {stderr}"
-            return [("raw-tracked", "raw/", detail)]
-        return []
-
-    try:
-        out = subprocess.run(
-            ["git", "ls-files", "-z", "--", ":(icase)raw"],
-            capture_output=True, timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return [("raw-tracked", "raw/",
-                 f"git ls-files failed inside worktree; invariant blocked: {exc}")]
-    if out.returncode != 0:
-        stderr = out.stderr.decode("utf-8", "replace").strip()
-        detail = f"git ls-files failed inside worktree (exit {out.returncode})"
-        if stderr:
-            detail += f": {stderr}"
-        return [("raw-tracked", "raw/", detail)]
-    fails = []
-    allowed = {"raw/.gitkeep", "raw/readme.md"}
-    for path in out.stdout.decode("utf-8", "replace").split("\0"):
-        if path and path.lower() not in allowed:
-            fails.append(("raw-tracked", path,
-                          "source artifact tracked in git; raw/ artifacts are "
-                          "gitignored by default (only raw/.gitkeep and "
-                          "raw/README.md are tracked)"))
     return fails
 
 
@@ -750,7 +695,6 @@ __all__ = [
     "check_folder_structure",
     "check_log_entry_headers",
     "check_meta_utf8",
-    "check_no_tracked_raw",
     "check_sourcing_queue_count_markers",
     "check_stale_sweep_proof_entries",
     "check_stray_tool_tags",

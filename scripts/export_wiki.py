@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build and verify a wiki export zip.
 
-The export includes gitignored raw sources, but excludes local scratch,
-deliverables, git internals, and private local settings. Upload is optional and
-only runs when an explicit rclone destination is provided.
+The export includes raw sources, but excludes local scratch, deliverables, Git
+internals, and private local settings. Upload is optional and only runs when an
+explicit rclone destination is provided.
 """
 
 from __future__ import annotations

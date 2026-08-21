@@ -2,7 +2,7 @@
 
 `AGENTS.md` is canonical: it holds the folder map, conventions, and hard rules. This file routes a task to the right workspace. Do not read everything; find the task family, open the workspace entry, and load only what it says to load.
 
-Works with any agent. Every agent uses the same path: read `AGENTS.md`, check `wiki/domain.md` for setup status, read this file, then open the selected workspace `CONTEXT.md`. Wrapper details live in `AGENTS.md`; nothing here depends on a wrapper surface.
+Works with any agent. Start with `AGENTS.md` and check `wiki/domain.md`. An unconfigured clone routes to `SETUP.md` and stops there. A configured wiki reads this file, then opens the selected workspace `CONTEXT.md`. Wrapper details live in `AGENTS.md`; nothing here depends on a wrapper surface.
 
 Workflows are grouped into three workspaces under `workflows/`: **ingest** (raw -> pages), **research** (question -> answer), and **maintenance** (hygiene, audits, tooling, capture, synthesis, review, and export). This file chooses the workspace; each workspace `CONTEXT.md` owns task-level routing and scopes exactly what to load.
 

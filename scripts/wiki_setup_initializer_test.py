@@ -177,7 +177,10 @@ def main() -> int:
             ["git", "rev-parse", "HEAD"], cwd=root, check=True,
             stdout=subprocess.PIPE, text=True,
         ).stdout.strip()
+        agents = (root / "AGENTS.md").read_text(encoding="utf-8")
         domain = (root / "wiki/domain.md").read_text(encoding="utf-8")
+        raw_readme = (root / "raw/README.md").read_text(encoding="utf-8")
+        raw_registry = json.loads((root / "scripts/raw-buckets.json").read_text(encoding="utf-8"))
         archived_answers = root / "archive/setup/answers.json"
         receipt = root / "archive/setup/finalization-receipt.json"
         setup_residue = [path for path in SETUP_DELETE_PATHS if (root / path).exists()]
@@ -226,6 +229,10 @@ def main() -> int:
             and "entity_preset" not in domain
             and "configuration_version" not in domain
             and "raw_taxonomy" not in domain
+            and "unconfigured template" not in agents
+            and "Source artifacts are tracked with the rest of the repository" in raw_readme
+            and raw_registry.get("policy")
+            == "Raw source artifacts are immutable and may be tracked with the rest of the wiki."
             and all((root / "wiki" / folder).is_dir() for folder in (
                 "analyses", "concepts", "decisions", "goals", "health",
                 "investments", "learnings", "people", "projects", "properties",

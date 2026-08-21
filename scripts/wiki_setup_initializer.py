@@ -358,8 +358,9 @@ def _render_raw_readme(answers: WikiSetupAnswers) -> str:
         "# raw/\n\n"
         "Source artifacts live here. Put each new source in the matching bucket, "
         "then treat its bytes as immutable.\n\n"
-        "Only `.gitkeep` and this README are tracked. Source artifacts remain "
-        "gitignored and are included only in explicit exports.\n\n"
+        "Source artifacts are tracked with the rest of the repository and may "
+        "be pushed to its remote. Review sensitive files before adding or "
+        "pushing them.\n\n"
         "## Subfolders\n\n"
         "| Folder | Holds |\n|---|---|\n"
         f"{rows}\n"
@@ -404,6 +405,13 @@ def _render_live_readme(text: str, answers: WikiSetupAnswers) -> str:
         text,
         flags=re.MULTILINE,
     )
+    text = text.replace(
+        "| Route-first workflows | Point agents from `AGENTS.md` through the "
+        "`wiki/domain.md` status check, then to `SETUP.md` or `CONTEXT.md` as "
+        "appropriate. |",
+        "| Route-first workflows | Point agents from `AGENTS.md` through "
+        "`wiki/domain.md`, then to `CONTEXT.md` and the routed workflow. |",
+    )
     text = re.sub(r"^\|-- SETUP\.md.*\n", "", text, flags=re.MULTILINE)
     text = _remove_markdown_section(text, "## Configuration")
     domain_section = (
@@ -433,8 +441,9 @@ def _render_live_agents(text: str, answers: WikiSetupAnswers) -> str:
     )
     text = re.sub(r"^- `SETUP\.md`.*\n", "", text, flags=re.MULTILINE)
     text = text.replace(
-        " `finalize_wiki_setup.py` and `wiki_setup_initializer.py` are disposable "
-        "initializer files removed after approved setup.",
+        " `finalize_wiki_setup.py`, `wiki_setup_initializer.py`, "
+        "`wiki_setup_initializer_test.py`, and `wiki-setup-presets.json` are "
+        "disposable initializer files removed after approved setup.",
         "",
     )
     text = text.replace(
@@ -455,6 +464,12 @@ def _render_live_agents(text: str, answers: WikiSetupAnswers) -> str:
             )
             text = text[:session_start] + replacement + text[session_end:]
     text = text.replace("unknown top-level `raw/` buckets after setup", "unknown top-level `raw/` buckets")
+    text = text.replace(
+        "`wiki/<entity-type>/` - after setup, one folder per active entity type. "
+        "The unconfigured template contains empty placeholders for every "
+        "supported type.",
+        "`wiki/<entity-type>/` - one folder per active entity type.",
+    )
     return text
 
 
@@ -464,7 +479,13 @@ def _render_live_documents(repo_root: Path, answers: WikiSetupAnswers) -> dict[s
         (repo_root / "AGENTS.md").read_text(encoding="utf-8"), answers
     )
     context = (repo_root / "CONTEXT.md").read_text(encoding="utf-8")
-    context = context.replace("check `wiki/domain.md` for setup status, ", "read `wiki/domain.md`, ")
+    context = context.replace(
+        "Start with `AGENTS.md` and check `wiki/domain.md`. An unconfigured clone "
+        "routes to `SETUP.md` and stops there. A configured wiki reads this file, "
+        "then opens the selected workspace `CONTEXT.md`.",
+        "Start with `AGENTS.md`, read `wiki/domain.md`, then read this file and "
+        "open the selected workspace `CONTEXT.md`.",
+    )
     context = re.sub(r"^\| Configure a fresh clone \|.*\n", "", context, flags=re.MULTILINE)
     documents["CONTEXT.md"] = context
     documents["README.md"] = _render_live_readme(
@@ -479,9 +500,16 @@ def _render_live_documents(repo_root: Path, answers: WikiSetupAnswers) -> dict[s
         "Context name, scope, active entity types, and raw buckets",
     )
     references = references.replace(
-        "`workflows/<workspace>/CONTEXT.md`, one-time `SETUP.md`, or "
+        "One-time `SETUP.md` when unconfigured; `CONTEXT.md` and then "
+        "`workflows/<workspace>/CONTEXT.md` when configured; `wiki/index.md` only "
+        "for browsing",
+        "`CONTEXT.md` and then `workflows/<workspace>/CONTEXT.md`; "
         "`wiki/index.md` only for browsing",
-        "`workflows/<workspace>/CONTEXT.md` or `wiki/index.md` only for browsing",
+    )
+    references = references.replace(
+        "An unconfigured clone follows `SETUP.md`; a configured wiki uses "
+        "`CONTEXT.md` to choose the route,",
+        "Use `CONTEXT.md` to choose the route,",
     )
     documents["REFERENCES.md"] = references
     primer = (repo_root / "wiki/primer.md").read_text(encoding="utf-8")
@@ -594,7 +622,7 @@ def finalize_wiki_setup(
     changed.add("raw/README.md")
     raw_registry = {
         "description": "Canonical raw source-artifact bucket taxonomy for this wiki.",
-        "policy": "Raw source artifacts are immutable, gitignored, and included only in explicit exports.",
+        "policy": "Raw source artifacts are immutable and may be tracked with the rest of the wiki.",
         "buckets": answers.raw_buckets,
     }
     (root / "scripts/raw-buckets.json").write_text(

@@ -8,12 +8,6 @@
 __pycache__/
 *.py[cod]
 
-# Source documents are user-specific and may be sensitive.
-# Hooks and Tier-1 lint also reject tracked raw artifacts.
-raw/*
-!raw/.gitkeep
-!raw/README.md
-
 # Export bundles and scratch artifacts are not wiki content.
 *.zip
 /deliverables/

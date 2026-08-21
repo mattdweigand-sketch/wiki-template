@@ -25,7 +25,6 @@ from wiki_lint_repository_checks import (
     check_folder_structure,
     check_log_entry_headers,
     check_meta_utf8,
-    check_no_tracked_raw,
     check_sourcing_queue_count_markers,
     check_stale_sweep_proof_entries,
     check_stray_tool_tags,
@@ -69,7 +68,6 @@ def run_tier1_lint(
     fails.extend(check_folder_structure())
     fails.extend(check_configured_entity_layout())
     fails.extend(check_current_state_registry())
-    fails.extend(check_no_tracked_raw())
     fails.extend(check_meta_utf8())
     fails.extend(check_stray_tool_tags())
     fails.extend(check_sourcing_queue_count_markers())

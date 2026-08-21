@@ -1,25 +1,10 @@
 #!/bin/sh
-# Block commits while multi-file recovery authority is nonclean, then block
-# committing raw/ source artifacts. raw/ is never committed under any
-# circumstances; only raw/.gitkeep and raw/README.md are tracked exceptions.
-# Source artifacts stay local and are exported through the wiki export zip, not git.
+# Block commits while multi-file recovery authority is nonclean.
 #
 # Install (once per clone): git config core.hooksPath scripts/hooks
-# What raw/ paths would this commit leave tracked? ls-files --cached reflects
-# the staged index (additions present, deletions gone), independent of HEAD, so
-# untracking raw/ is allowed while any added/remaining raw/ artifact is blocked.
 if ! python3 scripts/wiki_transactions.py status --quiet; then
   echo "pre-commit: refusing to commit while .wiki-transactions/ is nonclean." >&2
   echo "Run 'python3 scripts/wiki_transactions.py status' and recover or diagnose the recorded state." >&2
-  exit 1
-fi
-
-staged_raw=$(git ls-files --cached -- ':(icase)raw' | grep -Evi '^raw/(\.gitkeep|README\.md)$')
-if [ -n "$staged_raw" ]; then
-  echo "pre-commit: refusing to commit raw/ source artifacts." >&2
-  echo "raw/ source artifacts are never committed; only raw/.gitkeep and raw/README.md are tracked. Offending paths:" >&2
-  printf '%s\n' "$staged_raw" | sed 's/^/  /' >&2
-  echo "raw/ is included in the export zip instead (workflows/maintenance/export.md)." >&2
   exit 1
 fi
 exit 0

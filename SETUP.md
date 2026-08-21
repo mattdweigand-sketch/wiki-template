@@ -8,7 +8,7 @@ Git remains the recovery mechanism while initialization is being reviewed: the f
 
 Before asking for personal or hybrid content, state this plainly:
 
-> Raw artifacts under `raw/` are ignored by Git, but derived pages under `wiki/` are tracked and may be pushed to a remote. Health, financial, relationship, and property information may therefore be published if this clone is connected to a public repository. Exports include both wiki pages and raw sources. This template provides no encryption or access control.
+> Files under `raw/` and pages under `wiki/` are tracked by Git and may be pushed to a remote. Health, financial, relationship, property, and source-document content may therefore be published if this clone is connected to a public repository. Exports also include both wiki pages and raw sources. This template provides no encryption or access control.
 
 Continue only after the user acknowledges that warning.
 
@@ -19,11 +19,13 @@ Collect these answers:
 1. The organization, project, or personal context name.
 2. A one-line description of the domain.
 3. A starting preset: `organization`, `personal`, or `hybrid`.
-4. The final explicit active-type list. Read the preset defaults from `scripts/wiki-setup-presets.json`; the user may add or remove any type listed in `scripts/entity-catalog.json`.
+4. The final explicit active-type list. Read the preset defaults from `scripts/wiki-setup-presets.json`; the user may add or remove any type listed in `scripts/entity-catalog.json`. Keep the final list in catalog order.
 5. One or more kebab-case `raw/` bucket names and a short description for each.
 6. Three to five example questions the wiki should answer well.
 
 The preset is only an interview aid. The final active-type list governs the configured wiki, and the preset is not retained as live configuration.
+
+All three presets include `source`, `analysis`, and `decision` because the standard ingest, analysis-capture, and decision-capture routes write to those folders. The initializer accepts any nonempty supported selection and does not add removed types back. Remove one only when that route will be unavailable in the configured wiki.
 
 ## 3. Write the temporary answers
 
@@ -74,7 +76,7 @@ The only setup artifacts retained are:
 
 There is no reconfigure command. If apply reports a validation failure, inspect or restore the ordinary Git changes before committing. Do not rebuild a setup subsystem inside the configured wiki.
 
-## 6. Hand off the personal wiki
+## 6. Hand off the configured wiki
 
 Report:
 

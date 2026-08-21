@@ -14,7 +14,6 @@ a system temp directory per case. Writes nothing inside the repo.
 """
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -2176,67 +2175,6 @@ run_case(
     absent=("double-meta-decoy", "tilde-meta-decoy", "four-meta-decoy"),
 )
 
-def check_raw_tracked_fires():
-    """The raw-tracked Tier-1 guard needs a git work tree, which the copy-to-temp
-    fixture lacks, so it gets its own git-backed case. When git is unavailable
-    this records a skipped result instead of crashing, mirroring lint.py's own
-    OSError handling in check_no_tracked_raw (the guard no-ops without git)."""
-    with tempfile.TemporaryDirectory(prefix="wiki-rawtracked-") as td:
-        root = Path(td)
-        copy_fixture(root)
-        try:
-            subprocess.run(["git", "init", "-q"], cwd=root,
-                           check=True, capture_output=True)
-            (root / "raw").mkdir()
-            (root / "raw" / "leak.pdf").write_text("secret")
-            subprocess.run(["git", "add", "-f", "raw/leak.pdf"], cwd=root,
-                           check=True, capture_output=True)
-        except (OSError, subprocess.SubprocessError) as e:
-            fail_prerequisite(
-                "raw-tracked-fires", f"git prerequisite unavailable: {type(e).__name__}"
-            )
-            return
-        proc = subprocess.run([sys.executable, str(LINT), "--tier1"],
-                              cwd=root, text=True, capture_output=True)
-        ok = (proc.returncode == 1 and "raw-tracked" in proc.stdout
-              and "leak.pdf" in proc.stdout)
-        results.append(("raw-tracked-fires", ok))
-        print(("PASS " if ok else "FAIL ") + "raw-tracked-fires")
-        if not ok:
-            print(f"  exit {proc.returncode}; stdout: {proc.stdout[:300]}")
-
-
-def check_raw_tracked_case_variant_fires():
-    """The raw no-commit guard must catch case variants such as Raw/ too:
-    default git pathspecs are case-sensitive even when core.ignorecase=true."""
-    with tempfile.TemporaryDirectory(prefix="wiki-rawtracked-case-") as td:
-        root = Path(td)
-        copy_fixture(root)
-        try:
-            subprocess.run(["git", "init", "-q"], cwd=root,
-                           check=True, capture_output=True)
-            subprocess.run(["git", "config", "core.ignorecase", "true"], cwd=root,
-                           check=True, capture_output=True)
-            (root / "Raw").mkdir()
-            (root / "Raw" / "leak.pdf").write_text("secret")
-            subprocess.run(["git", "add", "-f", "Raw/leak.pdf"], cwd=root,
-                           check=True, capture_output=True)
-        except (OSError, subprocess.SubprocessError) as e:
-            fail_prerequisite(
-                "raw-tracked-case-variant-fires",
-                f"git prerequisite unavailable: {type(e).__name__}",
-            )
-            return
-        proc = subprocess.run([sys.executable, str(LINT), "--tier1"],
-                              cwd=root, text=True, capture_output=True)
-        ok = (proc.returncode == 1 and "raw-tracked" in proc.stdout
-              and "Raw/leak.pdf" in proc.stdout)
-        results.append(("raw-tracked-case-variant-fires", ok))
-        print(("PASS " if ok else "FAIL ") + "raw-tracked-case-variant-fires")
-        if not ok:
-            print(f"  exit {proc.returncode}; stdout: {proc.stdout[:300]}")
-
-
 # ---- Phase 5: fail-closed structure and governed Tier-1 data ----
 run_case(
     "direct-entity-junk-file-fails",
@@ -2399,60 +2337,66 @@ run_case(
 )
 
 
-def check_git_failure_inside_worktree_fails():
-    """A failed Git invariant query cannot look clean once worktree status is known."""
+def check_raw_artifact_git_workflow_passes():
+    """A raw source can be tracked and pass both repository guard commands."""
     real_git = shutil.which("git")
     if real_git is None:
         fail_prerequisite(
-            "git-failure-inside-worktree-fails", "git prerequisite unavailable"
+            "raw-artifact-git-workflow-passes", "git prerequisite unavailable"
         )
         return
-    with tempfile.TemporaryDirectory(prefix="wiki-git-failure-") as td:
+    with tempfile.TemporaryDirectory(prefix="wiki-raw-tracking-") as td:
         root = Path(td)
         copy_fixture(root)
-        subprocess.run([real_git, "init", "-q"], cwd=root, check=True, capture_output=True)
-        fake_bin = root / "tmp" / "fake-bin"
-        fake_bin.mkdir(parents=True)
-        fake_git = fake_bin / "git"
-        fake_git.write_text(
-            "#!/bin/sh\n"
-            "if [ \"$1\" = \"rev-parse\" ]; then echo true; exit 0; fi\n"
-            "if [ \"$1\" = \"ls-files\" ]; then echo forced failure >&2; exit 73; fi\n"
-            f'exec "{real_git}" "$@"\n'
+        shutil.copyfile(REPO_ROOT / ".gitignore", root / ".gitignore")
+        (root / "scripts/hooks").mkdir()
+        for name in (
+            "wiki_transactions.py", "_file_transactions.py",
+            "_transaction_contract.py", "_durable_files.py",
+        ):
+            shutil.copyfile(REPO_ROOT / "scripts" / name, root / "scripts" / name)
+        shutil.copyfile(
+            REPO_ROOT / "scripts/hooks/pre-commit", root / "scripts/hooks/pre-commit"
         )
-        fake_git.chmod(0o755)
-        env = os.environ.copy()
-        env["PATH"] = str(fake_bin) + os.pathsep + env.get("PATH", "")
-        proc = subprocess.run(
+        source = root / "raw/notes/source.txt"
+        source.parent.mkdir(parents=True)
+        source.write_text("tracked source artifact\n", encoding="utf-8")
+        subprocess.run([real_git, "init", "-q"], cwd=root, check=True, capture_output=True)
+        add = subprocess.run(
+            [real_git, "add", "-A"], cwd=root, text=True, capture_output=True
+        )
+        tracked = subprocess.run(
+            [real_git, "ls-files", "--error-unmatch", "raw/notes/source.txt"],
+            cwd=root, text=True, capture_output=True,
+        )
+        lint = subprocess.run(
             [sys.executable, str(LINT), "--tier1"],
             cwd=root,
             text=True,
             capture_output=True,
-            env=env,
         )
-        output = proc.stdout + proc.stderr
+        hook = subprocess.run(
+            ["sh", "scripts/hooks/pre-commit"],
+            cwd=root, text=True, capture_output=True,
+        )
         ok = (
-            proc.returncode == 1
-            and "raw-tracked" in output
-            and "git ls-files failed inside worktree" in output
-            and "Traceback" not in output
+            add.returncode == 0
+            and tracked.returncode == 0
+            and lint.returncode == 0
+            and hook.returncode == 0
         )
-        results.append(("git-failure-inside-worktree-fails", ok))
-        print(("PASS " if ok else "FAIL ") + "git-failure-inside-worktree-fails")
+        name = "raw-artifact-git-workflow-passes"
+        results.append((name, ok))
+        print(("PASS " if ok else "FAIL ") + name)
         if not ok:
-            print(f"  exit {proc.returncode}; output: {output[:500]}")
+            print(
+                f"  add={add.returncode} tracked={tracked.returncode} "
+                f"lint={lint.returncode} hook={hook.returncode}; "
+                f"stderr={(add.stderr + tracked.stderr + lint.stderr + hook.stderr)[:500]}"
+            )
 
 
-check_raw_tracked_fires()
-check_raw_tracked_case_variant_fires()
-check_git_failure_inside_worktree_fails()
-
-prerequisite_probe = []
-fail_prerequisite("probe", "unavailable", sink=prerequisite_probe, emit=False)
-results.append(("git-unavailable-never-counts-as-pass",
-                prerequisite_probe == [("probe", False)]))
-print(("PASS " if results[-1][1] else "FAIL ")
-      + "git-unavailable-never-counts-as-pass")
+check_raw_artifact_git_workflow_passes()
 
 print()
 failed = [n for n, ok in results if not ok]

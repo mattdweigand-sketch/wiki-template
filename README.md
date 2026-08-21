@@ -1,6 +1,6 @@
 # <Organization> Wiki
 
-A clonable, agent-readable wiki template for company, project, or personal context, based on the [Karpathy LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
+A clonable, agent-readable wiki template for organization, project, or personal context, based on the [Karpathy LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
 Put source documents in `raw/`. Agents turn them into structured, cited, interlinked pages in `wiki/`. Future agents answer from the wiki instead of re-reading the same raw material every time.
 
@@ -10,7 +10,7 @@ Put source documents in `raw/`. Agents turn them into structured, cited, interli
 
 Most AI workflows repeatedly retrieve and reassemble context. Prior organization and interpretation rarely carry forward.
 
-This repo compiles stable, source-backed meaning so future work starts from an organized map instead of cold. Compiled pages are the orientation and reuse layer; current facts still come from their owner or source at runtime, and consequential, contradicted, or stale-sensitive claims return to raw evidence. Compounding means reusing prior organization and interpretation, not eliminating verification.
+This repo compiles stable, source-backed context so future work can reuse prior organization and interpretation. Compiled pages provide orientation. Current facts still come from their owner or source at runtime, and consequential, contradicted, or time-sensitive claims return to raw evidence.
 
 ---
 
@@ -60,8 +60,8 @@ Research answers can stay in chat or become durable analyses when they are worth
 
 The wiki runs one loop: preserve the evidence, turn it into pages, build durable knowledge on those pages, connect them, then check the result.
 
-1. **Preserve the evidence.** Original files, notes, transcripts, and exported source files live in `raw/`. Once added, they are treated as read-only so later conclusions can always be traced back to the source.
-2. **Turn sources into wiki pages.** Each important source gets a page in `wiki/sources/`. Other pages cite those source pages instead of relying on loose files, memory, or uncaptured links.
+1. **Preserve the evidence.** Original files, notes, transcripts, and exported source files live in `raw/`. Once added, they are treated as read-only so later conclusions can always be traced back to the source. Git tracks these files with the rest of the wiki, so review sensitive material before pushing it to a remote.
+2. **Turn sources into wiki pages.** All three setup presets include the `source` type. While it remains active, each important source gets a page in `wiki/sources/`. Other pages cite those source pages instead of relying on loose files, memory, or uncaptured links.
 3. **Build durable knowledge.** Wiki pages capture the configured domain using active types from a governed 24-type catalog. Pages use a shared schema, citations, and a `confidence` value of `high`, `medium`, `low`, or `contested`, so agents know how far to trust each claim. Writing and naming rules live in operating docs rather than a default entity folder.
 4. **Connect related context.** Pages link to each other with `[[wiki-links]]`. Agents choose meaningful outgoing links; the repo can rebuild the incoming `## Referenced by` lists automatically.
 5. **Check and protect the corpus.** A layer of automated checks and approval gates guards the result. The next section lists them.
@@ -75,7 +75,7 @@ The checks and guardrails that protect the corpus:
 | Mechanism | Purpose |
 |---|---|
 | One-time initialization and CI | `SETUP.md` collects temporary answers, previews exact changes, and applies them once after approval. The initializer then deletes itself. GitHub Actions validates repository mechanics on pushes and pull requests. |
-| Route-first workflows | Point agents from `AGENTS.md` to `CONTEXT.md` to the right workflow, so they read the instructions that match the task. |
+| Route-first workflows | Point agents from `AGENTS.md` through the `wiki/domain.md` status check, then to `SETUP.md` or `CONTEXT.md` as appropriate. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks evidence gaps so weak claims become future work instead of disappearing. |
 | Contradiction tracking | Records conflicts in `wiki/contradictions.md` instead of overwriting inconvenient claims. |
 | Three-tier lint | `scripts/lint.py` reports two deterministic tiers: Tier 1 fails on broken structure and malformed proof; Tier 2 ranks suspicious patterns for review, including compiled pages with newer source inputs, glossary status language, pages likely needing authority metadata, and optional current-state owner drift. Tier 3, genuine judgment, is left to the `wiki-lint` prose workflow, not the script. |
@@ -84,7 +84,7 @@ The checks and guardrails that protect the corpus:
 | Approval gate and ledger | `scripts/capture_gate.py` makes the agent ask before filing analyses, applying artifact promotions, or approving synthesis; `scripts/capture-runs.jsonl` records what was approved afterward. |
 | Durable file updates | Approval-ledger writes use a stable sidecar lock and atomic replacement; backlink rebuilds and log rotations use recoverable multi-file transactions that fail closed when interrupted or conflicted. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` is the single manifest for both `.claude/commands/` and `.agents/skills/`; the renderer and parity checker prevent hand-edited drift. |
-| Live evals | `wiki-eval` runs `scripts/wiki_eval.py` to test shared parsing, durable files, recoverable transactions, backlinks, lint fixtures, stale-text sweep proof, the unified approval gate, ledger validation, export, log rotation, review due checks, discoverability, generated wrapper parity, exact catalog/schema parity, operational-document reachability, and Tier-1 lint over the live corpus. |
+| Live evals | `wiki-eval` runs the suites registered in `scripts/wiki_eval.py`, including parsing, durable files, transactions, backlinks, lint and evidence checks, approval gates and ledgers, export and backup receipts, log rotation, review dates, discoverability, wrapper parity, entity-catalog and schema contracts, document reachability, and Tier-1 lint. |
 | Optional backup receipt | An explicit `rclone` upload advances local backup freshness only after remote size and checksum verification. `scripts/backup_state.py` reports missing, stale, invalid, future-dated, or fresh state without making backup configuration a repository gate. |
 
 Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task instructions live under [`workflows/`](workflows/).
@@ -112,7 +112,7 @@ Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task inst
 |-- scripts/                   # Deterministic gates, lint, evals, export, link helpers
 |-- .github/workflows/         # CI for deterministic wiki checks
 |
-|-- archive/                   # Tracked rotated wiki logs
+|-- archive/                   # Tracked setup provenance and rotated wiki logs
 |-- raw/                       # Immutable source artifacts
 |-- deliverables/              # Gitignored one-off outputs built from wiki content
 |-- tmp/                       # Gitignored scratch space
@@ -136,6 +136,8 @@ Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task inst
 ## Configuration
 
 A fresh clone starts unconfigured. [`SETUP.md`](SETUP.md) collects the context owner, domain, starting preset, final supported entity types, raw buckets, example questions, and privacy acknowledgement in a temporary answers file. `scripts/finalize_wiki_setup.py preview` validates the answers and reports every change without writing. Its approved `apply` command configures the wiki, archives only the answers and receipt, removes the initializer, runs validation, and leaves ordinary Git changes for review.
+
+The final active-type list is literal. All presets include `source`, `analysis`, and `decision` so the standard ingest, analysis-capture, and decision-capture routes have destinations. Remove one only when the configured wiki will not use that route.
 
 The domain config, [`wiki/domain.md`](wiki/domain.md), records what this wiki is about and which entity types are active. The full schema, [`wiki/SCHEMA.md`](wiki/SCHEMA.md), defines the available page types and page rules.
 

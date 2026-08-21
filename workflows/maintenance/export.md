@@ -1,6 +1,6 @@
 ---
 name: wiki-export
-description: Use this workflow when the user says "export the wiki" or wants a local corpus zip. Builds a zip of the template, wiki, and gitignored raw/ sources, with optional explicit rclone upload.
+description: Use this workflow when the user says "export the wiki" or wants a local corpus zip. Builds a zip of the template, wiki, and raw/ sources, with optional explicit rclone upload.
 ---
 
 # Export Workflow
@@ -12,7 +12,7 @@ description: Use this workflow when the user says "export the wiki" or wants a l
 
 ## Why this exists
 
-`raw/` is gitignored, so the git remote may not hold source artifacts. This export builds a local zip of the corpus and operating framework: wiki pages plus raw sources plus workflows, scripts, wrappers, CI, and top-level docs.
+This export builds one verified archive of the corpus and operating framework: wiki pages, raw sources, workflows, scripts, wrappers, CI, and top-level docs.
 
 ## Steps
 

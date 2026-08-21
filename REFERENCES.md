@@ -28,7 +28,7 @@ The system has four layers of responsibility:
 
 | Layer | Owns |
 |---|---|
-| Sources | `raw/` stores source artifacts. Existing raw files are immutable. |
+| Sources | `raw/` stores source artifacts as tracked repository content. Existing raw files are immutable. |
 | Knowledge | `wiki/` stores maintained, cited pages and wiki-wide records. |
 | Workflow | `AGENTS.md`, `CONTEXT.md`, and `workflows/` route tasks and define what to load, skip, edit, and verify. |
 | Mechanisms | `scripts/` performs deterministic checks, backlink rebuilds, approval-ledger validation, exports, and wrapper validation. |
@@ -46,7 +46,7 @@ Detailed workflow ownership:
 | Rotate log | `workflows/maintenance/rotate-log.md` | Manual `wiki/log.md` archival when `log_rotation_due` fires, preserving payload under `archive/wiki-log/`. |
 | Synthesis | `workflows/maintenance/synthesize.md` | Drafting and approving corpus-level distillations: overview refreshes, gap resolutions, cluster analyses, primer updates, and open questions. |
 | Review | `workflows/maintenance/review.md` | Outcome review for due `review_by` checkpoints: realized outcome, confidence changes, next checkpoint, or closure. |
-| Export | `workflows/maintenance/export.md` | Local corpus backup, including gitignored raw sources, with an optional upload only when the user supplies an explicit destination. |
+| Export | `workflows/maintenance/export.md` | Local corpus backup, including raw sources, with an optional upload only when the user supplies an explicit destination. |
 
 The main control mechanisms are:
 
@@ -57,12 +57,12 @@ The main control mechanisms are:
 | Link graph | Authors maintain `## Related pages`; `scripts/rebuild_referenced_by.py` regenerates `## Referenced by` from one snapshot and applies the generation as a recoverable transaction. |
 | Deterministic lint | `scripts/lint.py --tier1` catches structural failures and malformed proof. Full lint also surfaces Tier-2 candidates for human or agent judgment. |
 | Durable writes | Stable-lock atomic ledger replacement and `.wiki-transactions/` protect interrupted, concurrent, and multi-file updates; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
-| Live evals | `wiki-eval` runs `scripts/wiki_eval.py`, the fixture-backed checks for durable files, transactions, lint, backlinks, gates, ledgers, export, stale-text sweep proof, log rotation, review due, discoverability, generated wrapper parity, schema-doc parity, entity-catalog behavior, and operational-document reachability. |
+| Live evals | `wiki-eval` runs the `SUITES` registry in `scripts/wiki_eval.py`, including parsing, durable files, transactions, lint and evidence checks, backlinks, gates, ledgers, export and backup receipts, stale-text sweep proof, log rotation, review dates, discoverability, wrapper parity, schema-doc parity, entity-catalog behavior, document reachability, and Tier-1 lint. |
 | Outcome review | `scripts/review_due.py` surfaces due `review_by` checkpoints; `workflows/maintenance/review.md` records what happened and whether confidence changes. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
 | Approval gate | `scripts/capture_gate.py` guards analysis capture, artifact-promotion apply routes, and reviewed synthesis promotion (`--kind=synthesis`), then records approved boundaries in `scripts/capture-runs.jsonl`. |
 | Synthesis ledger | `wiki/synthesis.md` orients future synthesis runs; cite source pages, not the ledger, when making claims. |
-| Export | `scripts/export_wiki.py` builds a local backup that includes gitignored `raw/` sources. |
+| Export | `scripts/export_wiki.py` builds a local backup that includes `raw/` sources. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` owns the shortcut manifest; `scripts/render_wiki_wrappers.py` deterministically renders `.claude/commands/` and `.agents/skills/`, which never own canonical behavior. |
 
 ---
@@ -107,10 +107,10 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 
 | File or folder | Purpose |
 |---|---|
-| `raw/README.md` | Source-artifact handling note for the ignored `raw/` corpus |
+| `raw/README.md` | Source-artifact handling and privacy note for the tracked `raw/` corpus |
 | `scripts/raw-buckets.json` | Tracked raw bucket taxonomy read by Tier-1 lint |
 | `scripts/entity-catalog.json` | Permanent governed entity folders, types, and authoring semantics; consumed through `scripts/wiki_entity_catalog.py` |
-| `scripts/finalize_wiki_setup.py`, `scripts/wiki_setup_initializer.py` | Disposable one-time preview and approved finalizer; both are removed from a configured wiki |
+| `scripts/finalize_wiki_setup.py`, `scripts/wiki_setup_initializer.py`, `scripts/wiki_setup_initializer_test.py`, `scripts/wiki-setup-presets.json` | Disposable one-time setup command, implementation, regression test, and preset defaults; all four are removed from a configured wiki |
 | `scripts/lint-adjudications.json` | Settled Tier-2 lint judgments with reasons and dates; lint suppresses what it lists |
 | `scripts/current-state-owners.json` | Optional, strict registry of current-state owner pages; ships disabled and empty |
 | `scripts/wiki_current_state.py` | Typed owner-registry loader, validator, and current-state drift evaluator used by lint |
@@ -158,10 +158,10 @@ Every file in this project sits at one of five layers, defined by when it loads 
 
 | Layer | When loaded | Files |
 |---|---|---|
-| **L0** | Always: orientation and routing | `AGENTS.md` (`CLAUDE.md` is a pointer for Claude agents), `wiki/domain.md` status check, `CONTEXT.md` |
-| **L1** | Route entry: selected by `CONTEXT.md` | `workflows/<workspace>/CONTEXT.md`, one-time `SETUP.md`, or `wiki/index.md` only for browsing |
+| **L0** | Always: orientation and status | `AGENTS.md` (`CLAUDE.md` is a pointer for Claude agents), `wiki/domain.md` status check |
+| **L1** | Route entry: selected by status or task | One-time `SETUP.md` when unconfigured; `CONTEXT.md` and then `workflows/<workspace>/CONTEXT.md` when configured; `wiki/index.md` only for browsing |
 | **L2** | Task workflow: selected by route entry | `workflows/maintenance/*.md` and any task-specific workflow file named by the L1 route |
 | **L3** | Per task: stable reference, loaded on demand | `REFERENCES.md`, `wiki/index.md`, `wiki/SCHEMA.md`, `wiki/glossary.md`, `wiki/primer.md`, `wiki/design-notes.md`, `wiki/contradictions.md`, `wiki/sourcing-queue.md`, `wiki/overview.md` |
 | **L4** | During work: content read or written | `wiki/log.md`, `wiki/<entity>/*.md`, `raw/*` |
 
-Loading principle: an agent starting a task should load L0, use `CONTEXT.md` to choose the route, then open only the routed workflow's Load / Skip list. Pull L3 references only when the workflow calls for them. `wiki/index.md` is on-demand for browsing, research, promotion, explicit lookup, and ingest link/index steps; it is not startup context.
+Loading principle: an agent starting a task should load L0. An unconfigured clone follows `SETUP.md`; a configured wiki uses `CONTEXT.md` to choose the route, then opens only the routed workflow's Load / Skip list. Pull L3 references only when the workflow calls for them. `wiki/index.md` is on-demand for browsing, research, promotion, explicit lookup, and ingest link/index steps; it is not startup context.

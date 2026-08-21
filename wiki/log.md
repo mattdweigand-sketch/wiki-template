@@ -11,6 +11,16 @@ Append-only history of ingest, lint, query, and decision-capture sessions. Newes
 
 ---
 
+## [2026-08-20] maintenance | initializer documentation alignment
+
+Change: Reconciled the root documentation with the one-time initializer and tracked raw-source policy. Clarified status-based routing, catalog-ordered active types, workflow-dependent entity destinations, the complete disposable initializer file set, setup provenance under `archive/`, and the live eval registry.
+Reason: The refactors were mechanically valid, but several root descriptions still omitted new files or implied that every configured wiki could use routes whose destination type had been removed.
+Rejected alternative: Leave the details implicit in preview errors and implementation code, which would make setup choices harder to review before apply.
+Accepted tradeoff: The setup guide now names the consequences of removing `source`, `analysis`, or `decision`; users retain the ability to choose any nonempty supported type set.
+Validation: PASS - document reachability, schema parity, wrapper parity, initializer regression 4/4, full eval on Python 3.9.6, Tier-1 lint, and `git diff --check`.
+
+---
+
 ## [2026-08-20] maintenance | current Codex skill discovery
 
 Change: Moved the seven generated Codex workflow wrappers from `.codex/skills/` to the current repo-local `.agents/skills/` discovery root, kept Claude Code slash commands separate from Codex `$wiki-*` invocation, and updated wrapper parity, export coverage, structural policy, reachability scope, and live documentation.
