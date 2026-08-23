@@ -15,6 +15,7 @@ import tempfile
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Sequence
 
 from _wiki_parse import evidentiary_line_views, get_entity_pages
 from wiki_provenance import RawSourceClosure, resolve_live_source_closure
@@ -434,17 +435,33 @@ def build_sample_data(
     requested_count: int = 25,
     *,
     injected_seed: int | None = None,
+    included_paths: Sequence[str] | None = None,
 ) -> dict[str, object]:
     if not RUN_ID_RE.fullmatch(run_id):
         raise EvidenceError("invalid run_id")
     if not _strict_int(requested_count, minimum=1):
         raise EvidenceError("requested_count must be positive")
+    selected_paths: set[str] | None = None
+    if included_paths is not None:
+        if not included_paths:
+            raise EvidenceError("included_paths must not be empty")
+        if len(included_paths) != len(set(included_paths)):
+            raise EvidenceError("included_paths must not contain duplicates")
+        for value in included_paths:
+            if not _canonical_relative(value, "wiki/") or Path(value).suffix != ".md":
+                raise EvidenceError(f"invalid included path: {value!r}")
+        selected_paths = set(included_paths)
     wiki_root = repo_root / "wiki"
     candidates: list[dict[str, object]] = []
+    visited_paths: set[str] = set()
     closure_cache: dict[str, dict[str, object]] = {}
     for page in get_entity_pages(wiki_root):
         if page.parent.name == "sources":
             continue
+        relative = page.relative_to(repo_root).as_posix()
+        if selected_paths is not None and relative not in selected_paths:
+            continue
+        visited_paths.add(relative)
         try:
             mode = page.lstat().st_mode
         except OSError as exc:
@@ -456,7 +473,6 @@ def build_sample_data(
             text = content.decode("utf-8")
         except (OSError, UnicodeError) as exc:
             raise EvidenceError(f"cannot read {page} as UTF-8: {exc}") from exc
-        relative = page.relative_to(repo_root).as_posix()
         for line_number, line, visible_line in evidentiary_line_views(text):
             slugs = list(dict.fromkeys(CITATION_RE.findall(visible_line)))
             if not slugs:
@@ -486,9 +502,23 @@ def build_sample_data(
                 }
             )
     candidates.sort(key=lambda claim: (claim["path"], claim["line_number"], claim["claim_id"]))
+    if selected_paths is not None:
+        missing_paths = selected_paths - visited_paths
+        if missing_paths:
+            raise EvidenceError(
+                "included paths are not non-source entity pages: "
+                + ", ".join(sorted(missing_paths))
+            )
+        if not candidates:
+            raise EvidenceError("included paths contain no citation-bearing claims")
+        requested_count = len(candidates)
     seed = secrets.randbits(64) if injected_seed is None else injected_seed
     rng = random.Random(seed)
-    selected = rng.sample(candidates, min(requested_count, len(candidates)))
+    selected = (
+        list(candidates)
+        if selected_paths is not None
+        else rng.sample(candidates, min(requested_count, len(candidates)))
+    )
     sample = {
         "schema_version": 1,
         "run_id": run_id,

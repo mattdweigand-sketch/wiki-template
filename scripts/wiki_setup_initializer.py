@@ -364,10 +364,10 @@ def _render_raw_readme(answers: WikiSetupAnswers) -> str:
         "# raw/\n\n"
         "Source artifacts live here. Put each new source in the matching bucket, "
         "then treat its bytes as immutable.\n\n"
-        "This wiki assumes a private Git repository whose access is limited "
-        "to the wiki's intended users. Source artifacts are tracked with the rest "
-        "of the repository and may be pushed to its remote. Review sensitive files "
-        "before adding or pushing them.\n\n"
+        "Source artifacts stay local and must never be committed. Git tracks this "
+        "guide, the raw bucket taxonomy, source pages, and the exact path, size, and "
+        "SHA-256 manifest. Use `wiki-export` for a complete local or explicitly "
+        "approved off-device backup.\n\n"
         "## Subfolders\n\n"
         "| Folder | Holds |\n|---|---|\n"
         f"{rows}\n"
@@ -472,9 +472,8 @@ def _render_live_readme(text: str, answers: WikiSetupAnswers) -> str:
         "1. **Preserve the evidence.** Original files, notes, transcripts, and "
         "exported source files live in `raw/`. Once added, they are treated as "
         "read-only so later conclusions can always be traced back to the source. "
-        "This wiki assumes a private Git repository whose access is limited to its "
-        "intended users. Git tracks raw files with the rest of the wiki, so review "
-        "sensitive material before pushing them to any remote.",
+        "Raw bytes stay local and Git ignores them. Git tracks their exact paths, "
+        "sizes, hashes, and matching source pages.",
     )
     text = _replace_single_wiki_setup_line(
         text,
@@ -531,10 +530,10 @@ def _render_live_agents(text: str, answers: WikiSetupAnswers) -> str:
     text = _replace_single_wiki_setup_line(
         text,
         "agents-private-repository",
-        "- `raw/` - tracked source artifacts in the wiki's intended "
-        "private-repository operating model. Existing files are immutable, and new "
+        "- `raw/` - local-only source artifacts. Git tracks their exact manifest and "
+        "source pages, never their bytes. Existing files are immutable, and new "
         "user-provided sources may be placed once during ingest before becoming "
-        "immutable. Review sensitive content before adding or pushing it.",
+        "immutable.",
     )
     text = _replace_single_wiki_setup_line(
         text,
@@ -763,7 +762,7 @@ def finalize_wiki_setup(
     changed.add("raw/README.md")
     raw_registry = {
         "description": "Canonical raw source-artifact bucket taxonomy for this wiki.",
-        "policy": "Raw source artifacts are immutable and may be tracked with the rest of the wiki.",
+        "policy": "Raw source artifacts are immutable, local-only, and never tracked by Git.",
         "buckets": answers.raw_buckets,
     }
     (root / "scripts/raw-buckets.json").write_text(

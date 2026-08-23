@@ -50,9 +50,18 @@ def main() -> int:
         action="store_true",
         help="validate complete restored raw/source closure without requiring Git history",
     )
+    ap.add_argument(
+        "--git-view",
+        action="store_true",
+        help="validate tracked manifest/source closure without local raw files",
+    )
     args = ap.parse_args()
     if args.restored_tree and not args.tier1:
         ap.error("--restored-tree requires --tier1")
+    if args.git_view and not args.tier1:
+        ap.error("--git-view requires --tier1")
+    if args.restored_tree and args.git_view:
+        ap.error("--restored-tree and --git-view are mutually exclusive")
 
     if not WIKI_ROOT.exists():
         print(f"Error: 'wiki/' not found. Run from the repo root. cwd={Path.cwd()}",
@@ -74,7 +83,11 @@ def main() -> int:
         index_targets,
         index_duplicates,
         index_read_fails,
-        provenance_view="restored" if args.restored_tree else "live",
+        provenance_view=(
+            "restored" if args.restored_tree
+            else "git" if args.git_view
+            else "live"
+        ),
     )
     print("TIER 1  (deterministic; must fix)")
     if not t1:

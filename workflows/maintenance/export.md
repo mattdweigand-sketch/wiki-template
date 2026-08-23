@@ -1,6 +1,6 @@
 ---
 name: wiki-export
-description: Use this workflow when the user says "export the wiki" or wants a local corpus zip. Builds a zip of the template, wiki, and raw/ sources, with optional explicit rclone upload.
+description: Use this workflow when the user says "export the wiki" or wants a complete recovery snapshot, with optional explicit rclone upload.
 ---
 
 # Export Workflow
@@ -12,7 +12,7 @@ description: Use this workflow when the user says "export the wiki" or wants a l
 
 ## Why this exists
 
-This export builds one verified archive of the corpus and operating framework: wiki pages, raw sources, workflows, scripts, wrappers, CI, and top-level docs.
+This export builds one verified recovery archive of the complete local wiki tree.
 
 ## Steps
 
@@ -22,7 +22,7 @@ This export builds one verified archive of the corpus and operating framework: w
    python3 scripts/export_wiki.py --date YYYY-MM-DD
    ```
 
-   This includes `wiki/`, `raw/`, `workflows/`, `scripts/` with fixtures and ledgers, `.claude/commands/`, `.agents/skills/`, `.github/workflows/`, and the top-level docs. `BACKUP-MANIFEST.json` binds the exact sorted member set, sizes, hashes, creation time, and raw-artifact manifest hash; it does not list itself. The export excludes `.git/`, `tmp/`, `deliverables/`, Claude worktrees, local Claude settings, Finder metadata, `.env`, and the local backup receipt. ZIP source artifacts are retained; only the exact output archive is excluded. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree so it cannot silently archive content from outside the repository or omit a broken link. It also refuses nonclean `.wiki-transactions/` state before creating an archive; inspect with `python3 scripts/wiki_transactions.py status` and recover or diagnose the recorded transaction instead of deleting it.
+   This includes every regular file under the repo root. That means wiki pages, local-only raw sources, workflows, scripts, wrappers, CI, Git history, local settings, scratch files, deliverables, and any existing backup receipt. Only the exact output archive is excluded. `BACKUP-MANIFEST.json` binds the exact sorted member set, sizes, hashes, creation time, and raw-artifact manifest hash; it does not list itself. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree and any nonclean `.wiki-transactions/` state.
 
 2. If you need to inspect before building, run:
 
@@ -37,7 +37,7 @@ This export builds one verified archive of the corpus and operating framework: w
    python3 scripts/restore_wiki.py restore <archive.zip> <absent-destination>
    ```
 
-   Restore refuses an existing destination, validates before extraction, runs restored-tree checks, and atomically installs only the complete verified directory. It never initializes Git.
+   Restore refuses an existing destination, validates before extraction, runs restored-tree checks, and atomically installs only the complete verified directory. It restores included Git history without running Git.
 
 3. Report the absolute path to the zip. Do not upload it anywhere unless the user explicitly gives a destination.
 
@@ -70,4 +70,4 @@ This export builds one verified archive of the corpus and operating framework: w
 
 ## Privacy
 
-The corpus may contain sensitive organization data. Do not upload, email, or share an export without explicit user approval for the destination. Passing `--upload-target` is explicit destination approval for that command invocation only.
+The archive may contain source documents, credentials, local settings, deliverables, scratch files, and Git history. Do not upload, email, or share it without explicit user approval for the destination. Passing `--upload-target` is approval for that command invocation only.

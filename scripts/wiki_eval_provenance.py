@@ -48,6 +48,10 @@ def _initialize_repository(root: Path, *, manifest: bool = True) -> None:
     (root / "scripts").mkdir()
     (root / "wiki/sources").mkdir(parents=True)
     (root / "raw/fixtures").mkdir(parents=True)
+    (root / ".gitignore").write_text(
+        "raw/*\n!raw/.gitkeep\n!raw/README.md\n",
+        encoding="utf-8",
+    )
     _write_json(root / "scripts/raw-buckets.json", {
         "description": "fixture",
         "policy": "fixture",
@@ -144,12 +148,44 @@ with tempfile.TemporaryDirectory(prefix="wiki-provenance-staged-") as directory:
     _initialize_repository(repository, manifest=False)
     _commit_all(repository, "pre-manifest baseline")
     _install_artifact(repository)
-    _git(repository, "add", "scripts/raw-artifacts.json", "wiki/sources/fixture-source.md", "raw/fixtures/source.txt")
+    _git(repository, "add", "scripts/raw-artifacts.json", "wiki/sources/fixture-source.md")
     (repository / "raw/fixtures/source.txt").write_bytes(b"unstaged worktree bytes\n")
     (repository / "wiki/sources/fixture-source.md").write_text("unstaged worktree page\n")
     _record(
         "complete-staged-record-uses-only-index-bytes",
         validate_staged_provenance(repository) == (),
+    )
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-provenance-tracked-raw-") as directory:
+    repository = Path(directory)
+    _initialize_repository(repository)
+    _install_artifact(repository)
+    _git(repository, "add", ".")
+    _git(repository, "add", "-f", "raw/fixtures/source.txt")
+    _git(repository, "commit", "-qm", "tracked raw fixture")
+    _record(
+        "tracked-raw-artifact-fails",
+        any(
+            "must not be tracked" in issue
+            for issue in validate_live_provenance(repository)
+        ),
+    )
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-provenance-tracked-raw-case-") as directory:
+    repository = Path(directory)
+    _initialize_repository(repository)
+    _commit_all(repository, "baseline")
+    (repository / "Raw").mkdir(exist_ok=True)
+    (repository / "Raw/leak.txt").write_text("secret", encoding="utf-8")
+    _git(repository, "add", "-f", "Raw/leak.txt")
+    _record(
+        "tracked-raw-case-variant-fails",
+        any(
+            "must not be tracked" in issue
+            for issue in validate_staged_provenance(repository)
+        ),
     )
 
 

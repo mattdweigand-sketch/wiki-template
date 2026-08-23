@@ -2,12 +2,20 @@
 title: Activity Log
 type: log
 created: 2026-05-17
-updated: 2026-08-20
+updated: 2026-08-23
 ---
 
 # Activity Log
 
 Append-only history of ingest, lint, query, and decision-capture sessions. Newest entries on top.
+
+---
+
+## [2026-08-23] maintenance | personal-wiki design ports
+
+Change: Added default `wiki-ask` and manual `wiki-research` routes with generated wrappers, exact-page evidence sampling for verified research, local-only raw-source enforcement, Git-view provenance checks for CI, and complete recovery snapshots that retain exact manifests and atomic restore.
+Reason: The personal wiki had better privacy and recovery breadth. The template needed those gains without losing its stronger approval, provenance, response-locking, or restore contracts.
+Validation: PASS - full registered eval suite, initializer regression 9/9, Tier-1 lint, wrapper parity, document reachability, discoverability, evidence fidelity, provenance, and export/restore checks.
 
 ---
 

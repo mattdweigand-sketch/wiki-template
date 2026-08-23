@@ -18,11 +18,13 @@ CONTRACT_PATH = Path("scripts/wiki-wrapper-contract.json")
 EXPECTED_NAMES = frozenset(
     {
         "wiki-capture",
+        "wiki-ask",
         "wiki-eval",
         "wiki-export",
         "wiki-ingest",
         "wiki-lint",
         "wiki-promote",
+        "wiki-research",
         "wiki-synthesize",
     }
 )

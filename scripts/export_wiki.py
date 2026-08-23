@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Build and verify a wiki export zip.
-
-The export includes raw sources, but excludes local scratch, deliverables, Git
-internals, and private local settings. Upload is optional and only runs when an
-explicit rclone destination is provided.
-"""
+"""Build and verify a complete recovery snapshot of one local wiki tree."""
 
 from __future__ import annotations
 
@@ -26,18 +21,6 @@ from wiki_backup_receipt import (
 )
 
 
-DEFAULT_EXCLUDES = (
-    ".git/",
-    ".agents/",
-    "tmp/",
-    "deliverables/",
-    ".claude/worktrees/",
-)
-DEFAULT_EXCLUDE_FILES = {
-    ".claude/settings.local.json",
-    ".env",
-    "scripts/backup-receipt.json",
-}
 REQUIRED_FILES = {
     ".gitignore",
     "AGENTS.md",
@@ -114,34 +97,17 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
-def should_exclude(rel: str) -> bool:
-    if rel in DEFAULT_EXCLUDE_FILES:
-        return True
-    if rel.endswith(".DS_Store"):
-        return True
-    if rel.startswith(".agents/skills/"):
-        return False
-    return any(rel.startswith(prefix) for prefix in DEFAULT_EXCLUDES)
-
-
 def export_files(
     repo_root: Path,
     output: Path | None = None,
-    local_state: Path | None = None,
 ) -> list[Path]:
-    """Return exportable files, excluding the archive and local receipt state."""
+    """Return every regular file except the exact archive being written."""
     resolved_output = output.resolve() if output is not None else None
-    resolved_local_state = local_state.resolve() if local_state is not None else None
     files: list[Path] = []
     for path in sorted(repo_root.rglob("*")):
         if not path.is_file():
             continue
         if resolved_output is not None and path.resolve() == resolved_output:
-            continue
-        if resolved_local_state is not None and path.resolve() == resolved_local_state:
-            continue
-        rel = path.relative_to(repo_root).as_posix()
-        if should_exclude(rel):
             continue
         files.append(path)
     return files
@@ -214,9 +180,6 @@ def validate_names(names: list[str]) -> list[str]:
     for prefix in REQUIRED_PREFIXES:
         if not any(name.startswith(prefix) for name in names):
             errors.append(f"archive does not contain {prefix}")
-    for name in names:
-        if should_exclude(name):
-            errors.append(f"archive contains excluded path {name}")
     return errors
 
 
@@ -545,7 +508,7 @@ def main() -> int:
     if receipt_path.resolve() == output.resolve():
         print("Error: --receipt-path must differ from the export archive path.", file=sys.stderr)
         return 2
-    files = export_files(repo_root, output, receipt_path)
+    files = export_files(repo_root, output)
     try:
         output_rel = output.resolve().relative_to(repo_root).as_posix()
     except ValueError:

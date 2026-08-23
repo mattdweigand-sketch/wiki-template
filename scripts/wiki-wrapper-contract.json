@@ -2,6 +2,18 @@
   "schema_version": 1,
   "description": "Generated wiki shortcut wrappers; canonical behavior lives in workflows/.",
   "shortcuts": {
+    "wiki-ask": {
+      "name": "wiki-ask",
+      "workflow_refs": [
+        "workflows/research/CONTEXT.md",
+        "workflows/research/ask.md"
+      ],
+      "script_hint": null,
+      "claude_description": "Answer an ordinary question from the smallest relevant part of the wiki",
+      "codex_description": "Run the default lightweight wiki question workflow. Use for ordinary questions, comparisons, explanations, and lookups from the wiki unless the user explicitly invokes wiki-research.",
+      "authorization": "none",
+      "claude_arguments": true
+    },
     "wiki-capture": {
       "name": "wiki-capture",
       "workflow_refs": [
@@ -33,8 +45,8 @@
         "workflows/maintenance/export.md"
       ],
       "script_hint": "python3 scripts/export_wiki.py --date YYYY-MM-DD",
-      "claude_description": "Export a zip backup of the entire wiki corpus, including raw sources",
-      "codex_description": "Run the wiki export workflow. Use when the user says $wiki-export, wiki-export, export the wiki, back up the wiki, or wants a zip backup of the corpus.",
+      "claude_description": "Export a complete verified recovery snapshot of the local wiki tree",
+      "codex_description": "Run the wiki export workflow. Use when the user says $wiki-export, wiki-export, export the wiki, back up the wiki, or wants a complete verified recovery snapshot.",
       "authorization": "none",
       "claude_arguments": true
     },
@@ -70,6 +82,18 @@
       "script_hint": null,
       "claude_description": "Route a useful artifact to the right durable wiki home",
       "codex_description": "Run the wiki artifact-promotion router. Use when the user says $wiki-promote, wiki-promote, promote, save this artifact, file this, or asks where a useful output belongs in the wiki.",
+      "authorization": "none",
+      "claude_arguments": true
+    },
+    "wiki-research": {
+      "name": "wiki-research",
+      "workflow_refs": [
+        "workflows/research/CONTEXT.md",
+        "workflows/research/research.md"
+      ],
+      "script_hint": null,
+      "claude_description": "Run manually invoked wiki research with claim-level independent verification",
+      "codex_description": "Run the manual high-rigor wiki research workflow with claim-level independent verification. Use only when the user explicitly says $wiki-research, wiki-research, or /wiki-research.",
       "authorization": "none",
       "claude_arguments": true
     },

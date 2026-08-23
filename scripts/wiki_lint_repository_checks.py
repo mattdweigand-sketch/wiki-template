@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import subprocess
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -43,6 +44,50 @@ SourcingQueueMarker = tuple[str, int, int]
 SourcingQueueMarkers = tuple[list[SourcingQueueMarker], LintFailures]
 LogEntry = dict[str, object]
 AdjudicationDocument = dict[str, object]
+TRACKED_RAW_EXCEPTIONS = frozenset({"raw/.gitkeep", "raw/README.md"})
+
+
+def check_no_tracked_raw_artifacts() -> LintFailures:
+    """Reject Git-tracked source artifacts under raw/, case-insensitively."""
+    try:
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        if Path(".git").exists():
+            return [("raw-tracked", "raw/", f"could not inspect Git tracking: {exc}")]
+        return []
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        if Path(".git").exists():
+            return [("raw-tracked", "raw/", "could not inspect Git tracking")]
+        return []
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "-z"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as exc:
+        return [("raw-tracked", "raw/", f"could not inspect Git tracking: {exc}")]
+    if tracked.returncode != 0:
+        detail = tracked.stderr.decode("utf-8", errors="replace").strip()
+        return [("raw-tracked", "raw/", detail or "git ls-files failed")]
+    failures: LintFailures = []
+    for raw_path in tracked.stdout.split(b"\0"):
+        if not raw_path:
+            continue
+        path = raw_path.decode("utf-8", errors="surrogateescape")
+        if path.lower().startswith("raw/") and path not in TRACKED_RAW_EXCEPTIONS:
+            failures.append((
+                "raw-tracked",
+                path,
+                "raw source artifacts must remain local and untracked",
+            ))
+    return failures
 
 
 def read_raw_buckets_registry() -> RawBucketRegistry:
@@ -695,6 +740,7 @@ __all__ = [
     "check_folder_structure",
     "check_log_entry_headers",
     "check_meta_utf8",
+    "check_no_tracked_raw_artifacts",
     "check_sourcing_queue_count_markers",
     "check_stale_sweep_proof_entries",
     "check_stray_tool_tags",

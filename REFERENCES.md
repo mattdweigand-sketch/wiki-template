@@ -16,7 +16,7 @@ The wiki maintainer:
 - Reviews dated predictions and decisions when `review_by` checkpoints come due.
 - Periodically lints for contradictions, stale content, orphan pages, and authority metadata gaps.
 
-Own everything in `wiki/`. `raw/` holds source artifacts: do not edit existing raw files. During ingest, if the user provides a new source outside the proper location, place it once under the correct `raw/` subfolder with a kebab-case filename, then treat it as immutable.
+Own everything in `wiki/`. `raw/` holds local-only source artifacts. Do not edit existing raw files. During ingest, if the user provides a new source outside the proper location, place it once under the correct `raw/` subfolder with a kebab-case filename, then treat it as immutable.
 
 ---
 
@@ -28,7 +28,7 @@ The system has four layers of responsibility:
 
 | Layer | Owns |
 |---|---|
-| Sources | `raw/` stores immutable source artifacts as tracked content in the intended private repository. |
+| Sources | `raw/` stores immutable local-only source artifacts. Git tracks their exact manifest and source pages, not their bytes. |
 | Knowledge | `wiki/` stores maintained, cited pages and wiki-wide records. |
 | Workflow | `AGENTS.md`, `CONTEXT.md`, and `workflows/` route tasks and define what to load, skip, edit, and verify. |
 | Mechanisms | `scripts/` performs deterministic checks, backlink rebuilds, approval-ledger validation, exports, and wrapper validation. |
@@ -39,7 +39,8 @@ Detailed workflow ownership:
 |---|---|---|
 | One-time initialization | `SETUP.md` | Collects temporary answers, previews exact changes, applies once after approval, archives compact provenance, validates, and removes itself. <!-- wiki-setup:references-setup-workflow:line --> |
 | Ingest | `workflows/ingest/CONTEXT.md` | Raw source handling, `wiki/sources/` summaries, affected entity-page updates, index rows, backlinks, Tier-1 lint, touched-page Tier-2 review, and ingest log entries. |
-| Research | `workflows/research/CONTEXT.md` | Wiki-grounded answers, selective page loading, optional analysis capture, and promotion-candidate audits. |
+| Ask | `workflows/research/ask.md` | Default bounded wiki answers with selective page loading and optional analysis capture. |
+| Research | `workflows/research/research.md` | Explicitly invoked research with exact-page evidence sampling and claim-level independent review. |
 | Root-document audit | `workflows/maintenance/audit-docs.md` | Drift checks for root operating documents and workflow routers against live files, scripts, registries, and routes. |
 | Capture | `workflows/maintenance/capture.md` | Decision or experience pages with rationale, lessons, affected entities, cross-links, verification, and log entries. |
 | Artifact promotion | `workflows/maintenance/artifact-promotion.md` | Routing useful external or conversational artifacts to a source, active entity type, workflow, script, existing page update, or discard. |
@@ -49,7 +50,7 @@ Detailed workflow ownership:
 | Rotate log | `workflows/maintenance/rotate-log.md` | Manual `wiki/log.md` archival when `log_rotation_due` fires, preserving payload under `archive/wiki-log/`. |
 | Synthesis | `workflows/maintenance/synthesize.md` | Drafting and approving corpus-level distillations: overview refreshes, gap resolutions, cluster analyses, primer updates, and open questions. |
 | Review | `workflows/maintenance/review.md` | Outcome review for due `review_by` checkpoints: realized outcome, confidence changes, next checkpoint, or closure. |
-| Export | `workflows/maintenance/export.md` | Local corpus backup, including raw sources, with an optional upload only when the user supplies an explicit destination. |
+| Export | `workflows/maintenance/export.md` | Full local recovery snapshot with an optional upload only when the user supplies an explicit destination. |
 
 The main control mechanisms are:
 
@@ -65,7 +66,7 @@ The main control mechanisms are:
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
 | Approval gate | `scripts/capture_gate.py` previews exact `analysis-capture`, `artifact-promotion`, and `synthesis-promotion` proposals, binds approval to their digest, and applies approved targets with the combined ledger postimage through one recoverable transaction. |
 | Synthesis ledger | `wiki/synthesis.md` orients future synthesis runs; cite source pages, not the ledger, when making claims. |
-| Export | `scripts/export_wiki.py` builds and verifies exact-manifest local backups that include `raw/`; `scripts/restore_wiki.py` restores a verified archive only to an absent destination. |
+| Export | `scripts/export_wiki.py` builds and verifies exact-manifest recovery snapshots of every regular file except the output archive itself. `scripts/restore_wiki.py` restores a verified archive only to an absent destination. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` owns the shortcut manifest; `scripts/render_wiki_wrappers.py` deterministically renders `.claude/commands/` and `.agents/skills/`, which never own canonical behavior. |
 
 ---
@@ -110,7 +111,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 
 | File or folder | Purpose |
 |---|---|
-| `raw/README.md` | Source-artifact handling and privacy note for the tracked `raw/` corpus |
+| `raw/README.md` | Local-only source handling, immutability, and backup rules |
 | `scripts/raw-buckets.json` | Tracked raw bucket taxonomy read by Tier-1 lint |
 | `scripts/raw-artifacts.json`, `scripts/wiki_provenance.py` | Exact raw/source registry plus live, staged, CI, and restored-tree validation views |
 | `scripts/entity-catalog.json` | Permanent governed entity folders, types, and authoring semantics; consumed through `scripts/wiki_entity_catalog.py` |
@@ -123,7 +124,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/wiki_backup_receipt.py`, `scripts/backup_state.py` | Destination-redacted verified-upload receipt and nonblocking freshness reporter; the local receipt is gitignored |
 | `scripts/export_wiki.py`, `scripts/restore_wiki.py` | Exact-manifest archive creation, offline verification, and absent-destination restore |
 | `scripts/capture-runs.jsonl` | Combined approval/application ledger; exact proposal apply installs its postimage with approved targets through the shared transaction |
-| `scripts/wiki-wrapper-contract.json` | Strict machine authority for the seven generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
+| `scripts/wiki-wrapper-contract.json` | Strict machine authority for the nine generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
 | `scripts/check_schema_doc_parity.py` | Verifies the full schema catalog table against `scripts/entity-catalog.json` and duplicated vocabularies against `scripts/wiki_lint_contract.py` constants |
 | `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
 | `scripts/check_document_reachability.py` | Follows Markdown links from declared roots and rejects missing routes or unreachable operational documents |

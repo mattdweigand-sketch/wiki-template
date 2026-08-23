@@ -25,6 +25,7 @@ from wiki_lint_repository_checks import (
     check_folder_structure,
     check_log_entry_headers,
     check_meta_utf8,
+    check_no_tracked_raw_artifacts,
     check_sourcing_queue_count_markers,
     check_stale_sweep_proof_entries,
     check_stray_tool_tags,
@@ -35,6 +36,7 @@ from wiki_provenance import (
     MANIFEST_PATH,
     validate_live_provenance,
     validate_restored_provenance,
+    validate_staged_provenance,
 )
 
 
@@ -74,6 +76,7 @@ def run_tier1_lint(
     """Compose repository and page checks while preserving failure order."""
     fails = []  # (check, page_relpath, detail)
     fails.extend(check_folder_structure())
+    fails.extend(check_no_tracked_raw_artifacts())
     fails.extend(check_configured_entity_layout())
     fails.extend(check_current_state_registry())
     fails.extend(check_meta_utf8())
@@ -87,11 +90,12 @@ def run_tier1_lint(
     except CatalogError:
         domain_configuration = None
     if domain_configuration is not None and domain_configuration.status == "configured":
-        provenance_issues = (
-            validate_restored_provenance(Path.cwd())
-            if provenance_view == "restored"
-            else validate_live_provenance(Path.cwd())
-        )
+        if provenance_view == "restored":
+            provenance_issues = validate_restored_provenance(Path.cwd())
+        elif provenance_view == "git":
+            provenance_issues = validate_staged_provenance(Path.cwd())
+        else:
+            provenance_issues = validate_live_provenance(Path.cwd())
         fails.extend(
             ("raw-provenance", MANIFEST_PATH, issue)
             for issue in provenance_issues

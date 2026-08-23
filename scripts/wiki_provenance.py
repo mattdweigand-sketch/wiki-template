@@ -29,6 +29,7 @@ ARTIFACT_FIELDS = {"captured_at", "files", "source_slug"}
 FILE_FIELDS = {"path", "sha256", "size"}
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+TRACKED_RAW_EXCEPTIONS = frozenset({"raw/.gitkeep", "raw/README.md"})
 
 
 class _DuplicateJsonKey(ValueError):
@@ -88,7 +89,7 @@ def _relevant_path(path: str) -> bool:
     return (
         path in {MANIFEST_PATH, RAW_BUCKETS_PATH}
         or path.startswith("wiki/sources/")
-        or path.startswith("raw/")
+        or path.casefold().startswith("raw/")
     )
 
 
@@ -263,7 +264,10 @@ def _source_raw_paths(content: bytes, source_path: str) -> tuple[set[str], list[
 
 
 def _validate_view(
-    view: _RepositoryView, *, allow_missing_manifest: bool,
+    view: _RepositoryView,
+    *,
+    allow_missing_manifest: bool,
+    require_raw_bytes: bool,
 ) -> tuple[list[dict[str, object]], tuple[str, ...]]:
     issues = list(view.issues)
     buckets, bucket_issues = _selected_raw_buckets(view)
@@ -316,16 +320,21 @@ def _validate_view(
             raw_paths.add(path)
             member_paths.append(path)
             content = view.files.get(path)
-            if content is None:
+            if require_raw_bytes and content is None:
                 issues.append(f"{path}: missing")
                 continue
-            if view.modes.get(path) not in {"100644", "100755"}:
-                issues.append(f"{path}: not a regular file")
-            if not isinstance(size, int) or isinstance(size, bool) or size < 0 or size != len(content):
-                issues.append(f"{member_label}.size: does not match {path}")
-            actual_digest = hashlib.sha256(content).hexdigest()
-            if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest) or digest != actual_digest:
-                issues.append(f"{member_label}.sha256: does not match {path}")
+            if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+                issues.append(f"{member_label}.size: must be a nonnegative integer")
+            if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+                issues.append(f"{member_label}.sha256: must be lowercase SHA-256")
+            if require_raw_bytes and content is not None:
+                if view.modes.get(path) not in {"100644", "100755"}:
+                    issues.append(f"{path}: not a regular file")
+                if isinstance(size, int) and not isinstance(size, bool) and size != len(content):
+                    issues.append(f"{member_label}.size: does not match {path}")
+                actual_digest = hashlib.sha256(content).hexdigest()
+                if isinstance(digest, str) and SHA256_RE.fullmatch(digest) and digest != actual_digest:
+                    issues.append(f"{member_label}.sha256: does not match {path}")
         if member_paths != sorted(member_paths):
             issues.append(f"{label}.files: paths are not sorted")
         source_path = f"wiki/sources/{source_slug}.md"
@@ -342,10 +351,18 @@ def _validate_view(
         path for path in view.files
         if path.startswith("raw/") and not path.endswith("/.gitkeep") and path != "raw/README.md"
     }
-    if not allow_missing_manifest:
+    if require_raw_bytes and not allow_missing_manifest:
         for path in sorted(present_raw - raw_paths):
             issues.append(f"{path}: raw file is absent from {MANIFEST_PATH}")
     return parsed, tuple(dict.fromkeys(issues))
+
+
+def _tracked_raw_issues(view: _RepositoryView) -> tuple[str, ...]:
+    return tuple(
+        f"{path}: raw source artifacts must not be tracked by Git"
+        for path in sorted(view.files)
+        if path.casefold().startswith("raw/") and path not in TRACKED_RAW_EXCEPTIONS
+    )
 
 
 def _accepted_identity_issues(
@@ -370,19 +387,30 @@ def _accepted_identity_issues(
 
 
 def _validate_against_baseline(
-    proposed: _RepositoryView, baseline: _RepositoryView,
+    proposed: _RepositoryView,
+    baseline: _RepositoryView,
+    *,
+    proposed_has_raw_bytes: bool,
+    baseline_has_raw_bytes: bool,
+    proposed_is_git_view: bool,
+    baseline_is_git_view: bool,
 ) -> tuple[str, ...]:
     proposed_artifacts, proposed_issues = _validate_view(
-        proposed, allow_missing_manifest=False,
+        proposed,
+        allow_missing_manifest=False,
+        require_raw_bytes=proposed_has_raw_bytes,
     )
     baseline_artifacts, baseline_issues = _validate_view(
-        baseline, allow_missing_manifest=True,
+        baseline,
+        allow_missing_manifest=True,
+        require_raw_bytes=baseline_has_raw_bytes,
     )
-    relevant_baseline_issues = tuple(
-        issue for issue in baseline_issues if not issue.startswith("raw/")
+    tracking_issues = (
+        *(_tracked_raw_issues(proposed) if proposed_is_git_view else ()),
+        *(_tracked_raw_issues(baseline) if baseline_is_git_view else ()),
     )
     return tuple(dict.fromkeys(
-        (*proposed_issues, *relevant_baseline_issues,
+        (*proposed_issues, *baseline_issues, *tracking_issues,
          *_accepted_identity_issues(baseline_artifacts, proposed_artifacts))
     ))
 
@@ -391,7 +419,14 @@ def validate_live_provenance(repo_root: Path) -> tuple[str, ...]:
     """Validate live raw identities against the exact current HEAD."""
     root = repo_root.resolve()
     try:
-        return _validate_against_baseline(_live_view(root), _revision_view(root, "HEAD"))
+        return _validate_against_baseline(
+            _live_view(root),
+            _revision_view(root, "HEAD"),
+            proposed_has_raw_bytes=True,
+            baseline_has_raw_bytes=False,
+            proposed_is_git_view=False,
+            baseline_is_git_view=True,
+        )
     except (OSError, ValueError) as exc:
         return (f"provenance validation failed: {exc}",)
 
@@ -400,7 +435,9 @@ def validate_restored_provenance(repo_root: Path) -> tuple[str, ...]:
     """Validate one restored tree's complete raw/source closure without Git history."""
     try:
         _artifacts, issues = _validate_view(
-            _live_view(repo_root.resolve()), allow_missing_manifest=False
+            _live_view(repo_root.resolve()),
+            allow_missing_manifest=False,
+            require_raw_bytes=True,
         )
         return issues
     except (OSError, ValueError) as exc:
@@ -419,7 +456,14 @@ def validate_staged_provenance(repo_root: Path) -> tuple[str, ...]:
                 {RAW_BUCKETS_PATH: proposed.files.get(RAW_BUCKETS_PATH, b"")},
                 {RAW_BUCKETS_PATH: "100644"},
             )
-        return _validate_against_baseline(proposed, baseline)
+        return _validate_against_baseline(
+            proposed,
+            baseline,
+            proposed_has_raw_bytes=False,
+            baseline_has_raw_bytes=False,
+            proposed_is_git_view=True,
+            baseline_is_git_view=True,
+        )
     except (OSError, ValueError) as exc:
         return (f"provenance validation failed: {exc}",)
 
@@ -432,7 +476,12 @@ def validate_ci_provenance(repo_root: Path, trusted_base: str) -> tuple[str, ...
         return (f"trusted base {trusted_base!r} is not an ancestor of HEAD",)
     try:
         return _validate_against_baseline(
-            _revision_view(root, "HEAD"), _revision_view(root, trusted_base),
+            _revision_view(root, "HEAD"),
+            _revision_view(root, trusted_base),
+            proposed_has_raw_bytes=False,
+            baseline_has_raw_bytes=False,
+            proposed_is_git_view=True,
+            baseline_is_git_view=True,
         )
     except (OSError, ValueError) as exc:
         return (f"provenance validation failed: {exc}",)
@@ -485,7 +534,7 @@ def _resolve_source_closure(
 
 
 def resolve_live_source_closure(repo_root: Path, source_slug: str) -> RawSourceClosure:
-    """Resolve a live source closure after checking its accepted Git identity."""
+    """Resolve a live source closure after checking local bytes and Git metadata."""
     return _resolve_source_closure(
         repo_root, source_slug, validate_live_provenance(repo_root)
     )
@@ -522,6 +571,7 @@ def main() -> int:
 
 __all__ = [
     "MANIFEST_PATH",
+    "TRACKED_RAW_EXCEPTIONS",
     "RawClosureFile",
     "RawSourceClosure",
     "resolve_live_source_closure",

@@ -8,7 +8,7 @@ Git remains the recovery mechanism while initialization is being reviewed: the f
 
 Before asking for personal or hybrid content, state this plainly:
 
-> This template assumes a private Git repository whose access is limited to the wiki's intended users. Files under `raw/` and pages under `wiki/` are tracked by Git and may be pushed to a remote. Health, financial, relationship, property, and source-document content may therefore be published if this clone is connected to a public repository. Exports also include both wiki pages and raw sources. This template provides no encryption or access control.
+> Raw source files stay local and must never be committed. Wiki pages and source metadata are tracked by Git and may still contain sensitive summaries. Complete exports include raw sources, local settings, scratch files, deliverables, and Git history. Use a private repository and an approved private backup destination. This template provides no encryption or access control.
 
 Continue only after the user acknowledges that warning.
 

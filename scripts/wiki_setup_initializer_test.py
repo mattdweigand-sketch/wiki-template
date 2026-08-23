@@ -341,10 +341,10 @@ def main() -> int:
             and live_readme.startswith("# Matt's Wiki\n")
             and context.startswith("# Matt's Wiki - Task Router\n")
             and "Matt's Wiki Wiki" not in agents + live_readme + context
-            and "This wiki assumes a private Git repository" in raw_readme
-            and "Source artifacts are tracked with the rest of the repository" in raw_readme
+            and "Source artifacts stay local and must never be committed" in raw_readme
+            and "exact path, size, and SHA-256 manifest" in raw_readme
             and raw_registry.get("policy")
-            == "Raw source artifacts are immutable and may be tracked with the rest of the wiki."
+            == "Raw source artifacts are immutable, local-only, and never tracked by Git."
             and all((root / "wiki" / folder).is_dir() for folder in (
                 "analyses", "concepts", "decisions", "goals", "health",
                 "investments", "learnings", "people", "projects", "properties",

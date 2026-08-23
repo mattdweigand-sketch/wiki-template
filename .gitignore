@@ -24,5 +24,11 @@ scripts/.capture-runs.lock
 # but remains per-checkout state and must never claim a fresh clone was backed up.
 scripts/backup-receipt.json
 
+# Raw source bytes stay local. Git tracks only the folder guide and placeholder;
+# scripts/raw-artifacts.json binds each local file by path, size, and SHA-256.
+raw/*
+!raw/.gitkeep
+!raw/README.md
+
 # Recoverable multi-file transaction authority. Never delete it to clear a gate.
 /.wiki-transactions/

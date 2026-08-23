@@ -46,19 +46,21 @@ Review the initializer preview with me. Apply it only after I approve the displa
 ```
 <!-- wiki-setup:readme-agent-setup-prompt:end -->
 
-The repo has seven common workflow shortcuts. Claude Code exposes them as slash commands. Codex exposes them as skills, invoked with `$wiki-*` or selected through `/skills`. Other agents use the same routes through `CONTEXT.md`.
+The repo has nine workflow shortcuts. Claude Code exposes them as slash commands. Codex exposes them as skills, invoked with `$wiki-*` or selected through `/skills`. Other agents use the same routes through `CONTEXT.md`.
 
 | Workflow | Claude Code | Codex | Use it to |
 |---|---|---|---|
+| `wiki-ask` | `/wiki-ask` | `$wiki-ask` | Answer ordinary wiki questions from the smallest relevant page set. This is the default. |
+| `wiki-research` | `/wiki-research` | `$wiki-research` | Run manually invoked research with claim-level independent review. |
 | `wiki-ingest` | `/wiki-ingest` | `$wiki-ingest` | Turn a raw source into durable wiki pages. |
 | `wiki-capture` | `/wiki-capture` | `$wiki-capture` | Record first-person context, usually a decision or lived experience. |
 | `wiki-promote` | `/wiki-promote` | `$wiki-promote` | Route a useful artifact into the wiki, or decide not to save it. |
 | `wiki-lint` | `/wiki-lint` | `$wiki-lint` | Run deterministic checks, judgment candidates, compiled-page recompile review candidates, and evidence review. |
 | `wiki-eval` | `/wiki-eval` | `$wiki-eval` | Verify that the wiki tools and guardrails still work. |
 | `wiki-synthesize` | `/wiki-synthesize` | `$wiki-synthesize` | Draft corpus distillations for review and approved promotion. |
-| `wiki-export` | `/wiki-export` | `$wiki-export` | Build a local zip export of the wiki, including raw sources; optionally upload to an explicit `rclone` target. |
+| `wiki-export` | `/wiki-export` | `$wiki-export` | Build a full recovery snapshot and optionally upload it to an explicit `rclone` target. |
 
-Research answers can stay in chat or become durable analyses when they are worth saving.
+Ask answers stay lightweight. Research answers add independent claim review only when `wiki-research` is named. Either can become a durable analysis when worth saving.
 
 ---
 
@@ -66,7 +68,7 @@ Research answers can stay in chat or become durable analyses when they are worth
 
 The wiki runs one loop: preserve the evidence, turn it into pages, build durable knowledge on those pages, connect them, then check the result.
 
-1. **Preserve the evidence.** Original files, notes, transcripts, and exported source files live in `raw/`. Once added, they are treated as read-only so later conclusions can always be traced back to the source. This template assumes a private Git repository whose access is limited to the wiki's intended users. Git tracks raw files with the rest of the wiki, so review sensitive material before pushing them to any remote. <!-- wiki-setup:readme-private-repository:line -->
+1. **Preserve the evidence.** Original files, notes, transcripts, and exported source files live in `raw/`. Once added, they are read-only. Raw bytes stay local and Git ignores them. Git tracks their exact paths, sizes, hashes, and matching source pages. <!-- wiki-setup:readme-private-repository:line -->
 2. **Turn sources into wiki pages.** All three setup presets include the `source` type. While it remains active, each important source gets a page in `wiki/sources/`. Other pages cite those source pages instead of relying on loose files, memory, or uncaptured links. <!-- wiki-setup:readme-source-pages:line -->
 3. **Build durable knowledge.** Wiki pages capture the configured domain using active types from a governed 24-type catalog. Pages use a shared schema, citations, and a `confidence` value of `high`, `medium`, `low`, or `contested`, so agents know how far to trust each claim. Writing and naming rules live in operating docs rather than a default entity folder.
 4. **Connect related context.** Pages link to each other with `[[wiki-links]]`. Agents choose meaningful outgoing links; the repo can rebuild the incoming `## Referenced by` lists automatically.
@@ -86,11 +88,13 @@ The checks and guardrails that protect the corpus:
 | Contradiction tracking | Records conflicts in `wiki/contradictions.md` instead of overwriting inconvenient claims. |
 | Three-tier lint | `scripts/lint.py` reports two deterministic tiers: Tier 1 fails on broken structure and malformed proof; Tier 2 ranks suspicious patterns for review, including compiled pages with newer source inputs, glossary status language, pages likely needing authority metadata, and optional current-state owner drift. Tier 3, genuine judgment, is left to the `wiki-lint` prose workflow, not the script. |
 | Evidence review | Full `wiki-lint` creates an exact OS-random sample, immutable verifier batches, a hidden calibration plant, and validated verdict accounting so claims are tested against cited pages and raw evidence without trusting partial or stale runs. |
+| Private raw sources | Tier 1 and the pre-commit hook reject tracked raw artifacts. Local checks still bind each file to the tracked manifest and source page. |
 | Lint adjudications | `scripts/lint-adjudications.json` records reviewed false positives and accepted exceptions so the same candidates are not re-litigated every lint run. |
 | Approval gate and ledger | `scripts/capture_gate.py` makes the agent ask before filing analyses, applying artifact promotions, or approving synthesis; `scripts/capture-runs.jsonl` records exact approved applications. |
 | Durable file updates | Exact approved targets and their ledger postimage use one recoverable multi-file transaction; backlink rebuilds and log rotations use the same fail-closed transaction authority. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` is the single manifest for both `.claude/commands/` and `.agents/skills/`; the renderer and parity checker prevent hand-edited drift. |
 | Live evals | `wiki-eval` runs the suites registered in `scripts/wiki_eval.py`, including parsing, durable files, transactions, backlinks, lint and evidence checks, approval gates and ledgers, export and backup receipts, log rotation, review dates, discoverability, wrapper parity, entity-catalog and schema contracts, document reachability, and Tier-1 lint. |
+| Complete recovery snapshot | `wiki-export` includes raw sources, local state, deliverables, scratch files, and Git history. The exact manifest and atomic restore contract remain in force. |
 | Optional backup receipt | An explicit `rclone` upload advances local backup freshness only after remote size and checksum verification. `scripts/backup_state.py` reports missing, stale, invalid, future-dated, or fresh state without making backup configuration a repository gate. |
 
 Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task instructions live under [`workflows/`](workflows/).
@@ -119,7 +123,7 @@ Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task inst
 |-- .github/workflows/         # CI for deterministic wiki checks
 |
 |-- archive/                   # Tracked setup provenance and rotated wiki logs
-|-- raw/                       # Immutable source artifacts
+|-- raw/                       # Local-only immutable source artifacts
 |-- deliverables/              # Gitignored one-off outputs built from wiki content
 |-- tmp/                       # Gitignored scratch space
 `-- wiki/                      # Maintained knowledge layer

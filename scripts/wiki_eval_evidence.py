@@ -28,6 +28,7 @@ from wiki_evidence import (
     EvidenceResponseStatement,
     create_evidence_response_packet,
     create_evidence_sample,
+    create_targeted_evidence_sample,
     publish_evidence_batches,
     render_verified_evidence_response,
     validate_evidence_run,
@@ -46,6 +47,10 @@ def install_evidence_fixture(root: Path) -> None:
     (root / "wiki/sources").mkdir()
     (root / "raw/evidence").mkdir(parents=True)
     (root / "scripts").mkdir()
+    (root / ".gitignore").write_text(
+        "raw/*\n!raw/.gitkeep\n!raw/README.md\n",
+        encoding="utf-8",
+    )
     for source in FIXTURES.glob("*.md"):
         shutil.copyfile(source, wiki / source.name)
     artifacts = []
@@ -330,6 +335,36 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-determinism-") as td:
     results.record("duplicate-text-locations-remain-distinct", len(locations) == len(first["claims"]) and len(duplicate_locations) >= 2, f"locations={locations}")
 
 
+with tempfile.TemporaryDirectory(prefix="wiki-evidence-targeted-") as td:
+    root = Path(td).resolve()
+    install_evidence_fixture(root)
+    manifest = create_targeted_evidence_sample(
+        root, "targeted", ("wiki/concepts/alpha.md",)
+    )
+    sample = load_json(manifest.run_dir / "sample.json")
+    results.record(
+        "targeted-sample-includes-all-claims-from-exact-pages",
+        manifest.selected_count > 0
+        and manifest.selected_count == manifest.population_count
+        and {claim["path"] for claim in sample["claims"]}
+        == {"wiki/concepts/alpha.md"},
+        f"sample={sample}",
+    )
+    try:
+        create_targeted_evidence_sample(
+            root, "bad-target", ("wiki/concepts/missing.md",)
+        )
+    except EvidenceError:
+        bad_target_rejected = True
+    else:
+        bad_target_rejected = False
+    results.record(
+        "targeted-sample-rejects-nonentity-or-missing-pages",
+        bad_target_rejected,
+        "missing target page accepted" if not bad_target_rejected else "",
+    )
+
+
 with tempfile.TemporaryDirectory(prefix="wiki-evidence-path-") as td:
     root = Path(td).resolve()
     for index, bad in enumerate(("/tmp/evidence-check/x", "tmp/evidence-check/../x", "tmp/evidence-check/x/y"), start=1):
@@ -404,6 +439,10 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-population-") as td:
     (root / "wiki/sources").mkdir()
     (root / "raw/notes").mkdir(parents=True)
     (root / "scripts").mkdir()
+    (root / ".gitignore").write_text(
+        "raw/*\n!raw/.gitkeep\n!raw/README.md\n",
+        encoding="utf-8",
+    )
     raw_bytes = b"Exact supporting source bytes.\n"
     (root / "raw/notes/source.txt").write_bytes(raw_bytes)
     (root / "wiki/sources/source-one.md").write_text(

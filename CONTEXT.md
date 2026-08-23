@@ -18,7 +18,7 @@ Analysis capture, artifact promotion, and synthesis promotion share one executab
 |---|---|
 | Configure a fresh clone | [`SETUP.md`](SETUP.md) <!-- wiki-setup:context-setup-route:line --> |
 | Ingest a source (`raw/` -> wiki page) | [`workflows/ingest/CONTEXT.md`](workflows/ingest/CONTEXT.md) |
-| Answer a wiki question or compare entities | [`workflows/research/CONTEXT.md`](workflows/research/CONTEXT.md) |
+| Answer a wiki question or compare entities. Default to `wiki-ask`; use `wiki-research` only when explicitly invoked | [`workflows/research/CONTEXT.md`](workflows/research/CONTEXT.md) |
 | Audit or lint the wiki, verify tooling, capture context, promote artifacts, refresh sourcing, synthesize, review outcomes, rotate the log, or export | [`workflows/maintenance/CONTEXT.md`](workflows/maintenance/CONTEXT.md) |
 | Browse what's in the wiki | [`wiki/index.md`](wiki/index.md) |
 

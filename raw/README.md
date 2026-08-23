@@ -4,11 +4,11 @@ Source artifacts live here, organized by source type. Drop a file into the right
 
 `raw/` is immutable. Never edit a file already here. New sources append; existing files stay as the canonical artifact that wiki citations point back to.
 
-This template assumes a private Git repository whose access is limited to the
-wiki's intended users. Source artifacts are tracked with the rest of the
-repository and may be pushed to its remote. Review sensitive files before
-adding or pushing them. Use the export workflow when you need a complete local
-or explicitly approved off-device backup.
+Source artifacts stay on the local machine and must never be committed. Git
+tracks this guide, the raw bucket taxonomy, source pages, and
+`scripts/raw-artifacts.json`. The manifest binds every source file by exact
+path, size, and SHA-256. Use `wiki-export` for a complete local or explicitly
+approved off-device backup.
 
 ## Subfolders
 

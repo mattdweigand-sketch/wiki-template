@@ -1,5 +1,5 @@
 ---
-description: Export a zip backup of the entire wiki corpus, including raw sources
+description: Export a complete verified recovery snapshot of the local wiki tree
 ---
 
 Run `wiki-export` through the canonical wiki workflow. Read `AGENTS.md`, then `CONTEXT.md`, then `workflows/maintenance/CONTEXT.md`, then `workflows/maintenance/export.md`, and follow the routed Load / Skip list exactly.

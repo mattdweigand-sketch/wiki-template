@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression eval for export_wiki.py template include/exclude boundaries."""
+"""Regression eval for complete exact-manifest wiki recovery snapshots."""
 
 from __future__ import annotations
 
@@ -182,8 +182,8 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
             "workflows/",
         )
     )
-    excluded_absent = all(
-        rel not in names
+    recovery_state_present = all(
+        rel in names
         for rel in (
             ".env",
             ".agents/local-state.json",
@@ -192,10 +192,10 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
             ".git/config",
             "deliverables/output/file.txt",
             "tmp/scratch.txt",
-            "tmp/wiki-export-2026-06-24.zip",
             "wiki/.DS_Store",
         )
     )
+    current_output_absent = "tmp/wiki-export-2026-06-24.zip" not in names
     legitimate_zip_sources_present = all(
         rel in names
         for rel in (
@@ -204,11 +204,12 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         )
     )
     results.record(
-        "build-includes-required-and-excludes-local",
+        "build-includes-complete-recovery-state-and-excludes-only-itself",
         build.returncode == 0
         and required_present
         and prefixes_present
-        and excluded_absent
+        and recovery_state_present
+        and current_output_absent
         and legitimate_zip_sources_present,
         "stdout: " + build.stdout.replace("\n", " | ") + " names: " + repr(sorted(names)),
     )
@@ -538,7 +539,12 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
     results.record(
         "valid-restore-is-member-exact-and-passes-deterministic-checks",
         all((destination / path).read_bytes() == (REPO_ROOT / path).read_bytes() for path in exact_pairs)
-        and not (destination / ".git").exists()
+        and (destination / ".git").exists() == (REPO_ROOT / ".git").exists()
+        and (
+            not (REPO_ROOT / ".git/HEAD").is_file()
+            or (destination / ".git/HEAD").read_bytes()
+            == (REPO_ROOT / ".git/HEAD").read_bytes()
+        )
         and all("git" not in Path(command[0]).name and "rclone" not in Path(command[0]).name for command in commands),
         repr(commands),
     )

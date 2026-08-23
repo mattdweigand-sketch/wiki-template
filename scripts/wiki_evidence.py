@@ -111,6 +111,27 @@ def create_evidence_sample(
     )
 
 
+def create_targeted_evidence_sample(
+    repo_root: Path,
+    run_id: str,
+    page_paths: Sequence[str],
+) -> EvidenceSampleManifest:
+    """Create an immutable sample of every cited claim on exact entity pages."""
+    root = repo_root.resolve()
+    payload = build_sample_data(root, run_id, included_paths=page_paths)
+    run_dir = safe_run_dir(root, f"tmp/evidence-check/{run_id}", create=True)
+    sample_path = run_dir / "sample.json"
+    if sample_path.exists() or sample_path.is_symlink():
+        raise EvidenceRunError("sample.json already exists; use a fresh run-id")
+    atomic_json(sample_path, payload)
+    return EvidenceSampleManifest(
+        run_dir=run_dir,
+        selected_count=_required_int(payload, "selected_count"),
+        population_count=_required_int(payload, "population_count"),
+        manifest_sha256=_required_string(payload, "manifest_sha256"),
+    )
+
+
 def _write_batch_plan(run_dir: Path, batches: list[dict[str, object]]) -> None:
     if any(
         path.exists() or path.is_symlink()
@@ -438,6 +459,7 @@ __all__ = [
     "EvidenceSampleManifest",
     "create_evidence_response_packet",
     "create_evidence_sample",
+    "create_targeted_evidence_sample",
     "publish_evidence_batches",
     "render_verified_evidence_response",
     "validate_evidence_run",

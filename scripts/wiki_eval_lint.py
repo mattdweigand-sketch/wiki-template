@@ -15,6 +15,7 @@ a system temp directory per case. Writes nothing inside the repo.
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -2338,68 +2339,86 @@ run_case(
 )
 
 
-def check_raw_artifact_git_workflow_passes():
-    """A raw source can be tracked and pass both repository guard commands."""
+def _install_raw_git_fixture(root: Path, real_git: str) -> bytes:
+    """Install one valid local-only raw record and the real pre-commit guard."""
+    copy_fixture(root)
+    shutil.copyfile(REPO_ROOT / ".gitignore", root / ".gitignore")
+    (root / "scripts/hooks").mkdir()
+    for name in (
+        "wiki_transactions.py", "_file_transactions.py",
+        "_transaction_contract.py", "_durable_files.py",
+        "wiki_provenance.py", "wiki_lint_frontmatter.py",
+        "wiki_lint_contract.py", "wiki_entity_catalog.py",
+        "_wiki_parse.py", "_repo_paths.py",
+    ):
+        shutil.copyfile(REPO_ROOT / "scripts" / name, root / "scripts" / name)
+    shutil.copyfile(
+        REPO_ROOT / "scripts/entity-catalog.json",
+        root / "scripts/entity-catalog.json",
+    )
+    shutil.copyfile(
+        REPO_ROOT / "scripts/hooks/pre-commit", root / "scripts/hooks/pre-commit"
+    )
+    source = root / "raw/notes/source.txt"
+    source.parent.mkdir(parents=True)
+    source_bytes = b"local source artifact\n"
+    source.write_bytes(source_bytes)
+    (root / "wiki/sources/tracked-source.md").write_text(
+        "---\ntitle: Tracked source\ntype: source\n"
+        "created: 2026-08-22\nupdated: 2026-08-22\n"
+        "sources: [\"raw/notes/source.txt\"]\ntags: [fixture]\n"
+        "confidence: high\nsource_type: other\n"
+        "agent_use_cases:\n  - raw privacy eval\n---\n\nTracked source.\n",
+        encoding="utf-8",
+    )
+    append(
+        root, "wiki/index.md",
+        "| [tracked-source.md](sources/tracked-source.md) | Tracked source fixture |\n",
+    )
+    (root / "scripts/raw-artifacts.json").write_text(
+        json.dumps({
+            "artifacts": [{
+                "captured_at": "2026-08-22",
+                "files": [{
+                    "path": "raw/notes/source.txt",
+                    "sha256": hashlib.sha256(source_bytes).hexdigest(),
+                    "size": len(source_bytes),
+                }],
+                "source_slug": "tracked-source",
+            }],
+            "schema_version": 1,
+        }, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    subprocess.run([real_git, "init", "-q"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        [real_git, "config", "user.email", "eval@example.invalid"],
+        cwd=root, check=True, capture_output=True,
+    )
+    subprocess.run(
+        [real_git, "config", "user.name", "Wiki Eval"],
+        cwd=root, check=True, capture_output=True,
+    )
+    return source_bytes
+
+
+def check_untracked_raw_artifact_workflow_passes():
+    """Local raw bytes pass lint and the hook while remaining outside Git."""
     real_git = shutil.which("git")
     if real_git is None:
         fail_prerequisite(
-            "raw-artifact-git-workflow-passes", "git prerequisite unavailable"
+            "untracked-raw-artifact-workflow-passes", "git prerequisite unavailable"
         )
         return
     with tempfile.TemporaryDirectory(prefix="wiki-raw-tracking-") as td:
         root = Path(td)
-        copy_fixture(root)
-        shutil.copyfile(REPO_ROOT / ".gitignore", root / ".gitignore")
-        (root / "scripts/hooks").mkdir()
-        for name in (
-            "wiki_transactions.py", "_file_transactions.py",
-            "_transaction_contract.py", "_durable_files.py",
-            "wiki_provenance.py", "wiki_lint_frontmatter.py",
-            "wiki_lint_contract.py", "wiki_entity_catalog.py",
-            "_wiki_parse.py", "_repo_paths.py",
-        ):
-            shutil.copyfile(REPO_ROOT / "scripts" / name, root / "scripts" / name)
-        shutil.copyfile(
-            REPO_ROOT / "scripts/entity-catalog.json",
-            root / "scripts/entity-catalog.json",
-        )
-        shutil.copyfile(
-            REPO_ROOT / "scripts/hooks/pre-commit", root / "scripts/hooks/pre-commit"
-        )
-        source = root / "raw/notes/source.txt"
-        source.parent.mkdir(parents=True)
-        source_bytes = b"tracked source artifact\n"
-        source.write_bytes(source_bytes)
-        (root / "wiki/sources/tracked-source.md").write_text(
-            "---\ntitle: Tracked source\ntype: source\n"
-            "created: 2026-08-22\nupdated: 2026-08-22\n"
-            "sources: [\"raw/notes/source.txt\"]\ntags: [fixture]\n"
-            "confidence: high\nsource_type: other\n"
-            "agent_use_cases:\n  - raw tracking eval\n---\n\nTracked source.\n",
-            encoding="utf-8",
-        )
-        append(
-            root, "wiki/index.md",
-            "| [tracked-source.md](sources/tracked-source.md) | Tracked source fixture |\n",
-        )
-        (root / "scripts/raw-artifacts.json").write_text(
-            json.dumps({
-                "artifacts": [{
-                    "captured_at": "2026-08-22",
-                    "files": [{
-                        "path": "raw/notes/source.txt",
-                        "sha256": hashlib.sha256(source_bytes).hexdigest(),
-                        "size": len(source_bytes),
-                    }],
-                    "source_slug": "tracked-source",
-                }],
-                "schema_version": 1,
-            }, sort_keys=True, separators=(",", ":")) + "\n",
-            encoding="utf-8",
-        )
-        subprocess.run([real_git, "init", "-q"], cwd=root, check=True, capture_output=True)
+        _install_raw_git_fixture(root, real_git)
         add = subprocess.run(
             [real_git, "add", "-A"], cwd=root, text=True, capture_output=True
+        )
+        subprocess.run(
+            [real_git, "commit", "-qm", "fixture"],
+            cwd=root, check=True, capture_output=True,
         )
         tracked = subprocess.run(
             [real_git, "ls-files", "--error-unmatch", "raw/notes/source.txt"],
@@ -2417,11 +2436,11 @@ def check_raw_artifact_git_workflow_passes():
         )
         ok = (
             add.returncode == 0
-            and tracked.returncode == 0
+            and tracked.returncode != 0
             and lint.returncode == 0
             and hook.returncode == 0
         )
-        name = "raw-artifact-git-workflow-passes"
+        name = "untracked-raw-artifact-workflow-passes"
         results.append((name, ok))
         print(("PASS " if ok else "FAIL ") + name)
         if not ok:
@@ -2432,7 +2451,113 @@ def check_raw_artifact_git_workflow_passes():
             )
 
 
-check_raw_artifact_git_workflow_passes()
+def check_tracked_raw_artifact_fires():
+    """A forced raw artifact addition fails the Tier-1 privacy guard."""
+    real_git = shutil.which("git")
+    if real_git is None:
+        fail_prerequisite("tracked-raw-artifact-fires", "git prerequisite unavailable")
+        return
+    with tempfile.TemporaryDirectory(prefix="wiki-raw-leak-") as td:
+        root = Path(td)
+        _install_raw_git_fixture(root, real_git)
+        subprocess.run(
+            [real_git, "add", "-A"], cwd=root, check=True, capture_output=True
+        )
+        subprocess.run(
+            [real_git, "add", "-f", "raw/notes/source.txt"],
+            cwd=root, check=True, capture_output=True,
+        )
+        proc = subprocess.run(
+            [sys.executable, str(LINT), "--tier1"],
+            cwd=root, text=True, capture_output=True,
+        )
+        output = proc.stdout + proc.stderr
+        ok = proc.returncode == 1 and "raw-tracked" in output and "source.txt" in output
+        name = "tracked-raw-artifact-fires"
+        results.append((name, ok))
+        print(("PASS " if ok else "FAIL ") + name)
+        if not ok:
+            print(f"  exit {proc.returncode}; output: {output[:500]}")
+
+
+def check_tracked_raw_case_variant_fires():
+    """The privacy guard catches case variants even on case-tolerant Git setups."""
+    real_git = shutil.which("git")
+    if real_git is None:
+        fail_prerequisite("tracked-raw-case-variant-fires", "git prerequisite unavailable")
+        return
+    with tempfile.TemporaryDirectory(prefix="wiki-raw-case-") as td:
+        root = Path(td)
+        copy_fixture(root)
+        subprocess.run([real_git, "init", "-q"], cwd=root, check=True, capture_output=True)
+        subprocess.run(
+            [real_git, "config", "core.ignorecase", "true"],
+            cwd=root, check=True, capture_output=True,
+        )
+        (root / "Raw").mkdir()
+        (root / "Raw/leak.txt").write_text("secret", encoding="utf-8")
+        subprocess.run(
+            [real_git, "add", "-f", "Raw/leak.txt"],
+            cwd=root, check=True, capture_output=True,
+        )
+        proc = subprocess.run(
+            [sys.executable, str(LINT), "--tier1"],
+            cwd=root, text=True, capture_output=True,
+        )
+        output = proc.stdout + proc.stderr
+        ok = proc.returncode == 1 and "raw-tracked" in output and "Raw/leak.txt" in output
+        name = "tracked-raw-case-variant-fires"
+        results.append((name, ok))
+        print(("PASS " if ok else "FAIL ") + name)
+        if not ok:
+            print(f"  exit {proc.returncode}; output: {output[:500]}")
+
+
+def check_git_tracking_query_failure_fires():
+    """A failed Git tracking query cannot be reported as clean inside a worktree."""
+    real_git = shutil.which("git")
+    if real_git is None:
+        fail_prerequisite("git-tracking-query-failure-fires", "git prerequisite unavailable")
+        return
+    with tempfile.TemporaryDirectory(prefix="wiki-git-query-") as td:
+        root = Path(td)
+        copy_fixture(root)
+        subprocess.run([real_git, "init", "-q"], cwd=root, check=True, capture_output=True)
+        fake_bin = root / "tmp/fake-bin"
+        fake_bin.mkdir(parents=True)
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = \"rev-parse\" ]; then echo true; exit 0; fi\n"
+            "if [ \"$1\" = \"ls-files\" ]; then echo forced failure >&2; exit 73; fi\n"
+            f'exec "{real_git}" "$@"\n',
+            encoding="utf-8",
+        )
+        fake_git.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = str(fake_bin) + os.pathsep + env.get("PATH", "")
+        proc = subprocess.run(
+            [sys.executable, str(LINT), "--tier1"],
+            cwd=root, text=True, capture_output=True, env=env,
+        )
+        output = proc.stdout + proc.stderr
+        ok = (
+            proc.returncode == 1
+            and "raw-tracked" in output
+            and "forced failure" in output
+            and "Traceback" not in output
+        )
+        name = "git-tracking-query-failure-fires"
+        results.append((name, ok))
+        print(("PASS " if ok else "FAIL ") + name)
+        if not ok:
+            print(f"  exit {proc.returncode}; output: {output[:500]}")
+
+
+check_untracked_raw_artifact_workflow_passes()
+check_tracked_raw_artifact_fires()
+check_tracked_raw_case_variant_fires()
+check_git_tracking_query_failure_fires()
 
 print()
 failed = [n for n, ok in results if not ok]

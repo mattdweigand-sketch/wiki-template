@@ -32,9 +32,9 @@ Ingest is a normal durable write. It does not require `scripts/capture_gate.py` 
 
 ## Step 0 - File handling (before reading anything)
 
-`raw/` holds source artifacts. Do not edit existing raw files. If the user provides a new source outside the proper location, place it once under the correct `raw/` subfolder with a kebab-case filename, then treat it as immutable.
+`raw/` holds local-only source artifacts. Do not edit existing raw files and never add them to Git. If the user provides a new source outside the proper location, place it once under the correct `raw/` subfolder with a kebab-case filename, then treat it as immutable.
 
-Every real raw artifact is registered in `scripts/raw-artifacts.json`. One sorted record binds a source-page slug to its capture date and every exact raw member's path, size, and SHA-256. The matching `wiki/sources/<slug>.md` page must cite exactly those raw paths. Add the new raw bytes, source page, and manifest record as one coherent ingest change; accepted records and raw bytes are immutable afterward.
+Every real raw artifact is registered in `scripts/raw-artifacts.json`. One sorted record binds a source-page slug to its capture date and every exact raw member's path, size, and SHA-256. The matching `wiki/sources/<slug>.md` page must cite exactly those raw paths. Preserve the local raw bytes and update the tracked source page and manifest as one coherent ingest. Accepted records and raw bytes are immutable afterward.
 
 1. Check for newly provided files in `raw/` root and any subfolders.
 2. For each new file:
@@ -118,7 +118,7 @@ Then run the deterministic Tier-1 gate:
 python3 scripts/lint.py --tier1
 ```
 
-Tier-1 is machine-checkable: filename and frontmatter-key validity, type/folder match, invalid `confidence` or `source_type`, malformed dates, dangling `[[links]]`, index coverage, repo structure, raw/deliverables hygiene, structured stale-sweep proof, and related structural rules. Treat failures as must-fix before logging.
+Tier-1 is machine-checkable: filename and frontmatter-key validity, type/folder match, invalid `confidence` or `source_type`, malformed dates, dangling `[[links]]`, index coverage, repo structure, raw tracking and exact-byte provenance, raw/deliverables hygiene, structured stale-sweep proof, and related structural rules. Treat failures as must-fix before logging.
 
 Then run full lint and inspect Tier-2 findings only for pages touched by this ingest:
 

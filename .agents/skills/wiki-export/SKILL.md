@@ -1,6 +1,6 @@
 ---
 name: wiki-export
-description: Run the wiki export workflow. Use when the user says $wiki-export, wiki-export, export the wiki, back up the wiki, or wants a zip backup of the corpus.
+description: Run the wiki export workflow. Use when the user says $wiki-export, wiki-export, export the wiki, back up the wiki, or wants a complete verified recovery snapshot.
 ---
 
 # Wiki Export
