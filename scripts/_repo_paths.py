@@ -86,6 +86,19 @@ def _lexical_scope(
     raise RepoPathError(f"path is outside allowed repository roots: {value}")
 
 
+def validate_repo_path_syntax(
+    value: object,
+    *,
+    allowed_prefixes: Iterable[str] = (),
+    allowed_root_files: Iterable[str] = (),
+) -> str:
+    """Validate canonical syntax and scope without reading the filesystem."""
+    canonical = _validate_raw(value)
+    prefixes, root_files = _validated_scopes(allowed_prefixes, allowed_root_files)
+    _lexical_scope(canonical, prefixes, root_files)
+    return canonical
+
+
 def _is_within(path: Path, root: Path) -> bool:
     return path == root or root in path.parents
 
@@ -124,8 +137,14 @@ def resolve_repo_path(
 
     if mode not in {EXISTING_FILE, MAY_CREATE_FILE}:
         raise RepoPathError(f"unsupported path existence mode: {mode!r}")
-    canonical = _validate_raw(value)
-    prefixes, root_files = _validated_scopes(allowed_prefixes, allowed_root_files)
+    prefix_values = tuple(allowed_prefixes)
+    root_file_values = tuple(allowed_root_files)
+    canonical = validate_repo_path_syntax(
+        value,
+        allowed_prefixes=prefix_values,
+        allowed_root_files=root_file_values,
+    )
+    prefixes, root_files = _validated_scopes(prefix_values, root_file_values)
     matched_prefix = _lexical_scope(canonical, prefixes, root_files)
     root = _canonical_root(Path(repo_root))
     candidate = root.joinpath(*canonical.split("/"))

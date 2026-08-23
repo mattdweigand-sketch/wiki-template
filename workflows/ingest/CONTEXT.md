@@ -7,6 +7,8 @@ description: Use this workflow when the user drops a file in raw/ and says "inge
 
 Turns a raw source into structured wiki pages. Single task: read the source, file it, update the pages and indexes it touches. This `CONTEXT.md` is the whole workflow.
 
+Apply the canonical [trust boundary](../../AGENTS.md#trust-boundary) to every source and fetched artifact.
+
 Ingest is a normal durable write. It does not require `scripts/capture_gate.py` approval. Use the capture gate only if the ingest turns into an analysis-capture or artifact-promotion apply route. If an ingest genuinely seems to need staged review before durable edits, raise it with the user instead of running a script.
 
 ## Load / Skip
@@ -31,6 +33,8 @@ Ingest is a normal durable write. It does not require `scripts/capture_gate.py` 
 ## Step 0 - File handling (before reading anything)
 
 `raw/` holds source artifacts. Do not edit existing raw files. If the user provides a new source outside the proper location, place it once under the correct `raw/` subfolder with a kebab-case filename, then treat it as immutable.
+
+Every real raw artifact is registered in `scripts/raw-artifacts.json`. One sorted record binds a source-page slug to its capture date and every exact raw member's path, size, and SHA-256. The matching `wiki/sources/<slug>.md` page must cite exactly those raw paths. Add the new raw bytes, source page, and manifest record as one coherent ingest change; accepted records and raw bytes are immutable afterward.
 
 1. Check for newly provided files in `raw/` root and any subfolders.
 2. For each new file:

@@ -69,8 +69,14 @@ def _site_registry() -> dict[str, tuple[str, str, str]]:
     return {key: (file_name, constant, mode) for key, file_name, constant, mode in SITES}
 
 
-def _markdown_files(repo_root: Path) -> list[str]:
+def _markdown_files(repo_root: Path, *, use_git: bool = True) -> list[str]:
     """Return tracked markdown files, falling back to a tree walk for fixtures."""
+    if not use_git:
+        return sorted(
+            path.relative_to(repo_root).as_posix()
+            for path in repo_root.rglob("*.md")
+            if ".git" not in path.relative_to(repo_root).parts
+        )
     try:
         proc = subprocess.run(
             ["git", "-C", str(repo_root), "ls-files", "--", "*.md"],
@@ -438,6 +444,8 @@ def _catalog_table_problems(repo_root: Path) -> list[str]:
 def schema_doc_parity_problems(
     repo_root: Path = REPO_ROOT,
     constants: dict | None = None,
+    *,
+    use_git: bool = True,
 ) -> list[str]:
     """Check marked schema docs against their canonical production authorities.
 
@@ -455,7 +463,7 @@ def schema_doc_parity_problems(
     markers_by_file: dict[str, dict[str, list[int]]] = {}
     lines_by_file: dict[str, list[str]] = {}
 
-    for file_name in _markdown_files(repo_root):
+    for file_name in _markdown_files(repo_root, use_git=use_git):
         if file_name in registered_files:
             continue
         path = repo_root / file_name

@@ -436,6 +436,12 @@ with tempfile.TemporaryDirectory() as td:
             path_results["create"] = resolve(
                 "tmp/not-created.md", ("tmp",), mode="may_create_file"
             )
+            path_results["generator_prefixes"] = resolve_repo_path(
+                "wiki/sources/inside.md",
+                repo_root=path_root,
+                allowed_prefixes=(value for value in ("wiki/sources",)),
+                mode="existing_file",
+            )
             path_results["exact_root"] = resolve_repo_path(
                 "AGENTS.md",
                 repo_root=path_root,
@@ -500,6 +506,11 @@ with tempfile.TemporaryDirectory() as td:
         and path_results.get("valid_raw") == "raw/notes/inside.txt"
         and path_results.get("valid_wiki") == "wiki/sources/inside.md"
         and path_results.get("create") == "tmp/not-created.md",
+        detail=str(path_results),
+    )
+    check(
+        "repo-path-materializes-one-shot-scope-iterables",
+        path_results.get("generator_prefixes") == "wiki/sources/inside.md",
         detail=str(path_results),
     )
     check(

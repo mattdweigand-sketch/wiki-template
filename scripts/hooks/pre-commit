@@ -7,4 +7,8 @@ if ! python3 scripts/wiki_transactions.py status --quiet; then
   echo "Run 'python3 scripts/wiki_transactions.py status' and recover or diagnose the recorded state." >&2
   exit 1
 fi
+if ! python3 scripts/wiki_provenance.py staged; then
+  echo "pre-commit: staged raw provenance is invalid." >&2
+  exit 1
+fi
 exit 0

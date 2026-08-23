@@ -27,7 +27,9 @@ def _load_collect(path: Path, label: str, errors: list[str]) -> object | None:
         return None
 
 
-def _safe_file(root: Path, relative: str) -> tuple[bytes | None, str | None]:
+def _safe_file(
+    root: Path, relative: str, *, require_utf8: bool = True,
+) -> tuple[bytes | None, str | None]:
     path = root / relative
     current = root
     for part in Path(relative).parts:
@@ -43,7 +45,8 @@ def _safe_file(root: Path, relative: str) -> tuple[bytes | None, str | None]:
         if not stat.S_ISREG(mode):
             return None, f"sampled path is not a regular file: {relative}"
         content = path.read_bytes()
-        content.decode("utf-8")
+        if require_utf8:
+            content.decode("utf-8")
         return content, None
     except (OSError, UnicodeError) as exc:
         return None, f"cannot reread {relative} as UTF-8: {exc}"
@@ -75,6 +78,13 @@ def _read_prompt(path: Path) -> tuple[str | None, str | None]:
 def validate_snapshot(repo_root: Path, sample: dict[str, object]) -> list[str]:
     errors: list[str] = []
     cache: dict[str, bytes] = {}
+    manifest_content, manifest_error = _safe_file(
+        repo_root, "scripts/raw-artifacts.json", require_utf8=False,
+    )
+    if manifest_error:
+        errors.append(f"STALE SNAPSHOT: {manifest_error}")
+    elif evidence_sha256_bytes(manifest_content or b"") != sample.get("raw_manifest_sha256"):
+        errors.append("STALE SNAPSHOT: raw artifact manifest hash changed")
     for claim in sample.get("claims", []):
         if not isinstance(claim, dict) or not isinstance(claim.get("path"), str):
             continue
@@ -100,6 +110,30 @@ def validate_snapshot(repo_root: Path, sample: dict[str, object]) -> list[str]:
         line = lines[line_number - 1]
         if line != claim.get("line_text") or evidence_sha256_bytes(line.encode("utf-8")) != claim.get("line_sha256"):
             errors.append(f"STALE SNAPSHOT: line bytes changed for {relative}:{line_number}")
+        for source in claim.get("source_closure", []):
+            if not isinstance(source, dict):
+                continue
+            source_path = source.get("source_path")
+            if isinstance(source_path, str):
+                source_content, source_error = _safe_file(repo_root, source_path)
+                if source_error:
+                    errors.append(f"STALE SNAPSHOT: {source_error}")
+                elif evidence_sha256_bytes(source_content or b"") != source.get("source_sha256"):
+                    errors.append(f"STALE SNAPSHOT: source page hash changed for {source_path}")
+            for member in source.get("files", []):
+                if not isinstance(member, dict) or not isinstance(member.get("path"), str):
+                    continue
+                raw_path = member["path"]
+                raw_content, raw_error = _safe_file(
+                    repo_root, raw_path, require_utf8=False,
+                )
+                if raw_error:
+                    errors.append(f"STALE SNAPSHOT: {raw_error}")
+                elif (
+                    len(raw_content or b"") != member.get("size")
+                    or evidence_sha256_bytes(raw_content or b"") != member.get("sha256")
+                ):
+                    errors.append(f"STALE SNAPSHOT: raw bytes changed for {raw_path}")
     return errors
 
 
@@ -201,6 +235,7 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
     returned_ids: Counter = Counter()
     plant_verdict: str | None = None
     real_verdicts: list[str] = []
+    flagged_ids: list[str] = []
     verdict_paths = sorted(verdict_dir.glob("batch-*.json")) if verdict_safe else []
     expected_verdict_names = {path.name for path in batch_paths}
     if {path.name for path in verdict_paths} != expected_verdict_names:
@@ -230,27 +265,48 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
                 plant_verdict = verdict.get("verdict")
             elif item and item.get("kind") == "claim" and isinstance(verdict.get("verdict"), str):
                 real_verdicts.append(verdict["verdict"])
+                if verdict["verdict"] != "VERIFIED" and isinstance(item.get("source_id"), str):
+                    flagged_ids.append(item["source_id"])
     errors.extend(counter_differences(assigned_ids, returned_ids, "batch-to-verdict item IDs"))
     if plant_verdict == "VERIFIED":
         errors.append("plant: returned VERIFIED instead of being caught")
     elif plant_verdict is None:
         errors.append("plant: no unique verdict was returned")
 
+    structural_errors = list(errors)
     stale_errors = validate_snapshot(repo_root, sample) if sample is not None and not sample_errors else []
     errors.extend(stale_errors)
     stale = bool(stale_errors)
-    status = "STALE SNAPSHOT" if stale else ("PASSED" if not errors else "FAILED")
-    metrics = None if errors else {
-        "sampled": len(sample.get("claims", [])) if isinstance(sample, dict) else 0,
+    structure = "VALID" if not structural_errors else "INVALID"
+    snapshot = "STALE" if stale else "CURRENT"
+    review = (
+        "INCOMPLETE" if structure == "INVALID"
+        else "FLAGGED" if flagged_ids
+        else "CLEAR"
+    )
+    status = "STALE SNAPSHOT" if stale else ("PASSED" if structure == "VALID" else "FAILED")
+    missing_count = sum(
+        1 for item in all_items
+        if item.get("kind") == "claim" and returned_ids[item.get("item_id")] != 1
+    )
+    sampled_claims = sample.get("claims") if isinstance(sample, dict) else None
+    metrics = {
+        "sampled": len(sampled_claims) if isinstance(sampled_claims, list) else 0,
         "batches": len(batch_paths),
+        "verified": sum(verdict == "VERIFIED" for verdict in real_verdicts),
         "flagged": sum(verdict != "VERIFIED" for verdict in real_verdicts),
-        "plant_verdict": plant_verdict,
+        "missing": missing_count,
+        "plant_verdict": plant_verdict or "MISSING",
     }
     return {
         "schema_version": 1,
         "run_id": run_id,
         "manifest_sha256": sample.get("manifest_sha256") if isinstance(sample, dict) else None,
         "status": status,
+        "structure": structure,
+        "snapshot": snapshot,
+        "review": review,
+        "flagged_ids": list(dict.fromkeys(flagged_ids)),
         "errors": errors,
         "metrics": metrics,
     }

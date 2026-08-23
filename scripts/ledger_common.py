@@ -38,7 +38,9 @@ ALLOWED_ROOTS = (
     "wiki/", "scripts/", "workflows/", ".agents/", ".claude/", ".codex/",
 )
 ALLOWED_ROOT_FILES = {"AGENTS.md", "CLAUDE.md", "CONTEXT.md", "README.md", "REFERENCES.md"}
-APPROVAL_RECORD_TYPES = frozenset({"capture_approval", "synthesis_approval"})
+APPROVAL_RECORD_TYPES = frozenset(
+    {"capture_approval", "synthesis_approval", "capture_application"}
+)
 # Inert identifier field on historical records; new records never generate it.
 LEGACY_ID_FIELD = "run_id"
 IDENTITY_EXCLUDE_FIELDS = {"approved_at", LEGACY_ID_FIELD, "word_count_source", "word_count_path"}
@@ -94,7 +96,7 @@ def under_allowed_root(path: str, *, repo_root: Path) -> bool:
         resolve_repo_path(
             path,
             repo_root=repo_root,
-            allowed_prefixes=(prefix.rstrip("/") for prefix in ALLOWED_ROOTS),
+            allowed_prefixes=tuple(prefix.rstrip("/") for prefix in ALLOWED_ROOTS),
             allowed_root_files=ALLOWED_ROOT_FILES,
             mode=MAY_CREATE_FILE,
         )
@@ -257,6 +259,7 @@ def validate_ledger_text(
     errors: list[str] = []
     approvals: list[ValidatedApprovalLine] = []
     seen_identities: set[str] = set()
+    seen_application_digests: set[str] = set()
     schema_count = 0
     approval_count = 0
     for line_no, line in enumerate(lines, start=1):
@@ -300,6 +303,14 @@ def validate_ledger_text(
             if identity in seen_identities:
                 errors.append(f"line {line_no}: duplicate approval record")
             seen_identities.add(identity)
+        if record_type == "capture_application":
+            digest = record.get("authorization_digest")
+            if isinstance(digest, str):
+                if digest in seen_application_digests:
+                    errors.append(
+                        f"line {line_no}: duplicate capture application authorization_digest"
+                    )
+                seen_application_digests.add(digest)
         approvals.append(
             ValidatedApprovalLine(
                 record=record,

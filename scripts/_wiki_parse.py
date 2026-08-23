@@ -373,6 +373,22 @@ def evidentiary_view(text: str) -> str:
     return authored_body_view(body)
 
 
+def evidentiary_line_views(text: str) -> list[tuple[int, str, str]]:
+    """Return original and masked evidence lines with one-based positions."""
+    masked = list(_context_mask(text, frontmatter="mask", mask_comments=True))
+    for start, end in _section_spans(text, {"Referenced by"}):
+        for index in range(start, end):
+            if masked[index] not in "\r\n":
+                masked[index] = "\x00"
+    visible_lines = "".join(masked).splitlines(keepends=True)
+    original_lines = text.splitlines(keepends=True)
+    return [
+        (line_number, original_lines[line_number - 1], visible)
+        for line_number, visible in enumerate(visible_lines, start=1)
+        if visible.strip("\x00\r\n ")
+    ]
+
+
 def authored_body_view(text: str) -> str:
     """Authored body prose with code and HTML comments masked.
 

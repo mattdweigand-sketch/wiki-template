@@ -28,6 +28,20 @@ def main() -> int:
         print(f"verify_evidence_run.py: {exc}", file=sys.stderr)
         return 1
     print(f"Evidence fidelity: {validation.status}")
+    print(
+        f"Structure: {validation.structure}; snapshot: {validation.snapshot}; "
+        f"review: {validation.review}"
+    )
+    if validation.metrics is not None:
+        print(
+            f"Counts: sampled={validation.metrics.sampled} "
+            f"verified={validation.metrics.verified} "
+            f"flagged={validation.metrics.flagged} "
+            f"missing={validation.metrics.missing} "
+            f"plant={validation.metrics.plant_verdict}"
+        )
+    for claim_id in validation.flagged_ids:
+        print(f"Flagged claim: {claim_id}")
     for error in validation.errors:
         print(f"- {error}")
     return 0 if validation.status == "PASSED" else 1

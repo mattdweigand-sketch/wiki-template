@@ -30,6 +30,12 @@ from wiki_lint_repository_checks import (
     check_stray_tool_tags,
     read_adjudications,
 )
+from wiki_entity_catalog import CatalogError, read_domain_configuration
+from wiki_provenance import (
+    MANIFEST_PATH,
+    validate_live_provenance,
+    validate_restored_provenance,
+)
 
 
 def meta_dangling_links(valid_slugs):
@@ -62,6 +68,8 @@ def run_tier1_lint(
     index_targets: set[str],
     index_duplicates: Sequence[str],
     index_read_fails: Sequence[tuple[str, str, str]] = (),
+    *,
+    provenance_view: str = "live",
 ) -> LintFailures:
     """Compose repository and page checks while preserving failure order."""
     fails = []  # (check, page_relpath, detail)
@@ -74,6 +82,20 @@ def run_tier1_lint(
     fails.extend(check_log_entry_headers())
     fails.extend(check_stale_sweep_proof_entries())
     fails.extend(index_read_fails)
+    try:
+        domain_configuration = read_domain_configuration(Path.cwd().resolve())
+    except CatalogError:
+        domain_configuration = None
+    if domain_configuration is not None and domain_configuration.status == "configured":
+        provenance_issues = (
+            validate_restored_provenance(Path.cwd())
+            if provenance_view == "restored"
+            else validate_live_provenance(Path.cwd())
+        )
+        fails.extend(
+            ("raw-provenance", MANIFEST_PATH, issue)
+            for issue in provenance_issues
+        )
 
     def rel(p):
         return str(p.relative_to(WIKI_ROOT))

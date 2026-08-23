@@ -22,13 +22,22 @@ This export builds one verified archive of the corpus and operating framework: w
    python3 scripts/export_wiki.py --date YYYY-MM-DD
    ```
 
-   This includes `wiki/`, `raw/`, `workflows/`, `scripts/` with fixtures and ledgers, `.claude/commands/`, `.agents/skills/`, `.github/workflows/`, and the top-level docs. It excludes `.git/`, `tmp/`, `deliverables/`, Claude worktrees, local Claude settings, Finder metadata, `.env`, and the local backup receipt. ZIP source artifacts are retained; only the exact output archive is excluded. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree so it cannot silently archive content from outside the repository or omit a broken link. It also refuses nonclean `.wiki-transactions/` state before creating an archive; inspect with `python3 scripts/wiki_transactions.py status` and recover or diagnose the recorded transaction instead of deleting it.
+   This includes `wiki/`, `raw/`, `workflows/`, `scripts/` with fixtures and ledgers, `.claude/commands/`, `.agents/skills/`, `.github/workflows/`, and the top-level docs. `BACKUP-MANIFEST.json` binds the exact sorted member set, sizes, hashes, creation time, and raw-artifact manifest hash; it does not list itself. The export excludes `.git/`, `tmp/`, `deliverables/`, Claude worktrees, local Claude settings, Finder metadata, `.env`, and the local backup receipt. ZIP source artifacts are retained; only the exact output archive is excluded. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree so it cannot silently archive content from outside the repository or omit a broken link. It also refuses nonclean `.wiki-transactions/` state before creating an archive; inspect with `python3 scripts/wiki_transactions.py status` and recover or diagnose the recorded transaction instead of deleting it.
 
 2. If you need to inspect before building, run:
 
    ```bash
    python3 scripts/export_wiki.py --dry-run --date YYYY-MM-DD
    ```
+
+   Verify or restore an existing archive offline with:
+
+   ```bash
+   python3 scripts/restore_wiki.py verify <archive.zip>
+   python3 scripts/restore_wiki.py restore <archive.zip> <absent-destination>
+   ```
+
+   Restore refuses an existing destination, validates before extraction, runs restored-tree checks, and atomically installs only the complete verified directory. It never initializes Git.
 
 3. Report the absolute path to the zip. Do not upload it anywhere unless the user explicitly gives a destination.
 

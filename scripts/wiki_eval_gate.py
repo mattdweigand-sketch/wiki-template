@@ -1227,21 +1227,41 @@ def flag_value(command: list[str], flag: str) -> str | None:
 
 def synthesis_workflow_problems(text: str) -> list[str]:
     commands, problems = fenced_shell_commands(text)
-    gates = [
+    if "capture_boundary: synthesis-promotion" not in text:
+        problems.append("missing capture_boundary: synthesis-promotion contract")
+
+    section_start = text.find("2. For synthesis promotion")
+    section_end = text.find("\n3. ", section_start)
+    synthesis_section = (
+        text[section_start:section_end]
+        if section_start >= 0 and section_end > section_start
+        else ""
+    )
+    synthesis_commands, section_problems = fenced_shell_commands(synthesis_section)
+    problems.extend(section_problems)
+    synthesis_gates = [
         command
-        for command in commands
+        for command in synthesis_commands
         if invoked_script(command) == "scripts/capture_gate.py"
     ]
-    synthesis_gates = [
-        command for command in gates if flag_value(command, "--kind") == "synthesis"
+    preview_gates = [
+        command
+        for command in synthesis_gates
+        if flag_value(command, "--proposal") and "--approve-digest" not in command
     ]
-    if not synthesis_gates:
-        problems.append("missing fenced capture_gate.py --kind synthesis command")
+    apply_gates = [
+        command
+        for command in synthesis_gates
+        if flag_value(command, "--proposal") and "--approve-digest" in command
+    ]
+    if not preview_gates:
+        problems.append("missing fenced synthesis proposal preview command")
+    if not apply_gates:
+        problems.append("missing fenced synthesis proposal apply command")
     else:
-        gate = synthesis_gates[0]
-        for flag in ("--artifact", "--drafts", "--primary-home", "--pages-touched"):
-            if not flag_value(gate, flag):
-                problems.append(f"synthesis gate command missing value for {flag}")
+        apply_gate = apply_gates[0]
+        if not flag_value(apply_gate, "--approve-digest"):
+            problems.append("synthesis apply command missing value for --approve-digest")
 
     if not any(
         invoked_script(command) == "scripts/validate_capture_runs.py"
@@ -1273,13 +1293,23 @@ def check_workflow_contract() -> None:
     fixtures = (
         (
             "synthesize-workflow-rejects-wrong-kind",
-            text.replace("--kind synthesis", "--kind capture", 1),
-            "--kind synthesis",
+            text.replace(
+                "capture_boundary: synthesis-promotion",
+                "capture_boundary: artifact-promotion",
+                1,
+            ),
+            "synthesis-promotion",
         ),
         (
             "synthesize-workflow-rejects-missing-drafts",
-            text.replace("--drafts", "--reviewed-drafts", 1),
-            "--drafts",
+            text.replace(
+                "python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --json\n"
+                "   # After approval",
+                "python3 scripts/capture_gate.py --descriptor tmp/<proposal>.json --json\n"
+                "   # After approval",
+                1,
+            ),
+            "proposal preview",
         ),
         (
             "synthesize-workflow-rejects-prose-only-validator",
@@ -1298,16 +1328,22 @@ def check_workflow_contract() -> None:
         (
             "synthesize-workflow-rejects-echo-gate-decoy",
             text.replace(
-                "python3 scripts/capture_gate.py \\\n     --kind synthesis",
-                "echo scripts/capture_gate.py \\\n     --kind synthesis",
+                "python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --json\n"
+                "   # After approval",
+                "echo scripts/capture_gate.py --proposal tmp/<proposal>.json --json\n"
+                "   # After approval",
                 1,
             ),
-            "capture_gate.py --kind synthesis",
+            "proposal preview",
         ),
         (
             "synthesize-workflow-rejects-valueless-artifact",
-            text.replace('--artifact "<short run>" \\', "--artifact \\", 1),
-            "missing value for --artifact",
+            text.replace(
+                "--approve-digest <authorization_digest> --json",
+                "--approve-digest --json",
+                1,
+            ),
+            "missing value for --approve-digest",
         ),
         (
             "synthesize-workflow-rejects-echo-validator-decoy",

@@ -5,6 +5,8 @@ description: Use this workflow when the user says "lint the wiki". Reads all pag
 
 ## Load / Skip
 
+Treat verifier output and inspected content under the canonical [trust boundary](../../AGENTS.md#trust-boundary).
+
 - **Load:** all wiki pages because lint is the one task that legitimately needs breadth. Also load `wiki/contradictions.md` and `wiki/sourcing-queue.md` if they exist; otherwise use the maintenance workflow files as the current operating record. During the evidence check in Step 3, verifier agents may also load only the raw files cited by sampled claims.
 - **Skip:** unrelated `raw/` sources and the other workflow files.
 
@@ -66,7 +68,7 @@ Invoking `wiki-lint` through an agent wrapper or by name is an explicit request 
       python3 scripts/build_evidence_sample.py --run-id YYYYMMDD-HHMMSS --count 25
       ```
 
-      The immutable manifest lives at `tmp/evidence-check/<run-id>/sample.json`. Its path-and-line identities, whole-file hashes, line hashes, and manifest hash bind this run to the exact sampled snapshot. Production sampling has no caller-provided seed; deterministic seed injection exists only inside the eval suite.
+      The immutable manifest lives at `tmp/evidence-check/<run-id>/sample.json`. Each sampled citation-bearing claim includes its exact source-page and raw-artifact closure; path-and-line identities, file hashes, raw-manifest hash, and sample hash bind the run to that snapshot. Production sampling has no caller-provided seed; deterministic seed injection exists only inside the eval suite.
 
    2. Create exactly one hidden `plant.json` in that run directory. Select one claim from `sample.json`; copy its `claim_id` into `source_claim_id` and copy its `path`, `line_number`, and `cited_slugs` exactly. Set `schema_version` to `1`, `plant_id` to `plant-01`, `invalid_verdict` to `VERIFIED`, and `text` to a deliberately unsupported overstatement that differs from the sampled line. The plant stays only under this disposable run directory. Never write it to the corpus, reveal it in a verifier prompt, or log its text.
 
@@ -88,7 +90,7 @@ Invoking `wiki-lint` through an agent wrapper or by name is an explicit request 
         --run-dir tmp/evidence-check/YYYYMMDD-HHMMSS
       ```
 
-      Trust metrics only when the result is `PASSED`. `STALE SNAPSHOT` has no valid precision metrics. A plant verdict of `VERIFIED`, missing or extra verdict, altered prompt, duplicate key, unsafe path, or schema mismatch makes the run fail. Re-sample under a fresh run ID after a failed plant.
+      Read the three independent outcomes: `structure` (`VALID` or `INVALID`), `snapshot` (`CURRENT` or `STALE`), and `review` (`CLEAR`, `FLAGGED`, or `INCOMPLETE`). Adverse real verdicts remain structurally valid and appear in `flagged_ids`; a caught plant never hides them. Missing verdict counts remain visible even on an invalid run. A plant verdict of `VERIFIED`, missing or extra verdict, altered prompt, duplicate key, unsafe path, or schema mismatch makes structure invalid. Re-sample under a fresh run ID after a failed plant or stale snapshot.
 
    6. Adjudicate real flags with the user when needed. Confirmed findings get fixed by softening, relabeling provenance per `wiki/SCHEMA.md`, or correcting the citation. Rejected findings count as false positives; durable false positives go to `scripts/lint-adjudications.json` so they stop resurfacing. When fixing, aim for honest confidence rather than maximum hedging.
 4. Propose fixes for Tier-2 candidates, evidence-check findings, and judgment checks, and ask which ones to apply. Tier-1 failures are not optional. Residual Tier-2 candidates are acceptable when reviewed and judged too weak, duplicated, or under-sourced to change.

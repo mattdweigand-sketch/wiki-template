@@ -16,17 +16,24 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+from _wiki_parse import evidentiary_line_views, get_entity_pages
+from wiki_provenance import RawSourceClosure, resolve_live_source_closure
+
 
 SCHEMA_VERSION = 1
 VERDICTS = ("VERIFIED", "OVEREXTENDED", "CONFLATED", "MISMATCH", "NOT-FOUND")
 SAMPLE_FIELDS = frozenset(
     {
         "schema_version", "run_id", "created_at", "seed", "requested_count",
-        "population_count", "selected_count", "git", "claims", "manifest_sha256",
+        "population_count", "selected_count", "git", "claims",
+        "raw_manifest_sha256", "manifest_sha256",
     }
 )
 CLAIM_FIELDS = frozenset(
-    {"claim_id", "path", "line_number", "line_text", "line_sha256", "file_sha256", "cited_slugs"}
+    {
+        "claim_id", "path", "line_number", "line_text", "line_sha256",
+        "file_sha256", "cited_slugs", "source_closure",
+    }
 )
 PLANT_FIELDS = frozenset(
     {"schema_version", "plant_id", "source_claim_id", "text", "path", "line_number", "cited_slugs", "invalid_verdict"}
@@ -41,8 +48,9 @@ VERDICT_FILE_FIELDS = frozenset({"schema_version", "run_id", "batch_id", "verdic
 VERDICT_FIELDS = frozenset({"item_id", "verdict", "decisive_quote", "evidence_paths"})
 RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
-SOURCE_MARKER = "source: [["
-WIKILINK_RE = re.compile(r"\[\[([a-z0-9]+(?:-[a-z0-9]+)*)\]\]")
+CITATION_RE = re.compile(
+    r"\(source:\s*\[\[([a-z0-9]+(?:-[a-z0-9]+)*)\]\]\)"
+)
 
 
 class EvidenceError(ValueError):
@@ -143,6 +151,64 @@ def _sha(value: object) -> bool:
     return isinstance(value, str) and bool(re.fullmatch(r"[0-9a-f]{64}", value))
 
 
+def _validate_source_closure(value: object, cited_slugs: object, label: str) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(value, list) or not value:
+        return [f"{label}: source_closure must be a nonempty list"]
+    closure_slugs: list[str] = []
+    for index, source in enumerate(value):
+        source_label = f"{label}.source_closure[{index}]"
+        if not isinstance(source, dict) or set(source) != {
+            "source_slug", "source_path", "source_sha256", "files"
+        }:
+            errors.append(f"{source_label}: invalid fields")
+            continue
+        slug = source.get("source_slug")
+        closure_slugs.append(slug if isinstance(slug, str) else "")
+        if not isinstance(slug, str) or not SLUG_RE.fullmatch(slug):
+            errors.append(f"{source_label}: invalid source_slug")
+        if source.get("source_path") != f"wiki/sources/{slug}.md":
+            errors.append(f"{source_label}: source_path does not match source_slug")
+        if not _sha(source.get("source_sha256")):
+            errors.append(f"{source_label}: invalid source_sha256")
+        files = source.get("files")
+        if not isinstance(files, list) or not files:
+            errors.append(f"{source_label}: files must be a nonempty list")
+            continue
+        paths: list[str] = []
+        for file_index, member in enumerate(files):
+            file_label = f"{source_label}.files[{file_index}]"
+            if not isinstance(member, dict) or set(member) != {"path", "size", "sha256"}:
+                errors.append(f"{file_label}: invalid fields")
+                continue
+            path = member.get("path")
+            if not _canonical_relative(path, "raw/"):
+                errors.append(f"{file_label}: invalid raw path")
+            else:
+                paths.append(path)
+            if not _strict_int(member.get("size")):
+                errors.append(f"{file_label}: invalid size")
+            if not _sha(member.get("sha256")):
+                errors.append(f"{file_label}: invalid sha256")
+        if paths != sorted(paths) or len(paths) != len(set(paths)):
+            errors.append(f"{source_label}: files must be sorted and unique")
+    if isinstance(cited_slugs, list) and closure_slugs != cited_slugs:
+        errors.append(f"{label}: source_closure does not match cited_slugs")
+    return errors
+
+
+def _closure_payload(closure: RawSourceClosure) -> dict[str, object]:
+    return {
+        "source_slug": closure.source_slug,
+        "source_path": closure.source_path,
+        "source_sha256": closure.source_sha256,
+        "files": [
+            {"path": member.path, "size": member.size, "sha256": member.sha256}
+            for member in closure.files
+        ],
+    }
+
+
 def validate_sample(sample: object) -> list[str]:
     if not isinstance(sample, dict):
         return ["sample must be an object"]
@@ -163,6 +229,8 @@ def validate_sample(sample: object) -> list[str]:
         git["dirty"] is not None and not isinstance(git["dirty"], bool)
     ):
         errors.append("sample: invalid diagnostic git metadata")
+    if not _sha(sample.get("raw_manifest_sha256")):
+        errors.append("sample: invalid raw_manifest_sha256")
     claims = sample.get("claims")
     if not isinstance(claims, list):
         errors.append("sample: claims must be a list")
@@ -194,6 +262,7 @@ def validate_sample(sample: object) -> list[str]:
             errors.append(f"{label}: cited_slugs must be a nonempty canonical slug list")
         elif len(slugs) != len(set(slugs)):
             errors.append(f"{label}: cited_slugs must not repeat")
+        errors.extend(_validate_source_closure(claim.get("source_closure"), slugs, label))
         if isinstance(claim.get("line_text"), str):
             raw = claim["line_text"].encode("utf-8")
             if _sha(claim.get("line_sha256")) and evidence_sha256_bytes(raw) != claim["line_sha256"]:
@@ -221,7 +290,11 @@ def validate_plant(plant: object, sample: dict[str, object]) -> list[str]:
         errors.append("plant: plant_id must be plant-01")
     if plant.get("invalid_verdict") != "VERIFIED":
         errors.append("plant: invalid_verdict must declare VERIFIED")
-    by_id = {claim.get("claim_id"): claim for claim in sample.get("claims", []) if isinstance(claim, dict)}
+    claims = sample.get("claims")
+    by_id = {
+        claim.get("claim_id"): claim
+        for claim in claims if isinstance(claim, dict)
+    } if isinstance(claims, list) else {}
     source = by_id.get(plant.get("source_claim_id"))
     if source is None:
         errors.append("plant: source_claim_id is not in the sample")
@@ -355,14 +428,6 @@ def _git_metadata(repo_root: Path) -> dict[str, object]:
     }
 
 
-def _line_is_generated_referenced_by(lines: list[str], index: int) -> bool:
-    inside = False
-    for line in lines[: index + 1]:
-        if line.startswith("## "):
-            inside = line.strip() == "## Referenced by"
-    return inside
-
-
 def build_sample_data(
     repo_root: Path,
     run_id: str,
@@ -376,7 +441,10 @@ def build_sample_data(
         raise EvidenceError("requested_count must be positive")
     wiki_root = repo_root / "wiki"
     candidates: list[dict[str, object]] = []
-    for page in sorted(wiki_root.rglob("*.md"), key=lambda path: path.relative_to(repo_root).as_posix()):
+    closure_cache: dict[str, dict[str, object]] = {}
+    for page in get_entity_pages(wiki_root):
+        if page.parent.name == "sources":
+            continue
         try:
             mode = page.lstat().st_mode
         except OSError as exc:
@@ -389,24 +457,32 @@ def build_sample_data(
         except (OSError, UnicodeError) as exc:
             raise EvidenceError(f"cannot read {page} as UTF-8: {exc}") from exc
         relative = page.relative_to(repo_root).as_posix()
-        lines = text.splitlines(keepends=True)
-        for zero_index, line in enumerate(lines):
-            if SOURCE_MARKER not in line or _line_is_generated_referenced_by(lines, zero_index):
-                continue
-            slugs = list(dict.fromkeys(WIKILINK_RE.findall(line)))
+        for line_number, line, visible_line in evidentiary_line_views(text):
+            slugs = list(dict.fromkeys(CITATION_RE.findall(visible_line)))
             if not slugs:
                 continue
+            for slug in slugs:
+                if slug not in closure_cache:
+                    try:
+                        closure_cache[slug] = _closure_payload(
+                            resolve_live_source_closure(repo_root, slug)
+                        )
+                    except ValueError as exc:
+                        raise EvidenceError(
+                            f"claim source closure failed for {relative}:{line_number}: {exc}"
+                        ) from exc
             line_bytes = line.encode("utf-8")
-            identity = relative.encode() + b"\0" + str(zero_index + 1).encode() + b"\0" + line_bytes
+            identity = relative.encode() + b"\0" + str(line_number).encode() + b"\0" + line_bytes
             candidates.append(
                 {
                     "claim_id": evidence_sha256_bytes(identity),
                     "path": relative,
-                    "line_number": zero_index + 1,
+                    "line_number": line_number,
                     "line_text": line,
                     "line_sha256": evidence_sha256_bytes(line_bytes),
                     "file_sha256": evidence_sha256_bytes(content),
                     "cited_slugs": slugs,
+                    "source_closure": [closure_cache[slug] for slug in slugs],
                 }
             )
     candidates.sort(key=lambda claim: (claim["path"], claim["line_number"], claim["claim_id"]))
@@ -423,6 +499,9 @@ def build_sample_data(
         "selected_count": len(selected),
         "git": _git_metadata(repo_root),
         "claims": selected,
+        "raw_manifest_sha256": evidence_sha256_bytes(
+            (repo_root / "scripts/raw-artifacts.json").read_bytes()
+        ),
         "manifest_sha256": "",
     }
     sample["manifest_sha256"] = manifest_hash(sample)
@@ -538,9 +617,11 @@ def counter_differences(expected: Counter, actual: Counter, label: str) -> list[
 
 __all__ = [
     "EvidenceError",
+    "VERDICTS",
     "atomic_json",
     "build_batches",
     "build_sample_data",
+    "canonical_json",
     "counter_differences",
     "evidence_sha256_bytes",
     "load_json",

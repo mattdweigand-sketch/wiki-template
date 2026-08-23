@@ -45,7 +45,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Lint the wiki by enforcement tier.")
     ap.add_argument("--strict", action="store_true", help="fail on Tier-2 candidates too")
     ap.add_argument("--tier1", action="store_true", help="run Tier 1 only")
+    ap.add_argument(
+        "--restored-tree",
+        action="store_true",
+        help="validate complete restored raw/source closure without requiring Git history",
+    )
     args = ap.parse_args()
+    if args.restored_tree and not args.tier1:
+        ap.error("--restored-tree requires --tier1")
 
     if not WIKI_ROOT.exists():
         print(f"Error: 'wiki/' not found. Run from the repo root. cwd={Path.cwd()}",
@@ -61,8 +68,14 @@ def main() -> int:
 
     print(f"Wiki lint: {len(entity_pages)} entity pages\n")
 
-    t1 = run_tier1_lint(entity_pages, valid_slugs, index_targets, index_duplicates,
-               index_read_fails)
+    t1 = run_tier1_lint(
+        entity_pages,
+        valid_slugs,
+        index_targets,
+        index_duplicates,
+        index_read_fails,
+        provenance_view="restored" if args.restored_tree else "live",
+    )
     print("TIER 1  (deterministic; must fix)")
     if not t1:
         print("  all checks passed")

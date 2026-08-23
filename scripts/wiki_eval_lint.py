@@ -13,6 +13,7 @@ Runs against the fixture mini-wiki in scripts/fixtures/wiki-lint/, copied to
 a system temp directory per case. Writes nothing inside the repo.
 """
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -2353,14 +2354,49 @@ def check_raw_artifact_git_workflow_passes():
         for name in (
             "wiki_transactions.py", "_file_transactions.py",
             "_transaction_contract.py", "_durable_files.py",
+            "wiki_provenance.py", "wiki_lint_frontmatter.py",
+            "wiki_lint_contract.py", "wiki_entity_catalog.py",
+            "_wiki_parse.py", "_repo_paths.py",
         ):
             shutil.copyfile(REPO_ROOT / "scripts" / name, root / "scripts" / name)
+        shutil.copyfile(
+            REPO_ROOT / "scripts/entity-catalog.json",
+            root / "scripts/entity-catalog.json",
+        )
         shutil.copyfile(
             REPO_ROOT / "scripts/hooks/pre-commit", root / "scripts/hooks/pre-commit"
         )
         source = root / "raw/notes/source.txt"
         source.parent.mkdir(parents=True)
-        source.write_text("tracked source artifact\n", encoding="utf-8")
+        source_bytes = b"tracked source artifact\n"
+        source.write_bytes(source_bytes)
+        (root / "wiki/sources/tracked-source.md").write_text(
+            "---\ntitle: Tracked source\ntype: source\n"
+            "created: 2026-08-22\nupdated: 2026-08-22\n"
+            "sources: [\"raw/notes/source.txt\"]\ntags: [fixture]\n"
+            "confidence: high\nsource_type: other\n"
+            "agent_use_cases:\n  - raw tracking eval\n---\n\nTracked source.\n",
+            encoding="utf-8",
+        )
+        append(
+            root, "wiki/index.md",
+            "| [tracked-source.md](sources/tracked-source.md) | Tracked source fixture |\n",
+        )
+        (root / "scripts/raw-artifacts.json").write_text(
+            json.dumps({
+                "artifacts": [{
+                    "captured_at": "2026-08-22",
+                    "files": [{
+                        "path": "raw/notes/source.txt",
+                        "sha256": hashlib.sha256(source_bytes).hexdigest(),
+                        "size": len(source_bytes),
+                    }],
+                    "source_slug": "tracked-source",
+                }],
+                "schema_version": 1,
+            }, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
         subprocess.run([real_git, "init", "-q"], cwd=root, check=True, capture_output=True)
         add = subprocess.run(
             [real_git, "add", "-A"], cwd=root, text=True, capture_output=True

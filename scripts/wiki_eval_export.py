@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -12,8 +14,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import export_wiki
+import restore_wiki
 from _file_transactions import run_transaction
 from eval_lib import Results
+from wiki_provenance import resolve_restored_source_closure
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -445,6 +449,305 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-transaction-eval-") as td:
         and ".wiki-transactions/ is nonclean" in proc.stderr
         and not list(root.rglob("*.zip")),
         f"stdout={proc.stdout!r}; stderr={proc.stderr!r}",
+    )
+
+
+def rewrite_archive(source: Path, target: Path, mutation: str) -> None:
+    with zipfile.ZipFile(source) as original:
+        entries = [(info, original.read(info.filename)) for info in original.infolist()]
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as rewritten:
+        for info, content in entries:
+            if mutation == "missing" and info.filename == "README.md":
+                continue
+            if mutation == "changed" and info.filename == "README.md":
+                content += b"changed"
+            if mutation == "duplicate-manifest-key" and info.filename == export_wiki.BACKUP_MANIFEST_NAME:
+                content = b'{"schema_version":1,' + content[1:]
+            rewritten.writestr(info, content)
+        if mutation == "extra":
+            rewritten.writestr("unexpected.txt", b"extra")
+        elif mutation == "duplicate":
+            rewritten.writestr("README.md", b"duplicate")
+        elif mutation == "traversal":
+            rewritten.writestr("../escape.txt", b"escape")
+        elif mutation == "absolute":
+            rewritten.writestr("/escape.txt", b"escape")
+        elif mutation == "windows-absolute":
+            rewritten.writestr("C:/escape.txt", b"escape")
+        elif mutation == "case-collision":
+            rewritten.writestr("agents.md", b"collision")
+        elif mutation == "symlink":
+            link = zipfile.ZipInfo("unsafe-link")
+            link.external_attr = 0o120777 << 16
+            rewritten.writestr(link, b"README.md")
+        elif mutation == "special":
+            special = zipfile.ZipInfo("unsafe-fifo")
+            special.external_attr = 0o010666 << 16
+            rewritten.writestr(special, b"")
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
+    root = Path(td)
+    archive = root / "backup.zip"
+    files = export_wiki.export_files(REPO_ROOT)
+    export_wiki.build_zip(REPO_ROOT, archive, files)
+    manifest, archive_errors = export_wiki.verify_backup_archive(archive)
+    results.record(
+        "backup-manifest-exactly-matches-member-set-and-hashes",
+        manifest is not None
+        and not archive_errors
+        and export_wiki.BACKUP_MANIFEST_NAME not in {
+            member["path"] for member in manifest["members"]
+        }
+        and manifest["raw_artifact_manifest_sha256"]
+        == hashlib.sha256((REPO_ROOT / "scripts/raw-artifacts.json").read_bytes()).hexdigest(),
+        repr(archive_errors),
+    )
+
+    mutation_results = {}
+    for mutation in (
+        "changed", "missing", "extra", "duplicate", "traversal", "absolute",
+        "windows-absolute", "case-collision", "symlink", "special",
+        "duplicate-manifest-key",
+    ):
+        mutated = root / f"{mutation}.zip"
+        rewrite_archive(archive, mutated, mutation)
+        checked, errors = export_wiki.verify_backup_archive(mutated)
+        mutation_results[mutation] = checked is None and bool(errors)
+    results.record(
+        "backup-verifier-rejects-changed-missing-extra-duplicate-and-unsafe-members",
+        all(mutation_results.values()),
+        repr(mutation_results),
+    )
+
+    destination = root / "restored"
+    commands: list[list[str]] = []
+    real_run = subprocess.run
+
+    def offline_run(command, *args, **kwargs):
+        commands.append([str(part) for part in command])
+        return real_run(command, *args, **kwargs)
+
+    with patch.object(restore_wiki.subprocess, "run", side_effect=offline_run):
+        restore_wiki.restore_backup_archive(archive, destination)
+    exact_pairs = (
+        "scripts/raw-artifacts.json",
+        "wiki/domain.md",
+        "wiki/sources/.gitkeep",
+    )
+    results.record(
+        "valid-restore-is-member-exact-and-passes-deterministic-checks",
+        all((destination / path).read_bytes() == (REPO_ROOT / path).read_bytes() for path in exact_pairs)
+        and not (destination / ".git").exists()
+        and all("git" not in Path(command[0]).name and "rclone" not in Path(command[0]).name for command in commands),
+        repr(commands),
+    )
+    try:
+        restore_wiki.restore_backup_archive(archive, destination)
+    except restore_wiki.RestoreError as exc:
+        existing_rejected = "must be absent" in str(exc)
+    else:
+        existing_rejected = False
+    results.record("restore-refuses-existing-destination", existing_rejected)
+
+    failed_destination = root / "failed-restore"
+    try:
+        restore_wiki.restore_backup_archive(root / "changed.zip", failed_destination)
+    except restore_wiki.RestoreError:
+        failed_cleanly = not failed_destination.exists()
+    else:
+        failed_cleanly = False
+    results.record("failed-restore-leaves-no-partial-destination", failed_cleanly)
+
+    raced_destination = root / "raced-restore"
+
+    def create_competing_destination(_staged, _manifest):
+        raced_destination.mkdir()
+        (raced_destination / "owner.txt").write_text("third party", encoding="utf-8")
+        return []
+
+    try:
+        with patch.object(
+            restore_wiki,
+            "verify_restored_wiki_tree",
+            side_effect=create_competing_destination,
+        ):
+            restore_wiki.restore_backup_archive(archive, raced_destination)
+    except restore_wiki.RestoreError:
+        race_preserved = (
+            (raced_destination / "owner.txt").read_text(encoding="utf-8") == "third party"
+        )
+    else:
+        race_preserved = False
+    results.record("restore-never-overwrites-concurrent-destination", race_preserved)
+
+    configured_source = root / "configured-source"
+    shutil.copytree(destination, configured_source)
+    for folder in (configured_source / "wiki").iterdir():
+        if folder.is_dir() and folder.name not in {"concepts", "sources"}:
+            shutil.rmtree(folder)
+    for folder_name in ("concepts", "sources"):
+        folder = configured_source / "wiki" / folder_name
+        for entry in folder.iterdir():
+            entry.unlink()
+    raw_root = configured_source / "raw"
+    for entry in raw_root.iterdir():
+        if entry.name != "README.md":
+            if entry.is_dir():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+    raw_bytes = b"configured restore evidence\n"
+    raw_path = raw_root / "internal-memos/closure.txt"
+    raw_path.parent.mkdir()
+    raw_path.write_bytes(raw_bytes)
+    raw_registry = {
+        "description": "Configured restore fixture raw buckets.",
+        "policy": "Fixture raw artifacts are immutable.",
+        "buckets": {"internal-memos": "Restore evidence"},
+    }
+    (configured_source / "scripts/raw-buckets.json").write_text(
+        json.dumps(raw_registry, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    domain = """---
+title: Domain Config
+type: domain
+created: 2026-08-22
+updated: 2026-08-22
+status: configured
+org: Restore Fixture
+domain: exact configured restore validation
+entity_types_active:
+  - concept
+  - source
+raw_buckets:
+  - internal-memos
+example_queries:
+  - What evidence supports the closure?
+---
+
+# Domain Config
+
+Configured restore fixture.
+"""
+    (configured_source / "wiki/domain.md").write_text(domain, encoding="utf-8")
+    source_page = """---
+title: Closure Source
+type: source
+created: 2026-08-22
+updated: 2026-08-22
+sources: [raw/internal-memos/closure.txt]
+source_type: other
+tags: [restore]
+confidence: high
+---
+
+# Closure Source
+
+Exact configured restore evidence.
+
+## Open questions / gaps
+
+- None.
+
+## Related pages
+
+- Supports: [[closure-concept]]
+"""
+    concept_page = """---
+title: Closure Concept
+type: concept
+created: 2026-08-22
+updated: 2026-08-22
+sources: [closure-source]
+tags: [restore]
+confidence: high
+agent_use_cases:
+  - verifying configured restore closure
+---
+
+# Closure Concept
+
+The configured restore retains exact evidence. (source: [[closure-source]])
+
+## Open questions / gaps
+
+- None.
+
+## Related pages
+
+- Derived from: [[closure-source]]
+"""
+    (configured_source / "wiki/sources/closure-source.md").write_text(source_page, encoding="utf-8")
+    (configured_source / "wiki/concepts/closure-concept.md").write_text(concept_page, encoding="utf-8")
+    with (configured_source / "wiki/index.md").open("a", encoding="utf-8") as index:
+        index.write(
+            "\n| [Closure Source](sources/closure-source.md) | Restore evidence |\n"
+            "| [Closure Concept](concepts/closure-concept.md) | Restore claim |\n"
+        )
+    raw_manifest = {
+        "schema_version": 1,
+        "artifacts": [{
+            "source_slug": "closure-source",
+            "captured_at": "2026-08-22",
+            "files": [{
+                "path": "raw/internal-memos/closure.txt",
+                "size": len(raw_bytes),
+                "sha256": hashlib.sha256(raw_bytes).hexdigest(),
+            }],
+        }],
+    }
+    (configured_source / "scripts/raw-artifacts.json").write_bytes(
+        json.dumps(raw_manifest, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+    )
+    configured_archive = root / "configured-backup.zip"
+    export_wiki.build_zip(
+        configured_source,
+        configured_archive,
+        export_wiki.export_files(configured_source),
+    )
+    configured_destination = root / "configured-restored"
+    restore_wiki.restore_backup_archive(configured_archive, configured_destination)
+    closure = resolve_restored_source_closure(configured_destination, "closure-source")
+    results.record(
+        "configured-restore-preserves-raw-source-citation-closure",
+        closure.source_path == "wiki/sources/closure-source.md"
+        and closure.files[0].path == "raw/internal-memos/closure.txt"
+        and (configured_destination / closure.files[0].path).read_bytes() == raw_bytes
+        and "(source: [[closure-source]])" in (
+            configured_destination / "wiki/concepts/closure-concept.md"
+        ).read_text(encoding="utf-8"),
+    )
+    broken_schema_source = root / "broken-schema-source"
+    shutil.copytree(configured_source, broken_schema_source)
+    agents_path = broken_schema_source / "AGENTS.md"
+    agents_path.write_text(
+        agents_path.read_text(encoding="utf-8").replace(
+            "analyses, competitors", "analyses, bogus", 1
+        ),
+        encoding="utf-8",
+    )
+    broken_schema_archive = root / "broken-schema.zip"
+    export_wiki.build_zip(
+        broken_schema_source,
+        broken_schema_archive,
+        export_wiki.export_files(broken_schema_source),
+    )
+    broken_schema_destination = root / "broken-schema-restored"
+    try:
+        restore_wiki.restore_backup_archive(
+            broken_schema_archive, broken_schema_destination
+        )
+    except restore_wiki.RestoreError as exc:
+        broken_schema_rejected = (
+            "schema parity" in str(exc) and not broken_schema_destination.exists()
+        )
+    else:
+        broken_schema_rejected = False
+    results.record(
+        "restore-validates-schema-parity-against-staged-tree",
+        broken_schema_rejected,
     )
 
 sys.exit(results.finish())

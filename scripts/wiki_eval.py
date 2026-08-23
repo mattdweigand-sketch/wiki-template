@@ -20,6 +20,7 @@ SUITES = {
     "rebuild": [sys.executable, "scripts/wiki_eval_rebuild.py"],
     "lint": [sys.executable, "scripts/wiki_eval_lint.py"],
     "gate": [sys.executable, "scripts/wiki_eval_gate.py"],
+    "application": [sys.executable, "scripts/wiki_eval_application.py"],
     "capture-runs": [sys.executable, "scripts/validate_capture_runs.py"],
     "export": [sys.executable, "scripts/wiki_eval_export.py"],
     "backup-state": [sys.executable, "scripts/wiki_eval_backup.py"],
@@ -35,6 +36,7 @@ SUITES = {
     "document-reachability": [sys.executable, "scripts/wiki_eval_document_reachability.py"],
     "entity-catalog": [sys.executable, "scripts/wiki_eval_entity_catalog.py"],
     "evidence-fidelity": [sys.executable, "scripts/wiki_eval_evidence.py"],
+    "provenance": [sys.executable, "scripts/wiki_eval_provenance.py"],
     "tier1": [sys.executable, "scripts/lint.py", "--tier1"],
 }
 

@@ -63,9 +63,9 @@ The main control mechanisms are:
 | Live evals | `wiki-eval` runs the `SUITES` registry in `scripts/wiki_eval.py`, including parsing, durable files, transactions, lint and evidence checks, backlinks, gates, ledgers, export and backup receipts, stale-text sweep proof, log rotation, review dates, discoverability, wrapper parity, schema-doc parity, entity-catalog behavior, document reachability, and Tier-1 lint. |
 | Outcome review | `scripts/review_due.py` surfaces due `review_by` checkpoints; `workflows/maintenance/review.md` records what happened and whether confidence changes. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
-| Approval gate | `scripts/capture_gate.py` guards analysis capture, artifact-promotion apply routes, and reviewed synthesis promotion (`--kind=synthesis`), then records approved boundaries in `scripts/capture-runs.jsonl`. |
+| Approval gate | `scripts/capture_gate.py` previews exact `analysis-capture`, `artifact-promotion`, and `synthesis-promotion` proposals, binds approval to their digest, and applies approved targets with the combined ledger postimage through one recoverable transaction. |
 | Synthesis ledger | `wiki/synthesis.md` orients future synthesis runs; cite source pages, not the ledger, when making claims. |
-| Export | `scripts/export_wiki.py` builds a local backup that includes `raw/` sources. |
+| Export | `scripts/export_wiki.py` builds and verifies exact-manifest local backups that include `raw/`; `scripts/restore_wiki.py` restores a verified archive only to an absent destination. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` owns the shortcut manifest; `scripts/render_wiki_wrappers.py` deterministically renders `.claude/commands/` and `.agents/skills/`, which never own canonical behavior. |
 
 ---
@@ -112,26 +112,28 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 |---|---|
 | `raw/README.md` | Source-artifact handling and privacy note for the tracked `raw/` corpus |
 | `scripts/raw-buckets.json` | Tracked raw bucket taxonomy read by Tier-1 lint |
+| `scripts/raw-artifacts.json`, `scripts/wiki_provenance.py` | Exact raw/source registry plus live, staged, CI, and restored-tree validation views |
 | `scripts/entity-catalog.json` | Permanent governed entity folders, types, and authoring semantics; consumed through `scripts/wiki_entity_catalog.py` |
 | `scripts/finalize_wiki_setup.py`, `scripts/wiki_setup_initializer.py`, `scripts/wiki_setup_initializer_test.py`, `scripts/wiki-setup-presets.json` | Disposable one-time setup command, implementation, regression test, and preset defaults; all four are removed from a configured wiki <!-- wiki-setup:references-initializer-files:line --> |
 | `scripts/lint-adjudications.json` | Settled Tier-2 lint judgments with reasons and dates; lint suppresses what it lists |
 | `scripts/current-state-owners.json` | Optional, strict registry of current-state owner pages; ships disabled and empty |
 | `scripts/wiki_current_state.py` | Typed owner-registry loader, validator, and current-state drift evaluator used by lint |
-| `scripts/wiki_evidence.py` | Typed production seam for exact evidence samples, verifier batches, and run validation |
+| `scripts/wiki_evidence.py` | Typed production seam for exact evidence samples, verifier batches, run validation, and disposable grounded-response packets |
 | `scripts/build_evidence_sample.py`, `scripts/build_verifier_batches.py`, `scripts/verify_evidence_run.py` | Thin agent-neutral CLI adapters for the sampled evidence workflow |
 | `scripts/wiki_backup_receipt.py`, `scripts/backup_state.py` | Destination-redacted verified-upload receipt and nonblocking freshness reporter; the local receipt is gitignored |
-| `scripts/capture-runs.jsonl` | Append-only logical approval ledger installed through stable-lock atomic full-file replacement, never in-place append |
+| `scripts/export_wiki.py`, `scripts/restore_wiki.py` | Exact-manifest archive creation, offline verification, and absent-destination restore |
+| `scripts/capture-runs.jsonl` | Combined approval/application ledger; exact proposal apply installs its postimage with approved targets through the shared transaction |
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the seven generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
 | `scripts/check_schema_doc_parity.py` | Verifies the full schema catalog table against `scripts/entity-catalog.json` and duplicated vocabularies against `scripts/wiki_lint_contract.py` constants |
 | `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
 | `scripts/check_document_reachability.py` | Follows Markdown links from declared roots and rejects missing routes or unreachable operational documents |
 | `scripts/check_discoverability.py` | Scope-aware AST check for typed, distinctive production interfaces; eval and fixture findings remain advisory |
-| `.wiki-transactions/` | Gitignored, non-disposable recovery authority for log rotation and backlink rebuild; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
+| `.wiki-transactions/` | Gitignored, non-disposable recovery authority for approved application, log rotation, and backlink rebuild; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
 | `scripts/fixtures/` | Fixture data for live tooling evals |
 
 ## Durable File And Transaction Boundary
 
-`scripts/_durable_files.py` owns stable advisory locks, complete writes, file and directory synchronization, same-directory replacement, and installed-byte verification. `scripts/_transaction_contract.py` owns transaction vocabulary, path confinement, and journal validation; `scripts/_file_transactions.py` remains the stable execution and recovery facade used by log rotation and backlink rebuilds. Existing byte-identical rotation archives are read-only transaction guards rather than rewritten targets.
+`scripts/_durable_files.py` owns stable advisory locks, complete writes, file and directory synchronization, same-directory replacement, and installed-byte verification. `scripts/_transaction_contract.py` owns transaction vocabulary, path confinement, and journal validation; `scripts/_file_transactions.py` remains the stable execution and recovery facade used by exact approved application, log rotation, and backlink rebuilds. Existing byte-identical rotation archives are read-only transaction guards rather than rewritten targets.
 
 An absent or verified-clean `.wiki-transactions/` root is safe. Any unpublished preparation, unfinished cleanup, nonterminal transaction, changed guard, conflict, corruption, or unknown state blocks mutation, Tier 1, pre-commit, and export. Recovery follows only the recorded deterministic policy; third-party bytes are preserved as a conflict rather than overwritten.
 

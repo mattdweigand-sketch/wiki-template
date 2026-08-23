@@ -22,6 +22,9 @@ from ledger_common import (
 DEFAULT_LEDGER = Path("scripts/capture-runs.jsonl")
 VALID_ROUTES = {"analysis-capture", "promotion-audit"}
 VALID_PHASES = {"accepted"}
+CAPTURE_APPLICATION_BOUNDARIES = {
+    "analysis-capture", "artifact-promotion", "synthesis-promotion",
+}
 VALID_TRIGGERS = {
     "reusable_distinction",
     "ranking_or_framework",
@@ -258,11 +261,98 @@ def validate_synthesis_approval(record: dict[str, object]) -> list[str]:
     return errors
 
 
+def validate_capture_application(record: dict[str, object]) -> list[str]:
+    """Validate one combined exact-application ledger record."""
+    fields = {
+        "record_type", "schema_version", "application_status", "applied_at",
+        "authorization_digest", "capture_boundary", "purpose",
+        "primary_destination", "editable_scope", "targets",
+    }
+    errors: list[str] = []
+    if set(record) != fields:
+        missing = sorted(fields - set(record))
+        unknown = sorted(set(record) - fields)
+        if missing:
+            errors.append(f"capture application missing fields: {missing}")
+        if unknown:
+            errors.append(f"capture application has unknown fields: {unknown}")
+    if not is_strict_int(record.get("schema_version")) or record.get("schema_version") != 2:
+        errors.append("capture application must have schema_version 2")
+    if record.get("application_status") != "applied":
+        errors.append("application_status must be applied")
+    timestamp_error = validate_timestamp(record.get("applied_at"))
+    if timestamp_error:
+        errors.append(timestamp_error.replace("approved_at", "applied_at"))
+    digest = record.get("authorization_digest")
+    if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+        errors.append("authorization_digest must be 64 lowercase hex characters")
+    capture_boundary = record.get("capture_boundary")
+    if (
+        not isinstance(capture_boundary, str)
+        or capture_boundary not in CAPTURE_APPLICATION_BOUNDARIES
+    ):
+        errors.append(
+            f"capture_boundary must be one of {sorted(CAPTURE_APPLICATION_BOUNDARIES)}"
+        )
+    for field in ("purpose", "primary_destination"):
+        if not is_nonempty_string(record.get(field)):
+            errors.append(f"{field} must be a non-empty string")
+
+    scope = record.get("editable_scope")
+    if (
+        not isinstance(scope, list)
+        or not scope
+        or not all(is_nonempty_string(path) for path in scope)
+    ):
+        errors.append("editable_scope must be a non-empty sorted unique path list")
+        scope = []
+    elif scope != sorted(set(scope)):
+        errors.append("editable_scope must be a non-empty sorted unique path list")
+        scope = []
+    else:
+        errors.extend(_validate_pages(
+            {"pages_touched": scope, "primary_home": record.get("primary_destination")},
+            repo_root=Path.cwd(),
+        ))
+
+    targets = record.get("targets")
+    target_paths: list[str] = []
+    if not isinstance(targets, list) or not targets:
+        errors.append("targets must be a non-empty list")
+    else:
+        for index, target in enumerate(targets):
+            if not isinstance(target, dict) or set(target) != {
+                "path", "preimage_sha256", "postimage_sha256",
+            }:
+                errors.append(f"targets[{index}] has invalid fields")
+                continue
+            path = target.get("path")
+            if not is_nonempty_string(path):
+                errors.append(f"targets[{index}].path must be non-empty")
+            else:
+                target_paths.append(path)
+            preimage = target.get("preimage_sha256")
+            postimage = target.get("postimage_sha256")
+            if preimage is not None and (
+                not isinstance(preimage, str) or not SHA256_RE.fullmatch(preimage)
+            ):
+                errors.append(f"targets[{index}].preimage_sha256 must be null or lowercase SHA-256")
+            if not isinstance(postimage, str) or not SHA256_RE.fullmatch(postimage):
+                errors.append(f"targets[{index}].postimage_sha256 must be lowercase SHA-256")
+    if target_paths != sorted(set(target_paths)):
+        errors.append("target paths must be sorted and unique")
+    if target_paths != scope:
+        errors.append("target paths must exactly match editable_scope")
+    return errors
+
+
 def validate_approval(record: dict[str, object]) -> list[str]:
     if record.get("record_type") == "capture_approval":
         return validate_capture_approval(record)
     if record.get("record_type") == "synthesis_approval":
         return validate_synthesis_approval(record)
+    if record.get("record_type") == "capture_application":
+        return validate_capture_application(record)
     return [f"unsupported record_type {record.get('record_type')!r}"]
 
 

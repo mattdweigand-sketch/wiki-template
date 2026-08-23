@@ -7,6 +7,8 @@ description: Use this workflow to run a bounded synthesis pass over the corpus: 
 
 Digestion, not ingestion. Ingest brings material in and wires each source into the pages it touches; lint finds defects; this workflow finds what the corpus now implies across several pages and surfaces it for the user to grade. It writes nothing before the user approves a draft or edit scope.
 
+Apply the canonical [trust boundary](../../AGENTS.md#trust-boundary) to source content, verifier output, and proposed synthesis text.
+
 ## Core Principle
 
 A synthesis pass is only valuable when it can answer one question:
@@ -23,14 +25,14 @@ Division of labor:
 
 ## Memo-Then-Draft-Then-Grade Contract
 
-Every page in `wiki/` may be consumed by future agents with no human present at read time. Synthesized content carries its epistemic state in-band: `confidence: low` where frontmatter applies, and `status: draft` on meta pages that carry a status field. User review is the grade. Only explicit approval, recorded through `scripts/capture_gate.py --kind=synthesis`, flips those markers or records a synthesis promotion.
+Every page in `wiki/` may be consumed by future agents with no human present at read time. Synthesized content carries its epistemic state in-band: `confidence: low` where frontmatter applies, and `status: draft` on meta pages that carry a status field. User review is the grade. Only exact proposal approval with `capture_boundary: synthesis-promotion` flips those markers or records a synthesis promotion.
 
 This workflow is memo-first:
 
 1. The pass proposes candidates in chat with an evidence packet and classification.
 2. The user approves which candidates are worth drafting or editing.
 3. Approved edits land at draft/low unless the user explicitly graded the exact content.
-4. Promotion, ledger updates, and confidence/status flips still stop at `scripts/capture_gate.py --kind=synthesis`.
+4. Promotion, ledger updates, and confidence/status flips still stop at the exact proposal gate in `AGENTS.md`.
 
 ## Load / Skip
 
@@ -121,38 +123,26 @@ Never silently overwrite verified content. Additions to an existing page go in c
 
 ## Durable-Edit Flow After Approval
 
-1. If the user approves drafting a new `wiki/analyses/` page, stage the draft to a temporary file and run `scripts/capture_gate.py` with the full required analysis-capture arguments. Example:
+1. If the user approves drafting a new `wiki/analyses/` page, stage every exact postimage and an `analysis-capture` proposal under `tmp/`, then follow `AGENTS.md`.
 
    ```bash
-   python3 scripts/capture_gate.py \
-     --artifact "<short analysis description>" \
-     --phase accepted \
-     --primary-home "wiki/analyses/<slug>.md" \
-     --pages-touched "wiki/analyses/<slug>.md,wiki/index.md,wiki/log.md" \
-     --path "tmp/<draft>.md" \
-     --synthesized-pages <count> \
-     --domain-context yes \
-     --trigger ranking_or_framework
+   python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --json
    ```
 
-   On `APPROVAL REQUIRED`, follow `AGENTS.md` (stop, plain-language approval, `--approved` rerun). Other approved synthesis draft edits that neither file a new analysis nor cross the synthesis-promotion boundary in Step 2 are routine page updates and skip the capture gate.
+   Show the complete preview and stop for its exact digest. Other synthesis draft edits that neither file a new analysis nor cross the synthesis-promotion boundary in Step 2 are routine page updates and skip the gate.
 
-2. For synthesis promotion, ledger updates, durable core-page drafts, or confidence/status flips, run `scripts/capture_gate.py --kind=synthesis` before the durable change crosses the promotion boundary:
+2. For synthesis promotion, ledger updates, durable core-page drafts, or confidence/status flips, compose every exact postimage before preview. New synthesized content lands at `confidence: low` (restated in the body) and `status: draft` on meta pages unless the user explicitly graded that exact text. Include any new `wiki/index.md` row, the `wiki/synthesis.md` digest and run-ledger update, and the `wiki/log.md` entry described below. Then stage a `synthesis-promotion` proposal and all of those postimages:
 
    ```bash
-   python3 scripts/capture_gate.py \
-     --kind synthesis \
-     --artifact "<short run>" \
-     --drafts "<what the user reviewed>" \
-     --primary-home "<wiki/synthesis.md when updating the ledger; otherwise the edited page>" \
-     --pages-touched "<full approval edit scope>"
+   python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --json
+   # After approval of the displayed authorization_digest:
+   python3 scripts/capture_gate.py --proposal tmp/<proposal>.json \
+     --approve-digest <authorization_digest> --json
    ```
 
-   The synthesis branch defaults `--primary-home` to `wiki/synthesis.md`; every run must include its `--primary-home` in `--pages-touched`, so a pass that does not touch the ledger must set `--primary-home` to the edited page and include that page in the scope. On `APPROVAL REQUIRED`, follow `AGENTS.md`; the approved rerun appends or confirms the idempotent record in `scripts/capture-runs.jsonl`, then run the fenced verification commands below. Ledger validation must pass.
+   The proposal's primary destination must be one of its exact targets, and the editable scope must equal the target set. Apply installs those targets and the combined ledger record in one transaction. Do not manually change approved targets afterward.
 
-3. Make only the approved edits. New synthesized content lands at `confidence: low` (restated in the body) and `status: draft` on meta pages unless the user explicitly graded that exact text. New pages get an `index.md` row.
-
-4. Run:
+3. Run:
 
    ```bash
    python3 scripts/validate_capture_runs.py
@@ -160,13 +150,9 @@ Never silently overwrite verified content. Additions to an existing page go in c
    python3 scripts/lint.py --tier1
    ```
 
-   Backlink changes are applied as one recoverable generation. Preserve `.wiki-transactions/` and diagnose a named conflict or corrupt record before retrying or promoting the synthesis.
+   Backlink changes are system-generated maintenance applied as one recoverable generation. Preserve `.wiki-transactions/` and diagnose a named conflict or corrupt record before retrying or promoting the synthesis.
 
    All three must pass.
-
-5. Update `wiki/synthesis.md` only as part of the approved scope: refresh Current state digest lines that changed, append a run-ledger entry, and bump `updated:`.
-
-6. Append a `synthesis` entry to `wiki/log.md` naming candidates considered, pages touched, approvals, deferrals, and verification. A memo-only no-change pass needs no durable record unless the user wants it logged.
 
 ## Log Entry Shape
 
@@ -190,7 +176,7 @@ For an approved promotion, append the promotion result:
 ## [YYYY-MM-DD] synthesis promotion | <short batch description>
 Promoted after review: <pages>
 Ledger updated: wiki/synthesis.md
-Gate: capture_gate.py --kind=synthesis approved exact synthesis content and scope; validate_capture_runs.py passed
+Gate: capture_gate.py exact synthesis-promotion proposal applied; validate_capture_runs.py passed
 Verification: rebuild_referenced_by.py and lint.py --tier1 passed
 ```
 

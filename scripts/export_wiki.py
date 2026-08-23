@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 import subprocess
 import sys
 import zipfile
-from datetime import date
-from pathlib import Path
+from datetime import date, datetime, timezone
+from pathlib import Path, PurePosixPath
 
 from _file_transactions import transaction_status
 from wiki_backup_receipt import (
@@ -56,6 +57,25 @@ REQUIRED_PREFIXES = (
     "workflows/",
 )
 ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+BACKUP_MANIFEST_NAME = "BACKUP-MANIFEST.json"
+BACKUP_MANIFEST_FIELDS = {
+    "schema_version", "created_at", "members", "raw_artifact_manifest_sha256",
+}
+BACKUP_MEMBER_FIELDS = {"path", "size", "sha256"}
+SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+
+
+class _DuplicateBackupKey(ValueError):
+    pass
+
+
+def _strict_backup_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise _DuplicateBackupKey(f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
 
 
 def parser() -> argparse.ArgumentParser:
@@ -149,11 +169,40 @@ def _validated_export_date(value: str) -> str:
     return value
 
 
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+
+
+def build_backup_manifest(repo_root: Path, files: list[Path]) -> dict[str, object]:
+    """Build the canonical exact-member manifest for one export snapshot."""
+    members = []
+    for path in files:
+        content = path.read_bytes()
+        members.append({
+            "path": path.relative_to(repo_root).as_posix(),
+            "size": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+        })
+    members.sort(key=lambda member: str(member["path"]))
+    raw_manifest = repo_root / "scripts/raw-artifacts.json"
+    raw_sha = hashlib.sha256(raw_manifest.read_bytes()).hexdigest() if raw_manifest.is_file() else None
+    return {
+        "schema_version": 1,
+        "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "members": members,
+        "raw_artifact_manifest_sha256": raw_sha,
+    }
+
+
 def build_zip(repo_root: Path, output: Path, files: list[Path]) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for path in files:
             zf.write(path, path.relative_to(repo_root).as_posix())
+        info = zipfile.ZipInfo(BACKUP_MANIFEST_NAME)
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = (0o100600 << 16)
+        zf.writestr(info, _canonical_json_bytes(build_backup_manifest(repo_root, files)))
 
 
 def validate_names(names: list[str]) -> list[str]:
@@ -171,6 +220,116 @@ def validate_names(names: list[str]) -> list[str]:
     return errors
 
 
+def _safe_backup_member_name(name: object) -> bool:
+    if (
+        not isinstance(name, str)
+        or not name
+        or name.endswith("/")
+        or "\\" in name
+        or "\x00" in name
+        or re.match(r"^[A-Za-z]:", name)
+    ):
+        return False
+    path = PurePosixPath(name)
+    return (
+        not path.is_absolute()
+        and path.as_posix() == name
+        and all(part not in {"", ".", ".."} for part in path.parts)
+    )
+
+
+def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[str]]:
+    """Verify archive safety plus exact member set, sizes, and hashes."""
+    errors: list[str] = []
+    try:
+        with zipfile.ZipFile(output) as zf:
+            infos = zf.infolist()
+            names = [info.filename for info in infos]
+            if len(names) != len(set(names)):
+                errors.append("archive contains duplicate member names")
+            unsafe = [name for name in names if not _safe_backup_member_name(name)]
+            if unsafe:
+                errors.append(f"archive contains unsafe member names: {unsafe}")
+            casefolded = [name.casefold() for name in names]
+            if len(casefolded) != len(set(casefolded)):
+                errors.append("archive contains case-colliding member names")
+            for info in infos:
+                mode = (info.external_attr >> 16) & 0xFFFF
+                file_type = mode & 0o170000
+                if info.flag_bits & 0x1:
+                    errors.append(f"archive member is encrypted: {info.filename}")
+                if file_type not in {0, 0o100000}:
+                    errors.append(f"archive contains symlink or special member: {info.filename}")
+            if names.count(BACKUP_MANIFEST_NAME) != 1:
+                errors.append("archive must contain exactly one BACKUP-MANIFEST.json")
+                return None, errors
+            manifest_bytes = zf.read(BACKUP_MANIFEST_NAME)
+            try:
+                manifest = json.loads(
+                    manifest_bytes.decode("utf-8"),
+                    object_pairs_hook=_strict_backup_object,
+                )
+            except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateBackupKey) as exc:
+                return None, [*errors, f"backup manifest is invalid JSON: {exc}"]
+            if not isinstance(manifest, dict) or set(manifest) != BACKUP_MANIFEST_FIELDS:
+                errors.append("backup manifest has missing or unknown fields")
+                return None, errors
+            if manifest_bytes != _canonical_json_bytes(manifest):
+                errors.append("backup manifest is not canonical JSON")
+            if manifest.get("schema_version") != 1 or isinstance(manifest.get("schema_version"), bool):
+                errors.append("backup manifest schema_version must be integer 1")
+            created_at = manifest.get("created_at")
+            if not isinstance(created_at, str):
+                errors.append("backup manifest created_at must be a string")
+            else:
+                try:
+                    datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                except ValueError:
+                    errors.append("backup manifest created_at must be ISO-8601 parseable")
+            members = manifest.get("members")
+            if not isinstance(members, list):
+                errors.append("backup manifest members must be a list")
+                return None, errors
+            member_paths: list[str] = []
+            for index, member in enumerate(members):
+                if not isinstance(member, dict) or set(member) != BACKUP_MEMBER_FIELDS:
+                    errors.append(f"backup manifest members[{index}] has invalid fields")
+                    continue
+                path = member.get("path")
+                size = member.get("size")
+                digest = member.get("sha256")
+                if not _safe_backup_member_name(path) or path == BACKUP_MANIFEST_NAME:
+                    errors.append(f"backup manifest members[{index}].path is unsafe")
+                    continue
+                member_paths.append(path)
+                if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+                    errors.append(f"backup manifest members[{index}].size is invalid")
+                if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+                    errors.append(f"backup manifest members[{index}].sha256 is invalid")
+                if path in names:
+                    content = zf.read(path)
+                    if len(content) != size or hashlib.sha256(content).hexdigest() != digest:
+                        errors.append(f"archive member does not match manifest: {path}")
+            if member_paths != sorted(set(member_paths)):
+                errors.append("backup manifest member paths must be sorted and unique")
+            archive_members = sorted(name for name in names if name != BACKUP_MANIFEST_NAME)
+            if archive_members != member_paths:
+                errors.append("archive member set does not match backup manifest")
+            raw_sha = manifest.get("raw_artifact_manifest_sha256")
+            if raw_sha is not None and (
+                not isinstance(raw_sha, str) or not SHA256_RE.fullmatch(raw_sha)
+            ):
+                errors.append("raw_artifact_manifest_sha256 must be null or lowercase SHA-256")
+            raw_path = "scripts/raw-artifacts.json"
+            raw_member = next((member for member in members if isinstance(member, dict) and member.get("path") == raw_path), None)
+            expected_raw_sha = raw_member.get("sha256") if raw_member is not None else None
+            if raw_sha != expected_raw_sha:
+                errors.append("raw artifact manifest hash does not match its member")
+    except (OSError, KeyError, RuntimeError, zipfile.BadZipFile) as exc:
+        return None, [f"cannot verify backup archive: {exc}"]
+    return (manifest if not errors else None), errors
+
+
 def verify_zip(
     output: Path,
     expected_count: int,
@@ -179,16 +338,15 @@ def verify_zip(
     errors: list[str] = []
     if not output.exists():
         return False, [f"{output} was not created"]
+    manifest, manifest_errors = verify_backup_archive(output)
+    errors.extend(manifest_errors)
     with zipfile.ZipFile(output) as zf:
         names = zf.namelist()
-        corrupt = zf.testzip()
-    if corrupt:
-        errors.append(f"corrupt zip member: {corrupt}")
     if output_rel is not None and output_rel in names:
         errors.append(f"archive unexpectedly contains itself ({output_rel})")
     errors.extend(validate_names(names))
-    if len(names) != expected_count:
-        errors.append(f"archive file count {len(names)} did not match expected {expected_count}")
+    if len(names) != expected_count + 1:
+        errors.append(f"archive file count {len(names)} did not match expected {expected_count + 1}")
     return not errors, errors
 
 
