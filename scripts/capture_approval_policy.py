@@ -132,8 +132,7 @@ def scope_with_home(home: str, pages_touched: str) -> list[str]:
 def approval_guard(args: argparse.Namespace, route: str, home: str) -> str | None:
     """Block reasons for approval-required capture routes."""
     if not args.artifact.strip():
-        return ("--artifact must be a non-empty description; the gate will not "
-                "write an approval record its own validator would reject.")
+        return "--artifact must be a non-empty description."
     if contains_approval_path_placeholder(home) or not home or home == "none":
         return (f"{route} requires a concrete --primary-home path "
                 "(no placeholder); name the real durable destination.")

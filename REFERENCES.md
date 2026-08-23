@@ -59,7 +59,7 @@ The main control mechanisms are:
 | Schema and citations | `wiki/SCHEMA.md` defines page types, frontmatter, source types, confidence values, authority metadata, and citation rules. Specific facts cite `wiki/sources/` pages. |
 | Link graph | Authors maintain `## Related pages`; `scripts/rebuild_referenced_by.py` regenerates `## Referenced by` from one snapshot and applies the generation as a recoverable transaction. |
 | Deterministic lint | `scripts/lint.py --tier1` catches structural failures and malformed proof. Full lint also surfaces Tier-2 candidates for human or agent judgment. |
-| Durable writes | Stable-lock atomic ledger replacement and `.wiki-transactions/` protect interrupted, concurrent, and multi-file updates; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
+| Durable writes | Exact approved targets and their ledger postimage use one recoverable transaction under `.wiki-transactions/`; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
 | Live evals | `wiki-eval` runs the `SUITES` registry in `scripts/wiki_eval.py`, including parsing, durable files, transactions, lint and evidence checks, backlinks, gates, ledgers, export and backup receipts, stale-text sweep proof, log rotation, review dates, discoverability, wrapper parity, schema-doc parity, entity-catalog behavior, document reachability, and Tier-1 lint. |
 | Outcome review | `scripts/review_due.py` surfaces due `review_by` checkpoints; `workflows/maintenance/review.md` records what happened and whether confidence changes. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
@@ -119,7 +119,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/current-state-owners.json` | Optional, strict registry of current-state owner pages; ships disabled and empty |
 | `scripts/wiki_current_state.py` | Typed owner-registry loader, validator, and current-state drift evaluator used by lint |
 | `scripts/wiki_evidence.py` | Typed production seam for exact evidence samples, verifier batches, run validation, and disposable grounded-response packets |
-| `scripts/build_evidence_sample.py`, `scripts/build_verifier_batches.py`, `scripts/verify_evidence_run.py` | Thin agent-neutral CLI adapters for the sampled evidence workflow |
+| `scripts/build_evidence_sample.py`, `scripts/build_verifier_batches.py`, `scripts/verify_evidence_run.py`, `scripts/evidence_response.py` | Thin agent-neutral CLI adapters for sampled evidence and verified returned answers |
 | `scripts/wiki_backup_receipt.py`, `scripts/backup_state.py` | Destination-redacted verified-upload receipt and nonblocking freshness reporter; the local receipt is gitignored |
 | `scripts/export_wiki.py`, `scripts/restore_wiki.py` | Exact-manifest archive creation, offline verification, and absent-destination restore |
 | `scripts/capture-runs.jsonl` | Combined approval/application ledger; exact proposal apply installs its postimage with approved targets through the shared transaction |

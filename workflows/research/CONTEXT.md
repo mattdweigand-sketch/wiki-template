@@ -38,8 +38,43 @@ Analysis capture is a prose workflow with an executable approval gate. `scripts/
    insufficient, name the corpus gap instead of expanding into an unbounded
    scan or silently re-deriving the answer from `raw/`.
 3. Synthesize a clear answer with citations to wiki pages using `[[page-name]]`.
-4. Follow the Analysis Capture section below when the answer should be filed as a citable analysis.
-5. Append to `wiki/log.md` only when an analysis was filed or the user explicitly asked for a durable query record:
+4. If the answer uses a completed evidence run, follow Verified Returned Answers below. Otherwise, do not describe the answer as evidence-verified.
+5. Follow the Analysis Capture section below when the answer should be filed as a citable analysis.
+6. Append to `wiki/log.md` only when an analysis was filed or the user explicitly asked for a durable query record:
+
+## Verified Returned Answers
+
+For an answer covered by a current evidence run, write `response-draft.json` in that run directory with exactly `question` and ordered `statements`. Each statement has exact `text` and one or more originating `claim_ids`. Then run:
+
+```bash
+python3 scripts/evidence_response.py create \
+  --run-dir tmp/evidence-check/<run-id>
+```
+
+Give `response.json` and the named claims to an independent reviewer. Save its one-to-one verdicts as `response-review.json`, bound to each statement ID and hash:
+
+```json
+{
+  "schema_version": 1,
+  "evidence_snapshot_sha256": "<response.json value>",
+  "statements": [
+    {
+      "statement_id": "statement-001",
+      "statement_sha256": "<response.json value>",
+      "verdict": "VERIFIED"
+    }
+  ]
+}
+```
+
+Allowed verdicts are `VERIFIED`, `OVEREXTENDED`, `CONFLATED`, `MISMATCH`, and `NOT-FOUND`. Cover every statement exactly once and preserve its order. Then render only through:
+
+```bash
+python3 scripts/evidence_response.py render \
+  --run-dir tmp/evidence-check/<run-id>
+```
+
+Return the rendered output without paraphrasing it. The renderer rechecks the evidence snapshot, withholds unverified or flagged statements, and places citations beside every returned claim.
 
 ## Analysis Capture
 

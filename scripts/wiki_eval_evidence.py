@@ -36,6 +36,7 @@ from wiki_evidence import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = REPO_ROOT / "scripts/fixtures/wiki-evidence"
+RESPONSE_CLI = REPO_ROOT / "scripts/evidence_response.py"
 results = Results()
 
 
@@ -627,6 +628,64 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-response-") as td:
     results.record(
         "stale-evidence-cannot-render-verified-response", stale_rejected,
         "stale response rendered" if not stale_rejected else "",
+    )
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-evidence-response-cli-") as td:
+    root = Path(td).resolve()
+    run_dir, sample, _plant, _batches = make_repo(root, "response-cli")
+    claim = sample["claims"][0]
+    atomic_json(run_dir / "response-draft.json", {
+        "question": "What does the evidence support?",
+        "statements": [{
+            "text": "The CLI response is supported.",
+            "claim_ids": [claim["claim_id"]],
+        }],
+    })
+    create_proc = subprocess.run(
+        [
+            sys.executable, str(RESPONSE_CLI), "create",
+            "--repo-root", str(root),
+            "--run-dir", str(run_dir.relative_to(root)),
+        ],
+        cwd=root, text=True, capture_output=True, check=False,
+    )
+    response_path = run_dir / "response.json"
+    results.record(
+        "response-cli-creates-exact-packet",
+        create_proc.returncode == 0 and response_path.is_file(),
+        create_proc.stdout + create_proc.stderr,
+    )
+    if response_path.is_file():
+        packet = load_json(response_path)
+        atomic_json(run_dir / "response-review.json", {
+            "schema_version": 1,
+            "evidence_snapshot_sha256": packet["evidence_snapshot_sha256"],
+            "statements": [{
+                "statement_id": "statement-001",
+                "statement_sha256": packet["statements"][0]["statement_sha256"],
+                "verdict": "VERIFIED",
+            }],
+        })
+        render_proc = subprocess.run(
+            [
+                sys.executable, str(RESPONSE_CLI), "render",
+                "--repo-root", str(root),
+                "--run-dir", str(run_dir.relative_to(root)),
+            ],
+            cwd=root, text=True, capture_output=True, check=False,
+        )
+        rendered = render_proc.stdout
+    else:
+        render_proc = None
+        rendered = ""
+    results.record(
+        "response-cli-renders-only-reviewed-output",
+        render_proc is not None
+        and render_proc.returncode == 0
+        and "The CLI response is supported." in rendered
+        and f"(source: [[{claim['cited_slugs'][0]}]])" in rendered,
+        rendered + (render_proc.stderr if render_proc is not None else "response missing"),
     )
 
 sys.exit(results.finish())

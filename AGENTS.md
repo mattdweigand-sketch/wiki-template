@@ -52,7 +52,7 @@ Stage every exact target postimage under `tmp/`, then write one canonical JSON d
 
 Run `python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --json`. Show the complete preview and its `authorization_digest`, then stop. Plain-language approval authorizes only that displayed digest. After approval, run `python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --approve-digest <authorization_digest> --json`. Apply rereads the descriptor and staged bytes, rechecks destination preimages, and commits the exact targets plus the combined ledger postimage through one recoverable transaction. `ALREADY_APPLIED` is an exact byte no-op.
 
-Do not manually copy staged bytes after approval. The legacy flat CLI may diagnose route policy, but `--approved` is not authorization to apply target files.
+Do not manually copy staged bytes after approval. The legacy flat CLI may diagnose route policy, but `--approved` always fails; only exact proposal mode applies target files.
 
 ## Synthesis Approval Gate
 

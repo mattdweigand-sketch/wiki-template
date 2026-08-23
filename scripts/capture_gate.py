@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Deterministic approval gate for capture, promotion, and synthesis.
+"""Diagnose capture routes or apply one exact approved proposal.
 
-The gate covers exactly three approval boundaries: filing an analysis
-(analysis-capture), applying an artifact promotion (promotion-audit), and
-promoting reviewed synthesis output (--kind=synthesis). Unapproved runs are
-display-only. Approved reruns append or confirm a structured approval record
-before the workflow applies the durable change.
+Flat mode is display-only. Durable analysis capture, artifact promotion, and
+synthesis promotion use proposal mode, which binds approval to exact staged
+bytes and applies through the shared transaction engine.
 
 Phases other than `accepted` never cross an approval boundary; the gate takes a
 short non-approval path for them (route judgment lives in the routed prose
@@ -20,22 +18,16 @@ Determinism: the gate anchors on checkable facts, not only declared flags.
   There is no declared word-count input. The synthesis branch may only touch
   wiki/analyses/ pages that already exist on disk; new analysis pages must go
   through the measured analysis-capture route.
-- Approval-required routes reject placeholder ("<...>") paths anywhere in the
-  approval scope (primary home and pages touched) and any path outside the
-  allowed durable roots, so an approval names real, in-scope files. Before
-  writing, every approval record is checked against validate_capture_runs.py's
-  own rules; the gate never writes a record its validator would reject.
-- synthesis approval displays the reviewed --drafts content and full edit scope
-  before durable synthesis changes proceed.
+- Approval-required routes reject placeholder paths and paths outside the
+  allowed durable roots so diagnosis names a concrete proposed scope.
+- Synthesis diagnosis displays the declared draft and file scope.
 
-Measurement scope: word_count and draft_sha256 are measured from --path; the
-measured file is recorded as word_count_path. synthesized_pages is a declared
-value, never measured; validate_capture_runs.py re-checks that declared number
-for the 3-page analysis qualification.
+Measurement scope: flat diagnosis measures word count from --path.
+`synthesized_pages` remains a declared count used only for route selection.
 
 Exit codes:
-  0: approved route is allowed to proceed
-  2: approval required before proceeding
+  0: exact proposal applied, exact retry confirmed, or free route diagnosed
+  2: exact proposal or approval is required
   3: invalid or blocked route (argparse usage errors are remapped here so that
      exit 2 always means exactly "approval required")
 """
@@ -55,12 +47,10 @@ from _durable_files import DurableFileError, read_regular_bytes, sha256_bytes
 from _file_transactions import recover_all, run_transaction
 from _repo_paths import EXISTING_FILE, MAY_CREATE_FILE, RepoPathError, resolve_repo_path
 from _transaction_contract import TransactionError
-from _wiki_parse import FrontmatterError, canonical_authored_text
 from capture_approval_policy import (
     ACTION_LABELS,
     ANALYSES_PREFIX,
     APPROVAL_ROUTES,
-    DraftSha256,
     PROMOTION_TRIGGERS,
     approval_guard,
     classify_accepted,
@@ -72,16 +62,10 @@ from capture_approval_policy import (
     scope_with_home,
 )
 from capture_approval_records import (
-    AuthoredSha256,
-    DEFAULT_APPROVAL_LEDGER,
-    LEDGER_SCHEMA_DESCRIPTION,
     SYNTHESIS_DEFAULT_HOME,
-    append_capture_approval_record,
     capture_application_from_ledger,
     capture_application_record,
-    capture_approval_record,
     render_capture_application_ledger,
-    synthesis_approval_record,
 )
 from ledger_common import (
     ALLOWED_ROOT_FILES,
@@ -89,7 +73,6 @@ from ledger_common import (
     LedgerIntegrityError,
     split_scope,
 )
-from validate_capture_runs import validate_approval
 
 
 FREE_PHASES = ("drafting", "source", "decision", "experience", "workflow")
@@ -413,12 +396,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--approved",
         action="store_true",
-        help="Set only after the user explicitly approves this exact route.",
-    )
-    p.add_argument(
-        "--approval-ledger",
-        default=DEFAULT_APPROVAL_LEDGER,
-        help="JSONL file for approved capture, promotion, and synthesis records.",
+        help=argparse.SUPPRESS,
     )
     return p
 
@@ -445,7 +423,7 @@ def print_synthesis_summary(args: argparse.Namespace, home: str, scope: list[str
     print("Proposed action: Approve synthesis content and update the synthesis ledger.")
     print(f"Primary home: {home}")
     print(f"Drafts for review: {args.drafts}")
-    print(f"Files the agent may edit after approval: {', '.join(scope)}")
+    print(f"Proposed file scope: {', '.join(scope)}")
 
 
 def print_capture_approval_request(args: argparse.Namespace, route: str, home: str,
@@ -454,58 +432,23 @@ def print_capture_approval_request(args: argparse.Namespace, route: str, home: s
     files = ", ".join(scope)
     print()
     print("APPROVAL REQUIRED")
-    print("No files have been changed yet.")
+    print("Flat mode is read-only route diagnosis. No files have been changed.")
     print()
     print("What you are approving:")
     print(f"- Durable action: {action}")
     print(f"- Artifact: {args.artifact}")
     print(f"- Primary destination: {home}")
     print(f"- Files the agent may edit: {files}")
-    print()
-    print("Approve only if these are correct:")
-    print("- This artifact should be saved to the wiki, not left in chat.")
-    print("- The primary destination is the right durable home.")
-    print("- The file list is the full intended edit scope.")
-    print()
-    print('Reply with plain-language approval, such as "approve" or "yes", or say what should change.')
-    print()
-    print("Agents: re-run with --approved only after the user clearly approves the displayed action, destination, and file scope.")
+    print('Reply with plain-language approval only after exact proposal preview.')
+    print("Stage exact postimages and run --proposal before requesting approval.")
 
 
 def print_synthesis_approval_request() -> None:
     print()
     print("APPROVAL REQUIRED")
+    print("Flat mode is read-only route diagnosis.")
     print("Do not update wiki/synthesis.md, flip draft confidence/status, or log a synthesis promotion yet.")
-    print()
-    print("Approve only if these are correct:")
-    print("- The reviewed synthesis content is right.")
-    print("- The primary ledger/durable home is right.")
-    print("- The file list is the full intended approval edit scope.")
-    print()
-    print('Reply with plain-language approval, such as "approve" or "yes", or say what should change.')
-    print()
-    print("Agents: re-run with --approved only after the user clearly approves the displayed draft and file scope.")
-
-
-def print_capture_approval_confirmed(args: argparse.Namespace, route: str, home: str,
-                                     scope: list[str]) -> None:
-    print()
-    print("APPROVAL CONFIRMED")
-    print(f"Approved action: {ACTION_LABELS[route]}")
-    print(f"Approved primary destination: {home}")
-    print(f"Approved file scope: {', '.join(scope)}")
-    print(f"Approval record: {args.approval_ledger}")
-    print("Proceed only within this approved scope.")
-
-
-def print_synthesis_approval_confirmed(args: argparse.Namespace, home: str, scope: list[str]) -> None:
-    print()
-    print("APPROVAL CONFIRMED")
-    print(f"Approved synthesis: {args.artifact}")
-    print(f"Approved primary home: {home}")
-    print(f"Approved file scope: {', '.join(scope)}")
-    print(f"Approval record: {args.approval_ledger}")
-    print("Proceed only within this approved scope.")
+    print("Stage exact postimages and run --proposal before requesting approval.")
 
 
 def blocked(reason: str, args: argparse.Namespace) -> int:
@@ -518,8 +461,7 @@ def blocked(reason: str, args: argparse.Namespace) -> int:
 
 def synthesis_guard(args: argparse.Namespace, home: str, scope: list[str]) -> str | None:
     if not args.artifact.strip():
-        return ("--artifact must be a non-empty description; the gate will not "
-                "write an approval record its own validator would reject.")
+        return "--artifact must be a non-empty description."
     if not args.drafts.strip():
         return "Synthesis approval requires --drafts so the user can review what changed."
     if not args.pages_touched.strip():
@@ -554,24 +496,6 @@ def run_synthesis(args: argparse.Namespace) -> int:
         return blocked(reason, args)
 
     print_synthesis_summary(args, home, scope)
-    if args.approved:
-        record = synthesis_approval_record(args, home, scope)
-        problems = validate_approval(record)
-        if problems:
-            return blocked("refusing to write an approval record its own validator "
-                           "rejects: " + "; ".join(problems), args)
-        wrote, ledger_path, label, record_hash = append_capture_approval_record(
-            record, args.approval_ledger, "synthesis_approval"
-        )
-        print("Approval: confirmed for this exact synthesis content and file scope.")
-        if wrote:
-            print(f"Structured approval record: appended approval for {label} to {ledger_path}")
-        else:
-            print(f"Structured approval record: already present for {label} in {ledger_path}")
-        print(f"Approval record SHA-256: {record_hash}")
-        print_synthesis_approval_confirmed(args, home, scope)
-        return 0
-
     print_synthesis_approval_request()
     return 2
 
@@ -610,15 +534,11 @@ def run_capture(args: argparse.Namespace) -> int:
     # --path blocks here with the precise diagnosis; letting it fall through
     # would misclassify the run as chat-only and report the wrong problem.
     word_count = 0
-    word_count_source = "unmeasured"
-    draft_sha256: DraftSha256 | None = None
-    draft_text = ""
     if args.path:
         measured = measure_draft(args.path)
         if measured is None:
             return blocked(f"--path {args.path!r} is not a readable file.", args)
-        word_count, draft_sha256, draft_text = measured
-        word_count_source = "measured"
+        word_count, _draft_sha256, _draft_text = measured
 
     if args.synthesized_pages < 0:
         return blocked("--synthesized-pages must be a non-negative count of "
@@ -654,41 +574,10 @@ def run_capture(args: argparse.Namespace) -> int:
             return blocked(block, args)
 
     scope = scope_with_home(home, args.pages_touched)
-    authored_sha256: AuthoredSha256 | None = None
-    if args.path and (
-        route == "analysis-capture" or any(is_analyses_path(path) for path in scope)
-    ):
-        try:
-            authored = canonical_authored_text(draft_text).encode("utf-8")
-        except FrontmatterError as exc:
-            return blocked(
-                f"--path {args.path!r} has malformed frontmatter: {exc}", args
-            )
-        authored_sha256 = AuthoredSha256(hashlib.sha256(authored).hexdigest())
     print_capture_summary(args, route, home, reason, scope)
 
     if route == "chat-only":
         print("Approval: not required; do not edit files.")
-        return 0
-
-    if args.approved:
-        record = capture_approval_record(args, route, home, scope,
-                                         word_count, word_count_source,
-                                         draft_sha256, authored_sha256)
-        problems = validate_approval(record)
-        if problems:
-            return blocked("refusing to write an approval record its own validator "
-                           "rejects: " + "; ".join(problems), args)
-        wrote, ledger_path, label, record_hash = append_capture_approval_record(
-            record, args.approval_ledger, "capture_approval"
-        )
-        print("Approval: confirmed for this exact route.")
-        if wrote:
-            print(f"Structured approval record: appended approval for {label} to {ledger_path}")
-        else:
-            print(f"Structured approval record: already present for {label} in {ledger_path}")
-        print(f"Approval record SHA-256: {record_hash}")
-        print_capture_approval_confirmed(args, route, home, scope)
         return 0
 
     print_capture_approval_request(args, route, home, scope)
@@ -706,13 +595,17 @@ def main() -> int:
         return exc.code if isinstance(exc.code, int) else 3
     args.trigger = sorted(set(args.trigger))
     try:
+        if args.approved:
+            raise CaptureProposalError(
+                "legacy --approved is disabled; stage exact postimages and use --proposal"
+            )
         if args.proposal:
             if any(
                 value for value in (
                     args.artifact, args.phase, args.primary_home, args.pages_touched,
                     args.source_path, args.path, args.drafts, args.trigger,
                 )
-            ) or args.kind != "capture" or args.approved:
+            ) or args.kind != "capture":
                 raise CaptureProposalError(
                     "proposal mode accepts only --proposal, optional --approve-digest, and --json"
                 )

@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""Shared helpers for the approval ledger.
-
-The approval gate writes capture_approval and synthesis_approval records to one
-JSONL ledger through a stable sidecar lock and atomic full-file replacement.
-Idempotency is based on canonical approval content identity:
-historical records may still carry inert legacy run_id fields, but new records
-do not generate legacy identifiers and validators ignore them. Measured capture
-records may carry draft_sha256 as durable content evidence; that hash remains
-part of the approval identity.
-
-Every approval record's primary_home must be included in pages_touched, so the
-main approved destination is always part of the explicit editable scope.
-"""
+"""Shared parsing and validation helpers for the capture application ledger."""
 
 from __future__ import annotations
 
@@ -22,13 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, NewType
 
-from _durable_files import (
-    DurableFileError,
-    atomic_replace_bytes,
-    read_regular_bytes,
-    sha256_bytes,
-    stable_lock,
-)
+from _durable_files import DurableFileError, read_regular_bytes
 from _repo_paths import MAY_CREATE_FILE, RepoPathError, resolve_repo_path
 
 
@@ -122,12 +104,6 @@ def split_scope(value: str) -> list[str]:
     items = [item.strip() for item in value.split(",") if item.strip()]
     return list(dict.fromkeys(items))
 
-
-def approved_at_now() -> str:
-    """Current UTC time in the ISO-8601 'Z' form the gate emits."""
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
 def validate_timestamp(value: object) -> str | None:
     if not is_nonempty_string(value):
         return "approved_at must be a non-empty string"
@@ -179,21 +155,6 @@ def validate_pages(record: dict[str, object], *, repo_root: Path) -> list[str]:
     return errors
 
 
-def has_schema_record(path: Path) -> bool:
-    if not path.exists():
-        return False
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line, object_pairs_hook=_reject_duplicate_ledger_keys)
-        except json.JSONDecodeError:
-            continue
-        if record.get("record_type") == "schema":
-            return True
-    return False
-
-
 def approval_identity(record: dict[str, object]) -> str:
     """Canonical content identity for idempotency and duplicate detection.
 
@@ -207,12 +168,6 @@ def approval_identity(record: dict[str, object]) -> str:
         if key not in IDENTITY_EXCLUDE_FIELDS
     }
     return json.dumps(filtered, sort_keys=True, separators=(",", ":"))
-
-
-def approval_label(record: dict[str, object]) -> str:
-    artifact = str(record.get("artifact") or "approval").strip() or "approval"
-    return artifact if len(artifact) <= 80 else artifact[:77] + "..."
-
 
 def approval_record_sha256(line: str | bytes) -> ApprovalRecordSha256:
     """SHA-256 of one exact UTF-8 JSONL line, excluding only its LF."""
@@ -323,157 +278,6 @@ def validate_ledger_text(
     if schema_count != 1:
         errors.append(f"expected exactly one schema record, found {schema_count}")
     return LedgerValidation(tuple(errors), approval_count, tuple(approvals))
-
-
-def _decode_ledger(content: bytes, label: str) -> str:
-    try:
-        return content.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise LedgerIntegrityError(f"{label} is not valid UTF-8: {exc}") from exc
-
-
-def _require_valid(result: LedgerValidation) -> None:
-    if result.errors:
-        raise LedgerIntegrityError(result.errors)
-
-
-def _validate_candidate(
-    record: dict[str, object],
-    record_type: str,
-    validate_approval: Callable[[dict[str, object]], list[str]],
-) -> None:
-    errors: list[str] = []
-    if not isinstance(record_type, str) or record_type not in APPROVAL_RECORD_TYPES:
-        errors.append(f"unsupported candidate record_type {record_type!r}")
-    if not isinstance(record, dict):
-        errors.append("candidate record must be a JSON object")
-    elif record.get("record_type") != record_type:
-        errors.append(
-            f"candidate record_type {record.get('record_type')!r} does not match {record_type!r}"
-        )
-    elif record.get("backfilled") is True:
-        errors.append("the live writer may not create backfilled approval records")
-    elif _json_nesting_exceeds(record):
-        errors.append("candidate JSON exceeds maximum nesting depth")
-    else:
-        errors.extend(validate_approval(record))
-    if errors:
-        raise LedgerIntegrityError([f"candidate: {error}" for error in errors])
-
-
-def approval_lock_path(ledger_path: Path) -> Path:
-    """Stable sidecar lock whose inode survives replacement of the ledger."""
-    return ledger_path.with_name(f".{ledger_path.stem}.lock")
-
-
-def write_approval_record(
-    ledger_path: Path,
-    record: dict[str, object],
-    record_type: str,
-    schema_description: str,
-    validate_approval: Callable[[dict[str, object]], list[str]],
-    *,
-    fault: Callable[[str], None] | None = None,
-) -> tuple[bool, Path, str, ApprovalRecordSha256]:
-    """Validate then idempotently install one complete approval-ledger image."""
-    _validate_candidate(record, record_type, validate_approval)
-    if not is_nonempty_string(schema_description):
-        raise LedgerIntegrityError("candidate schema description must be nonempty")
-    try:
-        record_line = json.dumps(
-            record, sort_keys=True, separators=(",", ":")
-        ).encode("utf-8")
-    except (TypeError, ValueError, RecursionError) as exc:
-        raise LedgerIntegrityError(f"candidate is not JSON serializable: {exc}") from exc
-
-    label = approval_label(record)
-    try:
-        ledger_path.parent.mkdir(parents=True, exist_ok=True)
-        with stable_lock(approval_lock_path(ledger_path)):
-            content_or_none, _ = read_regular_bytes(ledger_path, allow_missing=True)
-            content = content_or_none or b""
-            if content:
-                existing = validate_ledger_text(
-                    _decode_ledger(content, str(ledger_path)),
-                    APPROVAL_RECORD_TYPES,
-                    validate_approval,
-                )
-                _require_valid(existing)
-                identity = approval_identity(record)
-                for approval in existing.approvals:
-                    if approval_identity(approval.record) == identity:
-                        return False, ledger_path, label, approval.sha256
-            else:
-                existing = validate_ledger_text(
-                    "", APPROVAL_RECORD_TYPES, validate_approval, allow_empty=True
-                )
-                _require_valid(existing)
-
-            if content:
-                separator = b"" if content.endswith(b"\n") else b"\n"
-                payload = separator + record_line + b"\n"
-            else:
-                schema = {
-                    "record_type": "schema",
-                    "schema_version": 1,
-                    "description": schema_description,
-                }
-                schema_line = json.dumps(
-                    schema, sort_keys=True, separators=(",", ":")
-                ).encode("utf-8")
-                payload = schema_line + b"\n" + record_line + b"\n"
-
-            projected = content + payload
-            projected_result = validate_ledger_text(
-                _decode_ledger(projected, "projected ledger"),
-                APPROVAL_RECORD_TYPES,
-                validate_approval,
-            )
-            _require_valid(projected_result)
-            expected = sha256_bytes(content) if content_or_none is not None else None
-            atomic_replace_bytes(
-                ledger_path,
-                projected,
-                mode=0o600,
-                expected_sha256=expected,
-                fault=fault,
-            )
-            installed, _ = read_regular_bytes(ledger_path)
-            if installed is None or sha256_bytes(installed) != sha256_bytes(projected):
-                raise LedgerIntegrityError("installed ledger hash does not match projected bytes")
-            installed_result = validate_ledger_text(
-                _decode_ledger(installed, str(ledger_path)),
-                APPROVAL_RECORD_TYPES,
-                validate_approval,
-            )
-            _require_valid(installed_result)
-    except LedgerIntegrityError:
-        raise
-    except (OSError, DurableFileError) as exc:
-        raise LedgerIntegrityError(f"ledger I/O failed for {ledger_path}: {exc}") from exc
-    return True, ledger_path, label, approval_record_sha256(record_line)
-
-
-def lookup_approval_record_by_sha256(
-    path: Path,
-    record_sha256: ApprovalRecordSha256,
-    record_types: set[str] | frozenset[str],
-    validate_approval: Callable[[dict[str, object]], list[str]],
-) -> dict[str, object] | None:
-    """Return a record by exact line hash, only after full-ledger validation."""
-    try:
-        content, _ = read_regular_bytes(path)
-    except (OSError, DurableFileError) as exc:
-        raise LedgerIntegrityError(f"cannot read approval ledger {path}: {exc}") from exc
-    assert content is not None
-    result = validate_ledger_text(
-        _decode_ledger(content, str(path)), record_types, validate_approval
-    )
-    _require_valid(result)
-    for approval in result.approvals:
-        if approval.sha256 == record_sha256:
-            return approval.record
-    return None
 
 
 def validate_ledger(
