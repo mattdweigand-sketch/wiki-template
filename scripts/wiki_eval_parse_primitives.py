@@ -1,25 +1,11 @@
 #!/usr/bin/env python3
 """Regression eval for shared Markdown parsing primitives.
 
-R1 extracted split_frontmatter, frontmatter_block, LINK_RE, the code-span REs,
-strip_code_spans, and dangling_slugs into one module so lint.py,
-review_due.py, and rebuild_referenced_by.py stop reimplementing them and cannot
-silently drift. This suite pins that contract three ways:
+The shared primitives keep lint, review, and backlink behavior aligned. This
+suite tests their parsing behavior directly, including malformed input.
 
-1. Unit assertions on the primitives against a CRLF / edge-case sample, so the
-   parse grammar (wikilink slug capture, code-span stripping, frontmatter split,
-   block-list-preserving block extraction) is locked at the source.
-2. An end-to-end consistency check: one CRLF-on-disk page driven through all
-   callers, proving they agree. Every caller reads via Path.read_text (universal
-   newlines), so a CRLF source is normalized to LF before _wiki_parse sees it,
-   and all scripts treat the identical page identically.
-3. Wiring assertions that each caller's source actually imports from _wiki_parse,
-   so reverting any caller to a private reimplementation fails here.
-
-Regression caught: if any caller is reverted to a private parser, or the shared
-grammar is weakened (code-span stripping reordered or dropped, the frontmatter
-anchor changed, the alias half of a [[slug|alias]] link captured instead of the
-slug, the folder-pointer skip removed), at least one assertion below fails.
+The separate caller suite drives CRLF files through public command behavior.
+This file does not inspect caller source code or private import wiring.
 """
 
 from __future__ import annotations
@@ -87,6 +73,22 @@ except FrontmatterError:
 else:
     duplicate_frontmatter_rejected = False
 check("duplicate-frontmatter-key-is-rejected", duplicate_frontmatter_rejected)
+
+for quote_case, malformed_value in (
+    ("leading", "'configured"),
+    ("trailing", "configured'"),
+    ("different", "'configured\""),
+):
+    try:
+        split_frontmatter(f"---\nstatus: {malformed_value}\n---\n")
+    except FrontmatterError:
+        mismatched_quote_rejected = True
+    else:
+        mismatched_quote_rejected = False
+    check(
+        f"frontmatter-{quote_case}-mismatched-quote-is-rejected",
+        mismatched_quote_rejected,
+    )
 
 # LINK_RE captures the bare slug, strips the folder prefix, and drops the alias.
 # The folder-pointer link [[concepts/]] is captured verbatim ("concepts/"); the

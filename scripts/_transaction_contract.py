@@ -12,14 +12,9 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from _durable_files import (
-    DurableFileError,
-    atomic_replace_bytes,
-    durable_unlink,
     fsync_directory,
     read_regular_bytes,
-    require_single_link_regular,
     sha256_bytes,
-    stable_lock,
 )
 from _strict_json import reject_duplicate_json_keys
 

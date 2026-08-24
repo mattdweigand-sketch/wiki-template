@@ -157,9 +157,7 @@ def read_domain_configuration(repo_root: Path) -> DomainConfiguration:
     if frontmatter is None:
         raise CatalogError("wiki/domain.md has no frontmatter configuration")
     status = frontmatter.get("status", "").strip()
-    if status.startswith(("\"", "'")) or status.endswith(("\"", "'")):
-        if len(status) < 2 or status[0] != status[-1] or status[0] not in "\"'":
-            raise CatalogError("wiki/domain.md status has mismatched quotes")
+    if len(status) >= 2 and status[0] == status[-1] and status[0] in "\"'":
         status = status[1:-1].strip()
     if status != "configured":
         raise CatalogError("wiki/domain.md status must be configured")

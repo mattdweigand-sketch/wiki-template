@@ -25,11 +25,9 @@ ADJUDICATION_CATEGORY_FIELDS = {
     "glossary_volatile": "reviewed_glossary_volatile",
     "unconsumed_sources": "reviewed_unconsumed_sources",
 }
-ADJUDICATION_PAGE_FIELDS = (
-    "accepted_orphans",
-    "reviewed_quotes",
-    "reviewed_authority_missing",
-    "reviewed_unconsumed_sources",
+ADJUDICATION_PAGE_FIELDS = tuple(
+    ADJUDICATION_CATEGORY_FIELDS[key]
+    for key in ("orphans", "quotes", "authority_missing", "unconsumed_sources")
 )
 LOG_ROTATION_WARN_LINES = 2500
 

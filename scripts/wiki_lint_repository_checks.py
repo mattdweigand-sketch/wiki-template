@@ -204,11 +204,13 @@ def check_folder_structure() -> LintFailures:
         fails.append(("raw-buckets", str(raw_buckets_path), raw_registry_error))
 
     raw_root = Path("raw")
+    raw_present_dirs: set[str] = set()
     if raw_root.exists():
         for p in sorted(raw_root.iterdir()):
             name = p.name
             rel = str(p)
             if p.is_dir():
+                raw_present_dirs.add(name)
                 if not KEBAB_RE.match(name):
                     fails.append(("raw-structure", rel, "raw/ folder is not kebab-case"))
                 if raw_allowed_dirs is not None and name not in raw_allowed_dirs:
@@ -218,6 +220,13 @@ def check_folder_structure() -> LintFailures:
                     fails.append(("raw-structure", rel, "loose raw/ file; place source artifacts in a typed subfolder"))
             else:
                 fails.append(("raw-structure", rel, "unexpected raw/ entry type"))
+    if raw_allowed_dirs is not None:
+        for name in sorted(raw_allowed_dirs - raw_present_dirs):
+            fails.append((
+                "raw-structure",
+                f"raw/{name}",
+                "registered raw/ bucket is missing from the tree",
+            ))
 
     deliverables_root = Path("deliverables")
     if deliverables_root.exists():
@@ -466,21 +475,23 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
         for e in raw.get(key, []):
             if not isinstance(e, dict) or not isinstance(e.get("page"), str):
                 return {}, f"every '{key}' entry needs a string 'page' field"
-    for key in ("reviewed_recompile_candidates",):
-        for e in raw.get(key, []):
-            pair = e.get("pair") if isinstance(e, dict) else None
-            if not (isinstance(pair, list) and len(pair) == 2
-                    and all(isinstance(x, str) for x in pair)):
-                return {}, f"every '{key}' entry needs a two-item string 'pair' field"
-    for e in raw.get("reviewed_quotes", []):
+    recompile_key = ADJUDICATION_CATEGORY_FIELDS["recompile"]
+    for e in raw.get(recompile_key, []):
+        pair = e.get("pair") if isinstance(e, dict) else None
+        if not (isinstance(pair, list) and len(pair) == 2
+                and all(isinstance(x, str) for x in pair)):
+            return {}, f"every '{recompile_key}' entry needs a two-item string 'pair' field"
+    quotes_key = ADJUDICATION_CATEGORY_FIELDS["quotes"]
+    for e in raw.get(quotes_key, []):
         if not (isinstance(e, dict) and isinstance(e.get("page"), str)
                 and isinstance(e.get("quote"), str)):
-            return {}, "every 'reviewed_quotes' entry needs string 'page' and 'quote' fields"
-    for e in raw.get("reviewed_glossary_volatile", []):
+            return {}, f"every '{quotes_key}' entry needs string 'page' and 'quote' fields"
+    glossary_key = ADJUDICATION_CATEGORY_FIELDS["glossary_volatile"]
+    for e in raw.get(glossary_key, []):
         if not (isinstance(e, dict) and isinstance(e.get("term"), str)
                 and isinstance(e.get("phrase"), str)):
-            return {}, ("every 'reviewed_glossary_volatile' entry needs "
-                        "string 'term' and 'phrase' fields")
+            return {}, (f"every '{glossary_key}' entry needs string 'term' "
+                        "and 'phrase' fields")
     return raw, None
 
 

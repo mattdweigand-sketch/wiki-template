@@ -237,6 +237,18 @@ for case_name, registry, marker in (
         absent=("Traceback",),
     )
 
+
+def remove_registered_raw_bucket(root: Path) -> None:
+    shutil.rmtree(root / "raw/notes")
+
+
+run_case(
+    "registered-raw-bucket-missing-from-tree-fires",
+    remove_registered_raw_bucket,
+    expect_code=1,
+    expect=("raw-structure", "raw/notes", "registered raw/ bucket is missing"),
+)
+
 for page, field in (
     ("wiki/concepts/alpha.md", "title"),
     ("wiki/concepts/alpha.md", "type"),
@@ -359,7 +371,7 @@ def _install_raw_git_fixture(root: Path, real_git: str) -> bytes:
         REPO_ROOT / "scripts/hooks/pre-commit", root / "scripts/hooks/pre-commit"
     )
     source = root / "raw/notes/source.txt"
-    source.parent.mkdir(parents=True)
+    source.parent.mkdir(parents=True, exist_ok=True)
     (source.parent / ".gitkeep").write_text("", encoding="utf-8")
     source_bytes = b"local source artifact\n"
     source.write_bytes(source_bytes)
@@ -494,7 +506,7 @@ def check_tracked_raw_case_variant_fires():
             [real_git, "config", "core.ignorecase", "true"],
             cwd=root, check=True, capture_output=True,
         )
-        (root / "Raw").mkdir()
+        (root / "Raw").mkdir(exist_ok=True)
         (root / "Raw/leak.txt").write_text("secret", encoding="utf-8")
         subprocess.run(
             [real_git, "add", "-f", "Raw/leak.txt"],

@@ -33,7 +33,7 @@ run_case(
 run_case(
     "unsafe-raw-symlink-cannot-satisfy-quote",
     lambda r: (
-        (r / "raw" / "notes").mkdir(parents=True),
+        (r / "raw" / "notes").mkdir(parents=True, exist_ok=True),
         append(r, "wiki/index.md", "\n" + FIXTURE_QUOTE + "\n"),
         (r / "raw" / "notes" / "escape.txt").symlink_to(
             r / "wiki" / "index.md"

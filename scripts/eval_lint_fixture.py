@@ -38,6 +38,11 @@ def _build_lint_fixture_repository() -> tuple[tempfile.TemporaryDirectory[str], 
     shutil.copytree(FIXTURE / "scripts", root / "scripts")
     for folder in FOLDER_TYPE:
         (root / "wiki" / folder).mkdir(exist_ok=True)
+    raw_registry = json.loads(
+        (root / "scripts/raw-buckets.json").read_text(encoding="utf-8")
+    )
+    for bucket in raw_registry["buckets"]:
+        (root / "raw" / bucket).mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     subprocess.run(
         ["git", "config", "user.email", "lint-fixture@example.invalid"],

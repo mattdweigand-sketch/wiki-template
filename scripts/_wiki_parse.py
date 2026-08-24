@@ -130,7 +130,13 @@ def split_frontmatter(text: str) -> tuple[dict[str, str] | None, str]:
             key = km.group(1)
             if key in fm:
                 raise FrontmatterError(f"duplicate frontmatter key: {key}")
-            fm[key] = km.group(2).strip()
+            value = km.group(2).strip()
+            if value and (value[0] in "\"'" or value[-1] in "\"'"):
+                if len(value) < 2 or value[0] != value[-1] or value[0] not in "\"'":
+                    raise FrontmatterError(
+                        f"frontmatter value for {key} has mismatched quotes"
+                    )
+            fm[key] = value
     return fm, body
 
 

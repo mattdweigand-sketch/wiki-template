@@ -735,7 +735,7 @@ run_case(
     # firing case. A raw/ tree plus unparseable taxonomy is a Tier-1 failure.
     "corrupt-raw-buckets-fires",
     lambda r: (
-        (r / "raw" / "notes").mkdir(parents=True),
+        (r / "raw" / "notes").mkdir(parents=True, exist_ok=True),
         (r / "raw" / "notes" / ".gitkeep").write_text(""),
         (r / "scripts" / "raw-buckets.json").write_text("{not valid json"),
     ),
@@ -745,7 +745,7 @@ run_case(
     # code:eval-lint#1: wrong-shape raw-buckets.json (buckets not an object).
     "wrong-shape-raw-buckets-fires",
     lambda r: (
-        (r / "raw" / "notes").mkdir(parents=True),
+        (r / "raw" / "notes").mkdir(parents=True, exist_ok=True),
         (r / "raw" / "notes" / ".gitkeep").write_text(""),
         (r / "scripts" / "raw-buckets.json").write_text(
             '{"description": "fixture", "buckets": ["notes"]}'
@@ -756,7 +756,7 @@ run_case(
 run_case(
     "loose-raw-file-fires",
     lambda r: (
-        (r / "raw").mkdir(),
+        (r / "raw").mkdir(exist_ok=True),
         (r / "raw" / "source.pdf").write_text("loose source artifact"),
     ),
     expect_code=1, expect=("raw-structure", "loose raw/ file"),

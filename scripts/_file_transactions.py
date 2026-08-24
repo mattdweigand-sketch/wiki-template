@@ -21,7 +21,6 @@ from _durable_files import (
     durable_unlink,
     fsync_directory,
     read_regular_bytes,
-    require_single_link_regular,
     sha256_bytes,
     stable_lock,
 )
@@ -31,13 +30,11 @@ from _transaction_contract import (
     CONSUMERS,
     PREPARING_PREFIX,
     SCHEMA_VERSION,
-    STATES,
     TRANSACTION_EXECUTION_CONTRACT,
     TRANSITIONS,
     TransactionConflict,
     TransactionCorrupt,
     TransactionError,
-    validate_journal,
     validate_target_path,
 )
 
