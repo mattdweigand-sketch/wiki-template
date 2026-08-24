@@ -53,7 +53,13 @@ def main() -> int:
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     results.record(
         "live-catalog-contains-only-governed-schema-fields",
-        set(raw) == {"schema_version", "description", "types"},
+        raw.get("schema_version") == 3
+        and set(raw) == {"schema_version", "description", "types"}
+        and all(
+            "authority_freshness" not in entry
+            for entry in raw.get("types", [])
+            if isinstance(entry, dict)
+        ),
         repr(raw),
     )
 

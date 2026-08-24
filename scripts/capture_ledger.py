@@ -13,10 +13,11 @@ from typing import Callable, NewType
 
 from _durable_files import DurableFileError, read_regular_bytes
 from _repo_paths import MAY_CREATE_FILE, RepoPathError, resolve_repo_path
+from _strict_json import reject_duplicate_json_keys
 
 
 ALLOWED_CAPTURE_ROOTS = (
-    "wiki/", "scripts/", "workflows/", ".agents/", ".claude/", ".codex/",
+    "wiki/", "scripts/", "workflows/", ".agents/", ".claude/",
 )
 ALLOWED_CAPTURE_ROOT_FILES = {
     "AGENTS.md", "CLAUDE.md", "CONTEXT.md", "README.md", "REFERENCES.md",
@@ -39,10 +40,6 @@ class CaptureLedgerIntegrityError(ValueError):
         super().__init__("capture ledger integrity check failed: " + "; ".join(normalized))
 
 
-class _DuplicateCaptureLedgerKeyError(ValueError):
-    """One capture-ledger object repeated a JSON key."""
-
-
 @dataclass(frozen=True)
 class ValidatedCaptureLedgerLine:
     record: dict[str, object]
@@ -56,17 +53,6 @@ class CaptureLedgerValidation:
     errors: tuple[str, ...]
     application_count: int
     applications: tuple[ValidatedCaptureLedgerLine, ...]
-
-
-def _reject_duplicate_capture_ledger_keys(
-    pairs: list[tuple[str, object]],
-) -> dict[str, object]:
-    record: dict[str, object] = {}
-    for key, value in pairs:
-        if key in record:
-            raise _DuplicateCaptureLedgerKeyError(f"duplicate JSON key: {key}")
-        record[key] = value
-    return record
 
 
 def is_nonempty_string(value: object) -> bool:
@@ -265,7 +251,7 @@ def validate_capture_ledger_text(
             continue
         try:
             record = json.loads(
-                line, object_pairs_hook=_reject_duplicate_capture_ledger_keys
+                line, object_pairs_hook=reject_duplicate_json_keys
             )
         except (ValueError, RecursionError) as exc:
             errors.append(f"line {line_no}: invalid JSON: {getattr(exc, 'msg', str(exc))}")

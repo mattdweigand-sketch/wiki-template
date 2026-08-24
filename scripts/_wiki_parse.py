@@ -23,14 +23,6 @@ from pathlib import Path
 #   [[slug]], [[dir/slug]], [[dir/slug|alias]]  -> captures "slug".
 LINK_RE = re.compile(r"\[\[(?:[^/\]|]+/)?([^\]|]+?)(?:\|[^\]]+)?\]\]")
 
-# Compatibility regexes remain importable for older callers/tests, but the
-# shared scanner below is authoritative because variable fence/span lengths
-# cannot be represented safely by the former pair of fixed regexes.
-INLINE_CODE_RE = re.compile(r"(?P<ticks>`+)(?!`).*?(?P=ticks)(?!`)", re.DOTALL)
-FENCED_CODE_RE = re.compile(
-    r"^[ \t]{0,3}(?:`{3,}|~{3,})[^\n]*(?:\n|\Z)", re.MULTILINE
-)
-
 # Root-level wiki pages that are catalogs/indexes, not entity pages: never link
 # targets and never counted as link sources. Shared so the dangling-link scan,
 # the index-coverage check, and the referenced-by rebuild enumerate the corpus
@@ -40,15 +32,6 @@ META_PAGES = {
     "sourcing-queue", "contradictions", "design-notes", "SCHEMA", "synthesis",
     "domain",
 }
-META_DIRS = set()
-
-# Kept as a public compatibility name. Section handling is implemented by the
-# heading-aware scanner below (case-insensitive, trailing hashes, and proper
-# same/higher-level termination), not by this regex.
-REFERENCED_BY_SECTION_RE = re.compile(
-    r"^##[ \t]+Referenced[ \t]+by(?:[ \t]+#+)?[ \t]*$", re.IGNORECASE | re.MULTILINE
-)
-
 HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
 FENCE_OPEN_RE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})([^\r\n]*)$")
 
@@ -144,7 +127,10 @@ def split_frontmatter(text: str) -> tuple[dict[str, str] | None, str]:
     for line in fm_block.splitlines():
         km = re.match(r"^([A-Za-z_][A-Za-z0-9_]*):(.*)$", line)
         if km:
-            fm[km.group(1)] = km.group(2).strip()
+            key = km.group(1)
+            if key in fm:
+                raise FrontmatterError(f"duplicate frontmatter key: {key}")
+            fm[key] = km.group(2).strip()
     return fm, body
 
 
@@ -450,7 +436,7 @@ def get_entity_pages(wiki_root: Path) -> list[Path]:
         parts = p.relative_to(wiki_root).parts
         if len(parts) == 1 and p.stem not in META_PAGES:
             pages.append(p)
-        elif len(parts) == 2 and parts[0] not in META_DIRS:
+        elif len(parts) == 2:
             pages.append(p)
     return sorted(pages)
 

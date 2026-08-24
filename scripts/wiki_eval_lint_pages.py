@@ -2,6 +2,7 @@
 """Seeded evals for lint page and baseline hard rules."""
 
 from eval_lint_fixture import *
+from _file_transactions import run_transaction
 
 # ---- Tier 1: clean fixture is the control ----
 run_case("clean-fixture-passes", None)
@@ -637,6 +638,11 @@ run_case(
     "unexpected-root-dir-fires",
     lambda r: (r / "notabucket").mkdir(),
     expect_code=1, expect=("repo-structure", "unexpected top-level directory"),
+)
+run_case(
+    "legacy-codex-root-fires",
+    lambda r: (r / ".codex").mkdir(),
+    expect_code=1, expect=("repo-structure", ".codex"),
 )
 
 

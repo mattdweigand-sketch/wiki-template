@@ -13,7 +13,6 @@
   "excluded_directories": [
     ".agents",
     ".claude",
-    ".codex",
     "archive",
     "raw",
     "scripts/fixtures",

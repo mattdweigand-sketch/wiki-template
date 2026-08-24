@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 
 SCHEMA_VOCABULARIES_PATH = Path(__file__).with_name("schema-vocabularies.json")
 SCHEMA_VOCABULARY_FIELDS = {
@@ -42,17 +43,6 @@ class WikiSchemaVocabularies:
         return tuple(spec.label for spec in self.related_labels)
 
 
-def _reject_duplicate_schema_vocabulary_keys(
-    pairs: list[tuple[str, object]],
-) -> dict[str, object]:
-    payload: dict[str, object] = {}
-    for key, value in pairs:
-        if key in payload:
-            raise SchemaVocabularyError(f"duplicate schema vocabulary key {key!r}")
-        payload[key] = value
-    return payload
-
-
 def _ordered_unique_strings(payload: object, field: str) -> tuple[str, ...]:
     if not isinstance(payload, list) or not payload:
         raise SchemaVocabularyError(f"{field} must be a nonempty string list")
@@ -71,8 +61,12 @@ def load_wiki_schema_vocabularies(
     try:
         payload = json.loads(
             path.read_text(encoding="utf-8"),
-            object_pairs_hook=_reject_duplicate_schema_vocabulary_keys,
+            object_pairs_hook=reject_duplicate_json_keys,
         )
+    except DuplicateJsonKeyError as exc:
+        raise SchemaVocabularyError(
+            f"duplicate schema vocabulary key {exc.key!r}"
+        ) from exc
     except SchemaVocabularyError:
         raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:

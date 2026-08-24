@@ -142,6 +142,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         ".git/config",
         "deliverables/output/file.txt",
         "tmp/scratch.txt",
+        "tmp/wiki-export-2026-06-23.zip",
         "tmp/wiki-export-2026-06-24.zip",
         "wiki/.DS_Store",
     ]:
@@ -197,6 +198,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         )
     )
     current_output_absent = "tmp/wiki-export-2026-06-24.zip" not in names
+    earlier_output_absent = "tmp/wiki-export-2026-06-23.zip" not in names
     legitimate_zip_sources_present = all(
         rel in names
         for rel in (
@@ -205,12 +207,13 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         )
     )
     results.record(
-        "build-includes-complete-recovery-state-and-excludes-only-itself",
+        "build-includes-recovery-state-without-earlier-export-archives",
         build.returncode == 0
         and required_present
         and prefixes_present
         and recovery_state_present
         and current_output_absent
+        and earlier_output_absent
         and legitimate_zip_sources_present,
         "stdout: " + build.stdout.replace("\n", " | ") + " names: " + repr(sorted(names)),
     )

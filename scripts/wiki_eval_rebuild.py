@@ -58,6 +58,35 @@ def main() -> int:
 
     tmp = Path(tempfile.mkdtemp(prefix="wiki-rebuild-eval-"))
     try:
+        help_case = tmp / "help"
+        shutil.copytree(FIXTURE_WIKI, help_case / "wiki")
+        help_before = read_tree_bytes(help_case / "wiki")
+        help_run = subprocess.run(
+            [sys.executable, str(REBUILD_SCRIPT), "--help"],
+            cwd=help_case,
+            capture_output=True,
+            text=True,
+        )
+        check(
+            "help-is-read-only",
+            help_run.returncode == 0
+            and "usage:" in help_run.stdout.lower()
+            and read_tree_bytes(help_case / "wiki") == help_before,
+            help_run.stderr.strip(),
+        )
+        unknown_run = subprocess.run(
+            [sys.executable, str(REBUILD_SCRIPT), "--unknown-option"],
+            cwd=help_case,
+            capture_output=True,
+            text=True,
+        )
+        check(
+            "unknown-option-is-rejected-without-writing",
+            unknown_run.returncode == 2
+            and read_tree_bytes(help_case / "wiki") == help_before,
+            unknown_run.stderr.strip(),
+        )
+
         invalid_case = tmp / "invalid-utf8"
         shutil.copytree(FIXTURE_WIKI, invalid_case / "wiki")
         invalid_page = invalid_case / "wiki" / "sources" / "zz-invalid.md"

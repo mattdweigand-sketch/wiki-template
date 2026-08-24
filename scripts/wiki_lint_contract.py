@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Collection
-from datetime import date
 from pathlib import Path
 
 from _wiki_parse import FrontmatterError, META_PAGES, frontmatter_block, split_frontmatter
@@ -18,6 +17,20 @@ LintFailures = list[LintFailure]
 
 WIKI_ROOT = Path("wiki")
 ADJUDICATIONS_PATH = Path("scripts/lint-adjudications.json")
+ADJUDICATION_CATEGORY_FIELDS = {
+    "orphans": "accepted_orphans",
+    "quotes": "reviewed_quotes",
+    "recompile": "reviewed_recompile_candidates",
+    "authority_missing": "reviewed_authority_missing",
+    "glossary_volatile": "reviewed_glossary_volatile",
+    "unconsumed_sources": "reviewed_unconsumed_sources",
+}
+ADJUDICATION_PAGE_FIELDS = (
+    "accepted_orphans",
+    "reviewed_quotes",
+    "reviewed_authority_missing",
+    "reviewed_unconsumed_sources",
+)
 LOG_ROTATION_WARN_LINES = 2500
 
 # META_PAGES is shared with rebuild_referenced_by.py via _wiki_parse, so the
@@ -33,7 +46,7 @@ ROOT_ALLOWED_FILES = {
     "README.md", "REFERENCES.md",
 }
 ROOT_ALLOWED_DIRS = {
-    ".agents", ".claude", ".codex", ".github", ".git", ".wiki-transactions", "archive", "deliverables", "raw",
+    ".agents", ".claude", ".github", ".git", ".wiki-transactions", "archive", "deliverables", "raw",
     "scripts", "tmp", "wiki", "workflows",
 }
 WIKI_ALLOWED_FILES = {f"{name}.md" for name in META_PAGES}
@@ -143,6 +156,8 @@ Tier1Check = Callable[[PageContext], LintFailures]
 
 __all__ = [
     "ADJUDICATIONS_PATH",
+    "ADJUDICATION_CATEGORY_FIELDS",
+    "ADJUDICATION_PAGE_FIELDS",
     "AUTHORITY_ANCHOR_FIELDS",
     "AUTHORITY_METADATA_FIELDS",
     "BASE_KEYS",

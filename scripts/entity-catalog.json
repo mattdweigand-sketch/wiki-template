@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "description": "Governed entity-folder and authoring-semantics catalog for the live wiki.",
   "types": [
     {
@@ -7,7 +7,6 @@
       "type": "analysis",
       "purpose": "A synthesized answer, comparison, brief, or other durable output.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -15,7 +14,6 @@
       "type": "competitor",
       "purpose": "A competing vendor, alternative, or substitute and its positioning.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -23,7 +21,6 @@
       "type": "concept",
       "purpose": "An idea, term, framework, or mental model used in the configured domain.",
       "review_date": "optional",
-      "authority_freshness": "stable-meaning",
       "verification": "when-authority-requires"
     },
     {
@@ -31,7 +28,6 @@
       "type": "customer",
       "purpose": "A named customer or segment, its use cases, relationship, and risks.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -39,7 +35,6 @@
       "type": "decision",
       "purpose": "A historical choice, its rationale, alternatives, and outcome-review checkpoint.",
       "review_date": "expected",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -47,7 +42,6 @@
       "type": "feature",
       "purpose": "A specific customer-facing capability and the jobs it supports.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -55,7 +49,6 @@
       "type": "goal",
       "purpose": "A desired outcome with status, blockers, and a dated outcome review.",
       "review_date": "expected",
-      "authority_freshness": "current-state",
       "verification": "before-consequential-action"
     },
     {
@@ -63,7 +56,6 @@
       "type": "health",
       "purpose": "Health protocols, experiments, practices, and current context; not medical advice.",
       "review_date": "optional",
-      "authority_freshness": "current-state",
       "verification": "before-consequential-action"
     },
     {
@@ -71,7 +63,6 @@
       "type": "initiative",
       "purpose": "A strategic program or bet that may coordinate several projects.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -79,7 +70,6 @@
       "type": "investment",
       "purpose": "An investment thesis, position, current view, risks, and open questions; not financial advice.",
       "review_date": "optional",
-      "authority_freshness": "current-state",
       "verification": "before-consequential-action"
     },
     {
@@ -87,7 +77,6 @@
       "type": "learning",
       "purpose": "A durable lesson tied to evidence or lived experience.",
       "review_date": "optional",
-      "authority_freshness": "stable-meaning",
       "verification": "when-authority-requires"
     },
     {
@@ -95,7 +84,6 @@
       "type": "metric",
       "purpose": "A measurement definition, formula, owner, and observed values.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -103,7 +91,6 @@
       "type": "partner",
       "purpose": "A vendor, integration partner, channel partner, or collaborator.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -111,7 +98,6 @@
       "type": "person",
       "purpose": "An individual, stakeholder, or role and its responsibilities.",
       "review_date": "optional",
-      "authority_freshness": "stable-meaning",
       "verification": "when-authority-requires"
     },
     {
@@ -119,7 +105,6 @@
       "type": "persona",
       "purpose": "A user or buyer archetype with goals, pain points, and authority.",
       "review_date": "optional",
-      "authority_freshness": "stable-meaning",
       "verification": "when-authority-requires"
     },
     {
@@ -127,7 +112,6 @@
       "type": "policy",
       "purpose": "A currently binding rule, its scope, authority, exceptions, and review expectations.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -135,7 +119,6 @@
       "type": "process",
       "purpose": "An organizational procedure with triggers, inputs, steps, outputs, owners, and exceptions.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -143,7 +126,6 @@
       "type": "product",
       "purpose": "A customer-facing offering, its positioning, users, and core jobs.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -151,7 +133,6 @@
       "type": "project",
       "purpose": "Bounded work with a concrete output or completion condition.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -159,7 +140,6 @@
       "type": "property",
       "purpose": "An owner manual for a residence or operated property: systems, maintenance, vendors, records, and status.",
       "review_date": "optional",
-      "authority_freshness": "current-state",
       "verification": "before-consequential-action"
     },
     {
@@ -167,7 +147,6 @@
       "type": "skill",
       "purpose": "A demonstrated capability and the evidence behind proficiency.",
       "review_date": "optional",
-      "authority_freshness": "stable-meaning",
       "verification": "when-authority-requires"
     },
     {
@@ -175,7 +154,6 @@
       "type": "source",
       "purpose": "A summary of one raw artifact and what that evidence supports.",
       "review_date": "optional",
-      "authority_freshness": "immutable-source",
       "verification": "when-authority-requires"
     },
     {
@@ -183,7 +161,6 @@
       "type": "system",
       "purpose": "A technical or operational dependency with ownership, interfaces, and failure modes.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     },
     {
@@ -191,7 +168,6 @@
       "type": "team",
       "purpose": "An organizational group with responsibilities and interfaces.",
       "review_date": "optional",
-      "authority_freshness": "contextual",
       "verification": "when-authority-requires"
     }
   ]

@@ -15,15 +15,13 @@ a system temp directory per case. Writes nothing inside the repo.
 
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from _file_transactions import run_transaction
-from _wiki_parse import META_PAGES, get_entity_pages
+from wiki_lint_contract import ADJUDICATION_CATEGORY_FIELDS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LINT = REPO_ROOT / "scripts" / "lint.py"
@@ -87,10 +85,7 @@ def add_index_row(root, rel, summary):
 
 
 def write_adjudications(root: Path, **kwargs: object) -> None:
-    base = {"accepted_orphans": [], "reviewed_quotes": [],
-            "reviewed_recompile_candidates": [],
-            "reviewed_authority_missing": [], "reviewed_glossary_volatile": [],
-            "reviewed_unconsumed_sources": []}
+    base = {field: [] for field in ADJUDICATION_CATEGORY_FIELDS.values()}
     base.update(kwargs)
     (root / "scripts" / "lint-adjudications.json").write_text(json.dumps(base))
 

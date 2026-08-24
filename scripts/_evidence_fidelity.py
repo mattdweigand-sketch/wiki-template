@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
+from _strict_json import reject_duplicate_json_keys
 from _wiki_parse import evidentiary_line_views, get_entity_pages
 from wiki_provenance import RawSourceClosure, resolve_live_source_closure
 
@@ -56,19 +57,6 @@ CITATION_RE = re.compile(
 
 class EvidenceError(ValueError):
     """One evidence artifact or path violated the run contract."""
-
-
-class DuplicateKeyError(ValueError):
-    pass
-
-
-def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    obj: dict[str, object] = {}
-    for key, value in pairs:
-        if key in obj:
-            raise DuplicateKeyError(f"duplicate JSON key: {key}")
-        obj[key] = value
-    return obj
 
 
 def utc_now() -> str:
@@ -115,7 +103,10 @@ def load_json(path: Path) -> object:
     try:
         if not stat.S_ISREG(path.lstat().st_mode):
             raise EvidenceError(f"cannot parse {path}: artifact is not a regular file")
-        return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicate_keys)
+        return json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
     except EvidenceError:
         raise
     except (OSError, UnicodeError, ValueError, RecursionError) as exc:

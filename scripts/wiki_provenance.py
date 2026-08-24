@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping, Optional, Sequence
 
 from _repo_paths import RepoPathError, validate_repo_path_syntax
+from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 from _wiki_parse import FrontmatterError, frontmatter_block, split_frontmatter
 from wiki_lint_contract import RAW_REPO_TOKEN_RE
 from wiki_lint_frontmatter import source_items
@@ -30,10 +31,6 @@ FILE_FIELDS = {"path", "sha256", "size"}
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 TRACKED_RAW_EXCEPTIONS = frozenset({"raw/.gitkeep", "raw/README.md"})
-
-
-class _DuplicateJsonKey(ValueError):
-    pass
 
 
 @dataclass(frozen=True)
@@ -58,21 +55,12 @@ class RawSourceClosure:
     files: tuple[RawClosureFile, ...]
 
 
-def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    value: dict[str, object] = {}
-    for key, item in pairs:
-        if key in value:
-            raise _DuplicateJsonKey(key)
-        value[key] = item
-    return value
-
-
 def _strict_json(content: bytes, label: str) -> tuple[Optional[object], list[str]]:
     try:
         text = content.decode("utf-8")
-        value = json.loads(text, object_pairs_hook=_reject_duplicate_keys)
-    except _DuplicateJsonKey as exc:
-        return None, [f"{label}: duplicate JSON key {exc.args[0]!r}"]
+        value = json.loads(text, object_pairs_hook=reject_duplicate_json_keys)
+    except DuplicateJsonKeyError as exc:
+        return None, [f"{label}: duplicate JSON key {exc.key!r}"]
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return None, [f"{label}: invalid JSON: {exc}"]
     return value, []

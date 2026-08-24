@@ -21,6 +21,7 @@ from _durable_files import (
     sha256_bytes,
     stable_lock,
 )
+from _strict_json import reject_duplicate_json_keys
 
 
 AUTHORITY_NAME = ".wiki-transactions"
@@ -73,19 +74,6 @@ class TransactionConflict(TransactionError):
 
 class TransactionCorrupt(TransactionError):
     """Transaction authority is malformed, unsafe, or incomplete."""
-
-
-class DuplicateKeyError(ValueError):
-    pass
-
-
-def _strict_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    obj: dict[str, object] = {}
-    for key, value in pairs:
-        if key in obj:
-            raise DuplicateKeyError(f"duplicate JSON key: {key}")
-        obj[key] = value
-    return obj
 
 
 def _now() -> str:
@@ -241,7 +229,10 @@ def _load_journal(
     try:
         content, _ = read_regular_bytes(journal_path)
         assert content is not None
-        journal = json.loads(content.decode("utf-8"), object_pairs_hook=_strict_object)
+        journal = json.loads(
+            content.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
     except (OSError, UnicodeError, ValueError, RecursionError) as exc:
         raise TransactionCorrupt(f"cannot parse {journal_path}: {exc}") from exc
     errors = validate_journal(journal)

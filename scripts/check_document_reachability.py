@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
+from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 
 MANIFEST_PATH = Path("scripts/document-reachability.json")
 MANIFEST_FIELDS = {
@@ -33,15 +34,6 @@ class ReachabilityManifest:
     operational_directories: tuple[str, ...]
     excluded_directories: tuple[str, ...]
     standalone_documents: tuple[str, ...]
-
-
-def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ReachabilityError(f"duplicate JSON key {key!r}")
-        result[key] = value
-    return result
 
 
 def _path_list(value: object, label: str, *, markdown: bool) -> tuple[str, ...]:
@@ -69,8 +61,10 @@ def load_reachability_manifest(
     try:
         raw = json.loads(
             manifest_path.read_text(encoding="utf-8"),
-            object_pairs_hook=_reject_duplicate_keys,
+            object_pairs_hook=reject_duplicate_json_keys,
         )
+    except DuplicateJsonKeyError as exc:
+        raise ReachabilityError(f"duplicate JSON key {exc.key!r}") from exc
     except ReachabilityError:
         raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:

@@ -7,12 +7,13 @@ import re
 from collections.abc import Collection, Sequence
 from pathlib import Path
 
-from _wiki_parse import META_PAGES, dangling_slugs, get_entity_pages
+from _wiki_parse import META_PAGES, dangling_slugs
 from wiki_lint_adjudications import glossary_entry_lines
 from wiki_lint_contract import (
+    ADJUDICATION_CATEGORY_FIELDS,
+    ADJUDICATION_PAGE_FIELDS,
     ADJUDICATIONS_PATH,
     FOLDER_TYPE,
-    GLOSSARY_BULLET_ENTRY_RE,
     LintFailures,
     PageContext,
     VOLATILE_STATUS_RE,
@@ -180,14 +181,13 @@ def run_tier1_lint(
         fails.append(("adjudication-file", str(ADJUDICATIONS_PATH), adj_err))
     else:
         referenced = []
-        for key in ("accepted_orphans", "reviewed_quotes", "reviewed_authority_missing",
-                    "reviewed_unconsumed_sources"):
+        for key in ADJUDICATION_PAGE_FIELDS:
             referenced += [e["page"] for e in raw.get(key, [])]
         for page in sorted(set(referenced)):
             if page not in entity_relpaths:
                 fails.append(("adjudication-stale", str(ADJUDICATIONS_PATH),
                               f"entry references missing page '{page}'"))
-        for e in raw.get("reviewed_recompile_candidates", []):
+        for e in raw.get(ADJUDICATION_CATEGORY_FIELDS["recompile"], []):
             compiled, source = e["pair"]
             if compiled not in entity_relpaths:
                 fails.append(("adjudication-stale", str(ADJUDICATIONS_PATH),
@@ -201,7 +201,7 @@ def run_tier1_lint(
             elif Path(source).parent.name != "sources":
                 fails.append(("adjudication-stale", str(ADJUDICATIONS_PATH),
                               f"recompile source page must be under sources/: '{source}'"))
-        gv_entries = raw.get("reviewed_glossary_volatile", [])
+        gv_entries = raw.get(ADJUDICATION_CATEGORY_FIELDS["glossary_volatile"], [])
         if gv_entries:
             glossary_terms = {term for term, _line in glossary_entry_lines()}
             for e in gv_entries:

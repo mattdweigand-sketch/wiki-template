@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from _repo_paths import EXISTING_FILE, RepoPathError, is_http_url, resolve_repo_path
-from _wiki_parse import dangling_slugs, evidentiary_view, section_body, split_frontmatter, strip_sections
+from _wiki_parse import dangling_slugs, evidentiary_view, section_body, split_frontmatter
 from wiki_lint_contract import (
     AUTHORITY_ANCHOR_FIELDS,
     AUTHORITY_METADATA_FIELDS,
@@ -27,7 +27,6 @@ from wiki_lint_contract import (
     VALID_AUTHORITY_KIND,
     VALID_CONFIDENCE,
     VALID_SOURCE_TYPE,
-    WIKI_ROOT,
 )
 from wiki_lint_frontmatter import (
     authored_body,

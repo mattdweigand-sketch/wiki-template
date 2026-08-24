@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
+from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 
 DEFAULT_BACKUP_RECEIPT_PATH = Path("scripts/backup-receipt.json")
 UTC_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
@@ -42,15 +43,6 @@ class BackupFreshness:
     receipt: VerifiedBackupReceipt | None
 
 
-def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise BackupReceiptError(f"duplicate JSON key {key!r}")
-        result[key] = value
-    return result
-
-
 def _stream_backup_file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -78,8 +70,11 @@ def load_backup_receipt(path: Path) -> VerifiedBackupReceipt:
         raise BackupReceiptError("receipt is missing or is not a regular file")
     try:
         raw = json.loads(
-            path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
         )
+    except DuplicateJsonKeyError as exc:
+        raise BackupReceiptError(f"duplicate JSON key {exc.key!r}") from exc
     except BackupReceiptError:
         raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:

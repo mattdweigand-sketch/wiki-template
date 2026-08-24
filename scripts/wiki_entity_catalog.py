@@ -9,20 +9,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from _wiki_parse import FrontmatterError, frontmatter_block
+from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
+from _wiki_parse import FrontmatterError, split_frontmatter
 
 
 CATALOG_PATH = Path(__file__).with_name("entity-catalog.json")
 KEBAB_CASE_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 CATALOG_FIELDS = {"schema_version", "description", "types"}
 TYPE_FIELDS = {
-    "folder", "type", "purpose", "review_date", "authority_freshness",
-    "verification",
+    "folder", "type", "purpose", "review_date", "verification",
 }
 REVIEW_DATE_VALUES = {"expected", "optional"}
-AUTHORITY_FRESHNESS_VALUES = {
-    "contextual", "current-state", "immutable-source", "stable-meaning",
-}
 VERIFICATION_VALUES = {
     "before-consequential-action", "when-authority-requires",
 }
@@ -40,7 +37,6 @@ class EntityTypeSpec:
     type_name: str
     purpose: str
     review_date: str
-    authority_freshness: str
     verification: str
 
 
@@ -80,17 +76,6 @@ class ConfiguredLayoutValidation:
     errors: tuple[str, ...]
 
 
-def _reject_duplicate_catalog_keys(
-    pairs: list[tuple[str, object]],
-) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise CatalogError(f"duplicate catalog key {key!r}")
-        result[key] = value
-    return result
-
-
 def _nonempty_string(value: object, label: str) -> str:
     if not isinstance(value, str) or not value.strip() or value != value.strip():
         raise CatalogError(f"{label} must be a nonempty trimmed string")
@@ -119,11 +104,6 @@ def _parse_entity_type(value: object, index: int) -> EntityTypeSpec:
         review_date=_catalog_enum(
             value.get("review_date"), f"{label}.review_date", REVIEW_DATE_VALUES
         ),
-        authority_freshness=_catalog_enum(
-            value.get("authority_freshness"),
-            f"{label}.authority_freshness",
-            AUTHORITY_FRESHNESS_VALUES,
-        ),
         verification=_catalog_enum(
             value.get("verification"), f"{label}.verification", VERIFICATION_VALUES
         ),
@@ -136,16 +116,18 @@ def load_entity_catalog(path: Optional[Path] = None) -> EntityCatalog:
     try:
         raw = json.loads(
             catalog_path.read_text(encoding="utf-8"),
-            object_pairs_hook=_reject_duplicate_catalog_keys,
+            object_pairs_hook=reject_duplicate_json_keys,
         )
+    except DuplicateJsonKeyError as exc:
+        raise CatalogError(f"duplicate catalog key {exc.key!r}") from exc
     except CatalogError:
         raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise CatalogError(f"cannot read entity catalog: {exc}") from exc
     if not isinstance(raw, dict) or set(raw) != CATALOG_FIELDS:
         raise CatalogError("catalog fields differ from the live contract")
-    if raw.get("schema_version") != 2 or isinstance(raw.get("schema_version"), bool):
-        raise CatalogError("catalog schema_version must be integer 2")
+    if raw.get("schema_version") != 3 or isinstance(raw.get("schema_version"), bool):
+        raise CatalogError("catalog schema_version must be integer 3")
     values = raw.get("types")
     if not isinstance(values, list) or not values:
         raise CatalogError("types must be a nonempty list")
@@ -164,35 +146,21 @@ def load_entity_catalog(path: Optional[Path] = None) -> EntityCatalog:
     )
 
 
-def _field_lines(block: str, field: str) -> tuple[Optional[str], list[str]]:
-    lines = block.splitlines()
-    prefix = f"{field}:"
-    for index, line in enumerate(lines):
-        if not line.startswith(prefix):
-            continue
-        scalar = line[len(prefix):].strip()
-        nested: list[str] = []
-        for following in lines[index + 1:]:
-            if following.startswith("  - "):
-                nested.append(following[4:].strip().strip("\"'"))
-                continue
-            break
-        return scalar, nested
-    return None, []
-
-
 def read_domain_configuration(repo_root: Path) -> DomainConfiguration:
     """Require the ready-to-use domain state used by live validation."""
     try:
-        block = frontmatter_block(
+        frontmatter, _ = split_frontmatter(
             (repo_root / "wiki/domain.md").read_text(encoding="utf-8")
         )
     except (OSError, UnicodeDecodeError, FrontmatterError) as exc:
         raise CatalogError(f"cannot read wiki/domain.md configuration: {exc}") from exc
-    if not block:
+    if frontmatter is None:
         raise CatalogError("wiki/domain.md has no frontmatter configuration")
-    status_value, _ = _field_lines(block, "status")
-    status = (status_value or "").strip("\"'")
+    status = frontmatter.get("status", "").strip()
+    if status.startswith(("\"", "'")) or status.endswith(("\"", "'")):
+        if len(status) < 2 or status[0] != status[-1] or status[0] not in "\"'":
+            raise CatalogError("wiki/domain.md status has mismatched quotes")
+        status = status[1:-1].strip()
     if status not in {"configured", "unconfigured"}:
         raise CatalogError("wiki/domain.md status must be configured or unconfigured")
     return DomainConfiguration(status=status)

@@ -23,7 +23,7 @@ The clone is ready to use. Read `wiki/domain.md`, then continue through `CONTEXT
 - `scripts/lint-adjudications.json` - settled Tier-2 lint judgments with reasons and dates, so lint stops re-surfacing what has been adjudicated.
 - `tmp/` - gitignored scratch space. Everything in it is disposable at all times.
 - `deliverables/` - optional gitignored one-off outputs built from wiki content. Contents are not wiki content. Keep outputs inside clearly labeled kebab-case subfolders; do not leave loose files directly under `deliverables/`.
-- `raw/` - local-only source artifacts in neutral `documents/`, `imports/`, and `media/` buckets. Git tracks the folder guide and placeholders, source pages, and the exact path, size, and SHA-256 manifest, but never source bytes. Existing files are immutable, and new user-provided sources may be placed once during ingest before becoming immutable.
+- `raw/` - local-only source artifacts in buckets governed by `scripts/raw-buckets.json`. Git tracks the folder guide and placeholders, source pages, and the exact path, size, and SHA-256 manifest, but never source bytes. Existing files are immutable, and new user-provided sources may be placed once during ingest before becoming immutable.
 - `wiki/` - knowledge layer: `domain.md`, `index.md`, `overview.md`, `glossary.md`, `primer.md`, `log.md`, `SCHEMA.md`, `sourcing-queue.md`, `contradictions.md`, `design-notes.md`, `synthesis.md`, and entity folders.
 - `wiki/<entity-type>/` - one folder per governed entity type. Unused folders may stay empty.
 

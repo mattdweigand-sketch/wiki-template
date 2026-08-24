@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import hashlib
 import json
 import re
 import sys
@@ -15,6 +14,7 @@ from typing import Callable
 from _durable_files import DurableFileError, read_regular_bytes, sha256_bytes
 from _file_transactions import recover_all, run_transaction
 from _repo_paths import EXISTING_FILE, MAY_CREATE_FILE, RepoPathError, resolve_repo_path
+from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 from _transaction_contract import TransactionError
 from capture_approval_records import (
     capture_application_from_ledger,
@@ -24,6 +24,7 @@ from capture_approval_records import (
 from capture_ledger import (
     ALLOWED_CAPTURE_ROOT_FILES,
     ALLOWED_CAPTURE_ROOTS,
+    CAPTURE_APPLICATION_BOUNDARIES,
     CaptureLedgerIntegrityError,
 )
 
@@ -35,23 +36,11 @@ PROPOSAL_FIELDS = {
 PROPOSAL_TARGET_FIELDS = {
     "destination", "expected_preimage", "staged_path", "postimage_sha256",
 }
-PROPOSAL_BOUNDARIES = {
-    "analysis-capture", "artifact-promotion", "synthesis-promotion",
-}
 CAPTURE_LEDGER_PATH = "scripts/capture-runs.jsonl"
 
 
 class CaptureProposalError(ValueError):
     """An exact capture proposal failed deterministic validation."""
-
-
-def _strict_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    value: dict[str, object] = {}
-    for key, item in pairs:
-        if key in value:
-            raise CaptureProposalError(f"duplicate JSON key: {key}")
-        value[key] = item
-    return value
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -63,6 +52,14 @@ def _utf8_or_none(value: bytes) -> str | None:
         return value.decode("utf-8")
     except UnicodeDecodeError:
         return None
+
+
+def capture_preview_content(value: bytes) -> dict[str, str]:
+    """Render one exact postimage once, as text when possible or Base64 otherwise."""
+    text = _utf8_or_none(value)
+    if text is not None:
+        return {"content_utf8": text}
+    return {"bytes_base64": base64.b64encode(value).decode("ascii")}
 
 
 def _capture_proposal_path(repo_root: Path, path: str, *, existing: bool) -> str:
@@ -82,9 +79,15 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
     assert descriptor_bytes is not None
     try:
         descriptor = json.loads(
-            descriptor_bytes.decode("utf-8"), object_pairs_hook=_strict_json_object
+            descriptor_bytes.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
         )
-    except (UnicodeDecodeError, json.JSONDecodeError, CaptureProposalError) as exc:
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        DuplicateJsonKeyError,
+        CaptureProposalError,
+    ) as exc:
         raise CaptureProposalError(f"invalid proposal descriptor: {exc}") from exc
     if not isinstance(descriptor, dict) or set(descriptor) != PROPOSAL_FIELDS:
         raise CaptureProposalError("proposal descriptor has missing or unknown fields")
@@ -93,8 +96,14 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
     if descriptor.get("schema_version") != 1 or isinstance(descriptor.get("schema_version"), bool):
         raise CaptureProposalError("schema_version must be integer 1")
     capture_boundary = descriptor.get("capture_boundary")
-    if not isinstance(capture_boundary, str) or capture_boundary not in PROPOSAL_BOUNDARIES:
-        raise CaptureProposalError(f"capture_boundary must be one of {sorted(PROPOSAL_BOUNDARIES)}")
+    if (
+        not isinstance(capture_boundary, str)
+        or capture_boundary not in CAPTURE_APPLICATION_BOUNDARIES
+    ):
+        raise CaptureProposalError(
+            "capture_boundary must be one of "
+            f"{sorted(CAPTURE_APPLICATION_BOUNDARIES)}"
+        )
     if not isinstance(descriptor.get("purpose"), str) or not descriptor["purpose"].strip():
         raise CaptureProposalError("purpose must be a non-empty string")
 
@@ -191,8 +200,7 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
                     "destination": target["destination"],
                     "expected_preimage": target["expected_preimage"],
                     "postimage_sha256": target["postimage_sha256"],
-                    "content_utf8": _utf8_or_none(target["postimage"]),
-                    "bytes_base64": base64.b64encode(target["postimage"]).decode("ascii"),
+                    **capture_preview_content(target["postimage"]),
                 }
                 for target in prepared_targets
             ],

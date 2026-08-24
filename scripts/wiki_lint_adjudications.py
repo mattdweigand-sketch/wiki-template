@@ -7,7 +7,11 @@ import re
 from collections.abc import Iterator
 from typing import Union
 
-from wiki_lint_contract import GLOSSARY_BULLET_ENTRY_RE, WIKI_ROOT
+from wiki_lint_contract import (
+    ADJUDICATION_CATEGORY_FIELDS,
+    GLOSSARY_BULLET_ENTRY_RE,
+    WIKI_ROOT,
+)
 from wiki_lint_repository_checks import read_adjudications
 
 
@@ -63,26 +67,23 @@ def load_adjudications() -> Adjudications:
     lint stays fully operable without it.
     """
     empty: Adjudications = {
-        "orphans": set(), "quotes": set(),
-        "recompile": set(), "authority_missing": set(),
-        "glossary_volatile": set(),
-        "unconsumed_sources": set(),
+        category: set() for category in ADJUDICATION_CATEGORY_FIELDS
     }
     raw, err = read_adjudications()
     if not raw:
         # absent file or invalid file: suppress nothing; tier1 reports the error
         return empty
     return {
-        "orphans": {e["page"] for e in raw.get("accepted_orphans", [])},
+        "orphans": {e["page"] for e in raw.get(ADJUDICATION_CATEGORY_FIELDS["orphans"], [])},
         "quotes": {(e["page"], normalize_quote(e["quote"]))
-                   for e in raw.get("reviewed_quotes", [])},
+                   for e in raw.get(ADJUDICATION_CATEGORY_FIELDS["quotes"], [])},
         "recompile": {(e["pair"][0], e["pair"][1])
-                      for e in raw.get("reviewed_recompile_candidates", [])},
-        "authority_missing": {e["page"] for e in raw.get("reviewed_authority_missing", [])},
+                      for e in raw.get(ADJUDICATION_CATEGORY_FIELDS["recompile"], [])},
+        "authority_missing": {e["page"] for e in raw.get(ADJUDICATION_CATEGORY_FIELDS["authority_missing"], [])},
         "glossary_volatile": {(e["term"], e["phrase"].lower())
-                              for e in raw.get("reviewed_glossary_volatile", [])},
+                              for e in raw.get(ADJUDICATION_CATEGORY_FIELDS["glossary_volatile"], [])},
         "unconsumed_sources": {e["page"]
-                               for e in raw.get("reviewed_unconsumed_sources", [])},
+                               for e in raw.get(ADJUDICATION_CATEGORY_FIELDS["unconsumed_sources"], [])},
     }
 
 

@@ -15,6 +15,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from _file_transactions import transaction_status
+from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 from wiki_backup_receipt import (
     DEFAULT_BACKUP_RECEIPT_PATH,
     BackupReceiptError,
@@ -41,6 +42,7 @@ REQUIRED_PREFIXES = (
     "workflows/",
 )
 ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+EXPORT_ARCHIVE_RE = re.compile(r"wiki-export-\d{4}-\d{2}-\d{2}\.zip\Z")
 BACKUP_MANIFEST_NAME = "BACKUP-MANIFEST.json"
 BACKUP_MANIFEST_FIELDS = {
     "schema_version", "created_at", "members", "raw_artifact_manifest_sha256",
@@ -52,19 +54,6 @@ BACKUP_MEMBER_FIELDS_V1 = {"path", "size", "sha256"}
 BACKUP_MEMBER_FIELDS_V2 = {"path", "size", "sha256", "mode"}
 BACKUP_DIRECTORY_FIELDS_V3 = {"path", "mode"}
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
-
-
-class _DuplicateBackupKey(ValueError):
-    pass
-
-
-def _strict_backup_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    value: dict[str, object] = {}
-    for key, item in pairs:
-        if key in value:
-            raise _DuplicateBackupKey(f"duplicate JSON key: {key}")
-        value[key] = item
-    return value
 
 
 def parser() -> argparse.ArgumentParser:
@@ -107,14 +96,22 @@ def export_files(
     repo_root: Path,
     output: Path | None = None,
 ) -> list[Path]:
-    """Return every regular file except the exact archive being written."""
+    """Return every regular file except export archives in the output folder."""
     resolved_output = output.resolve() if output is not None else None
+    output_parent = resolved_output.parent if resolved_output is not None else None
     files: list[Path] = []
     for path in sorted(repo_root.rglob("*")):
         if not path.is_file():
             continue
-        if resolved_output is not None and path.resolve() == resolved_output:
-            continue
+        if resolved_output is not None:
+            resolved_path = path.resolve()
+            if resolved_path == resolved_output:
+                continue
+            if (
+                resolved_path.parent == output_parent
+                and EXPORT_ARCHIVE_RE.fullmatch(resolved_path.name)
+            ):
+                continue
         files.append(path)
     return files
 
@@ -250,9 +247,9 @@ def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[
             try:
                 manifest = json.loads(
                     manifest_bytes.decode("utf-8"),
-                    object_pairs_hook=_strict_backup_object,
+                    object_pairs_hook=reject_duplicate_json_keys,
                 )
-            except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateBackupKey) as exc:
+            except (UnicodeDecodeError, json.JSONDecodeError, DuplicateJsonKeyError) as exc:
                 return None, [*errors, f"backup manifest is invalid JSON: {exc}"]
             if not isinstance(manifest, dict):
                 errors.append("backup manifest must be an object")

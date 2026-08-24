@@ -2,6 +2,7 @@
 """Seeded evals for Tier-2 review signals and meta maintenance."""
 
 from eval_lint_fixture import *
+from _wiki_parse import get_entity_pages
 
 # ---- Tier 2: quote mismatches (evidence check, deterministic half) ----
 FIXTURE_QUOTE = "The gamma fixture contains this exact sentence for verbatim quoting."

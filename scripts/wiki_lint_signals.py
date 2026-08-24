@@ -12,23 +12,16 @@ from typing import TypedDict, Union
 from _wiki_parse import (
     FrontmatterError,
     LINK_RE,
-    META_PAGES,
-    authored_body_view,
     authored_link_view,
-    dangling_slugs,
     evidentiary_view,
-    frontmatter_block,
     get_entity_pages,
     parse_log_entry_type,
     status_review_view,
-    strip_body_sections,
-    split_frontmatter,
 )
 from review_due import collect_due_reviews
 from wiki_lint_adjudications import Adjudications, glossary_entry_lines, normalize_quote
 from wiki_lint_contract import (
-    ADJUDICATIONS_PATH,
-    GLOSSARY_BULLET_ENTRY_RE,
+    ADJUDICATION_CATEGORY_FIELDS,
     LOG_ROTATION_WARN_LINES,
     REVIEW_BY_REQUIRED_FOLDERS,
     STATUS_RE,
@@ -559,15 +552,7 @@ def signal_adjudication_dead(ctx: Tier2Context) -> Tier2SignalResult:
 
     """
     out = []
-    names = {
-        "orphans": "accepted_orphans",
-        "quotes": "reviewed_quotes",
-        "recompile": "reviewed_recompile_candidates",
-        "authority_missing": "reviewed_authority_missing",
-        "glossary_volatile": "reviewed_glossary_volatile",
-        "unconsumed_sources": "reviewed_unconsumed_sources",
-    }
-    for key, category in names.items():
+    for key, category in ADJUDICATION_CATEGORY_FIELDS.items():
         dead = ctx.adj[key] - ctx.adj_used[key]
         out.extend(_adjudication_entry_labels(category, dead))
     return sorted(out), 0

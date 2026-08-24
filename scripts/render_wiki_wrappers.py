@@ -12,6 +12,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from _strict_json import reject_duplicate_json_keys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = Path("scripts/wiki-wrapper-contract.json")
@@ -36,19 +37,6 @@ SCRIPT_REF_RE = re.compile(r"scripts/[A-Za-z0-9_./-]+\.py")
 
 class ContractError(ValueError):
     """The governed wrapper contract or requested render is invalid."""
-
-
-class DuplicateKeyError(ValueError):
-    pass
-
-
-def _strict_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    obj: dict[str, object] = {}
-    for key, value in pairs:
-        if key in obj:
-            raise DuplicateKeyError(f"duplicate JSON key: {key}")
-        obj[key] = value
-    return obj
 
 
 @dataclass(frozen=True)
@@ -83,7 +71,7 @@ def load_contract(repo_root: Path = REPO_ROOT, contract_path: Path = CONTRACT_PA
     path = repo_root / contract_path
     try:
         raw = path.read_text(encoding="utf-8")
-        data = json.loads(raw, object_pairs_hook=_strict_object)
+        data = json.loads(raw, object_pairs_hook=reject_duplicate_json_keys)
     except (OSError, UnicodeError, ValueError, RecursionError) as exc:
         raise ContractError(f"cannot parse {contract_path}: {exc}") from exc
     if not isinstance(data, dict):

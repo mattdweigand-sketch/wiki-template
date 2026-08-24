@@ -24,20 +24,15 @@ slug, the folder-pointer skip removed), at least one assertion below fails.
 
 from __future__ import annotations
 
-import ast
-import subprocess
 import sys
-import tempfile
 import importlib
-import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from _wiki_parse import (  # noqa: E402  (after sys.path insert)
-    FENCED_CODE_RE,
-    INLINE_CODE_RE,
+    FrontmatterError,
     LINK_RE,
     dangling_slugs,
     frontmatter_block,
@@ -85,6 +80,14 @@ check("frontmatter-block-preserves-raw",
       "tags: [agent, money]" in block and "review_by: 2020-01-01" in block,
       detail=f"block={block!r}")
 
+try:
+    split_frontmatter("---\nstatus: unconfigured\nstatus: configured\n---\n")
+except FrontmatterError:
+    duplicate_frontmatter_rejected = True
+else:
+    duplicate_frontmatter_rejected = False
+check("duplicate-frontmatter-key-is-rejected", duplicate_frontmatter_rejected)
+
 # LINK_RE captures the bare slug, strips the folder prefix, and drops the alias.
 # The folder-pointer link [[concepts/]] is captured verbatim ("concepts/"); the
 # trailing slash is what dangling_slugs keys on to skip it.
@@ -103,16 +106,13 @@ check("link-re-alias-captures-slug-not-alias",
 # strip_code_spans blanks both fenced and inline code. Order matters: fenced
 # blocks first, then inline spans. The fenced block carries a language tag and
 # an UNBALANCED stray backtick, so the documented fenced-then-inline order is
-# load-bearing: dropping FENCED_CODE_RE, or swapping to inline-first, leaves the
-# stray backtick to mis-pair across the fence and re-expose [[fenced-example]].
+# load-bearing: scanning inline spans before fenced blocks would let the stray
+# backtick mis-pair across the fence and re-expose [[fenced-example]].
 stripped = strip_code_spans(LF)
 check("strip-code-spans-removes-both",
       "[[in-code]]" not in stripped and "[[fenced-example]]" not in stripped
       and "[[real-page]]" in stripped,
       detail=f"stripped={stripped!r}")
-check("code-span-res-present",
-      FENCED_CODE_RE.search(LF) is not None and INLINE_CODE_RE.search(LF) is not None)
-
 # dangling_slugs ignores in-code/fenced examples and resolves real links.
 dangling = dangling_slugs(LF, {"real-page", "aliased"})
 check("dangling-skips-code-and-resolves",

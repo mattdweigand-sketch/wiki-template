@@ -9,6 +9,7 @@ and code spans never feed the reverse link graph back into itself.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from collections import defaultdict
 from collections.abc import Callable
@@ -39,6 +40,12 @@ class PageSnapshot:
     content: bytes
     sha256: str
     mode: int
+
+
+def parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(
+        description="Rebuild generated Referenced by sections for entity pages."
+    )
 
 
 def load_page_texts(all_pages: list[Path]) -> dict[Path, PageSnapshot]:
@@ -199,6 +206,7 @@ def apply_backlink_rebuild_plan(
 
 
 def main() -> int:
+    parser().parse_args()
     if not WIKI_ROOT.exists():
         print(
             "Error: 'wiki/' directory not found. Run this script from the repo root.\n"

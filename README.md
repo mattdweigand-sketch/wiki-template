@@ -16,12 +16,12 @@ This repo compiles stable, source-backed context so future work can reuse prior 
 
 ## Getting Started
 
-The deterministic tooling requires Python 3.9 or newer and `ripgrep` (`rg`).
+The deterministic tooling requires Python 3.9 or newer and `ripgrep` (`rg`). Backup verification works anywhere those requirements are met. Atomic restore requires macOS or Linux because it uses the operating system's no-replace directory rename.
 
 1. Clone the repo.
 2. Point an agent at it. Claude Code can start at `CLAUDE.md`; other agents start at `AGENTS.md`.
 3. Replace the placeholders in [`wiki/domain.md`](wiki/domain.md) with the wiki's name, scope, and example questions.
-4. Add source files under `raw/documents/`, `raw/media/`, or `raw/imports/`, then ask the agent to ingest them.
+4. Add source files under a bucket registered in [`scripts/raw-buckets.json`](scripts/raw-buckets.json), then ask the agent to ingest them.
 5. Ask questions in plain language.
 
 The clone is operational before customization. All supported entity folders and workflows are present, so changing the subject does not require a setup command or structural migration.
@@ -133,7 +133,7 @@ Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task inst
 
 A fresh clone is ready to use. Edit [`wiki/domain.md`](wiki/domain.md) to name the context, describe its scope, and list the questions it should answer. All 24 governed entity folders stay available; unused folders may remain empty.
 
-The default raw taxonomy is `documents`, `imports`, and `media`. If those buckets do not fit, update [`scripts/raw-buckets.json`](scripts/raw-buckets.json), [`raw/README.md`](raw/README.md), and the tracked bucket placeholders together. No executable setup or reconfiguration workflow is required.
+If the raw taxonomy does not fit, update [`scripts/raw-buckets.json`](scripts/raw-buckets.json) and the tracked bucket placeholders together. No executable setup or reconfiguration workflow is required.
 
 The full schema, [`wiki/SCHEMA.md`](wiki/SCHEMA.md), defines the available page types and page rules.
 

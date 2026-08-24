@@ -23,6 +23,7 @@ from capture_gate import (
     prepare_capture_proposal,
 )
 from eval_lib import Results
+from _repo_paths import RepoPathError
 
 
 results = Results()
@@ -133,6 +134,7 @@ with tempfile.TemporaryDirectory() as temporary:
     results.record(
         "preview-shows-exact-content-scope-and-digest",
         preview["targets"][0]["content_utf8"] == "new exact bytes\n"
+        and "bytes_base64" not in preview["targets"][0]
         and preview["editable_scope"] == ["wiki/concepts/exact.md"]
         and preview["authorization_digest"] == prepared["authorization_digest"],
     )
@@ -212,6 +214,24 @@ with tempfile.TemporaryDirectory() as temporary:
     else:
         malformed_boundary_rejected = False
     results.record("malformed-descriptor-boundary-fails-cleanly", malformed_boundary_rejected)
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = Path(temporary)
+    proposal, _ = make_repo(root)
+    (root / ".codex/skills").mkdir(parents=True)
+    descriptor = json.loads(proposal.read_text())
+    descriptor["primary_destination"] = ".codex/skills/legacy.md"
+    descriptor["editable_scope"] = [".codex/skills/legacy.md"]
+    descriptor["targets"][0]["destination"] = ".codex/skills/legacy.md"
+    proposal.write_bytes(canonical_json(descriptor))
+    try:
+        with working_directory(root):
+            prepare_capture_proposal(root, "tmp/proposal.json")
+    except (CaptureProposalError, RepoPathError):
+        legacy_codex_rejected = True
+    else:
+        legacy_codex_rejected = False
+    results.record("legacy-codex-destination-is-rejected", legacy_codex_rejected)
 
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary)

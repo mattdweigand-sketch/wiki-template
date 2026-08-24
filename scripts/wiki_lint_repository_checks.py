@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -12,6 +11,7 @@ from typing import Optional
 from _file_transactions import transaction_status
 from _wiki_parse import META_PAGES, get_entity_pages, parse_log_entry_date
 from wiki_lint_contract import (
+    ADJUDICATION_CATEGORY_FIELDS,
     ADJUDICATIONS_PATH,
     FOLDER_TYPE,
     KEBAB_RE,
@@ -452,18 +452,17 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
     # silently detach; unknown keys fail loudly instead (REFERENCES.md rule).
     # Underscore-prefixed keys are documentation metadata (e.g. _description),
     # never suppression lists.
-    known_keys = {
-        "accepted_orphans", "reviewed_quotes", "reviewed_recompile_candidates",
-        "reviewed_authority_missing", "reviewed_glossary_volatile",
-        "reviewed_unconsumed_sources",
-    }
+    known_keys = set(ADJUDICATION_CATEGORY_FIELDS.values())
     unknown = sorted(k for k in set(raw) - known_keys if not k.startswith("_"))
     if unknown:
         return {}, ("unknown top-level category key(s): " + ", ".join(unknown)
                     + "; suppression entries under an unrecognized key would "
                       "silently detach")
-    for key in ("accepted_orphans", "reviewed_authority_missing",
-                "reviewed_unconsumed_sources"):
+    for key in (
+        ADJUDICATION_CATEGORY_FIELDS["orphans"],
+        ADJUDICATION_CATEGORY_FIELDS["authority_missing"],
+        ADJUDICATION_CATEGORY_FIELDS["unconsumed_sources"],
+    ):
         for e in raw.get(key, []):
             if not isinstance(e, dict) or not isinstance(e.get("page"), str):
                 return {}, f"every '{key}' entry needs a string 'page' field"

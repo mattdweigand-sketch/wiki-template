@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Seeded evals for lint repository structure and Git boundaries."""
 
+import os
+
 from eval_lint_fixture import *
+from _wiki_parse import META_PAGES
 from wiki_entity_catalog import load_entity_catalog
 
 
@@ -345,7 +348,7 @@ def _install_raw_git_fixture(root: Path, real_git: str) -> bytes:
         "wiki_provenance.py", "wiki_lint_frontmatter.py",
         "wiki_lint_contract.py", "wiki_entity_catalog.py",
         "wiki_schema_vocabularies.py",
-        "_wiki_parse.py", "_repo_paths.py",
+        "_wiki_parse.py", "_repo_paths.py", "_strict_json.py",
     ):
         shutil.copyfile(REPO_ROOT / "scripts" / name, root / "scripts" / name)
     shutil.copyfile(

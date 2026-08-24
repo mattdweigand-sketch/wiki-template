@@ -12,10 +12,4 @@ approved private off-device backup.
 
 ## Subfolders
 
-The clone includes three neutral buckets. `scripts/raw-buckets.json` is their sole tracked taxonomy source and `scripts/lint.py --tier1` validates the folders against it. Change the registry, this table, and tracked bucket placeholders together only when a different source taxonomy is genuinely useful.
-
-| Folder | Holds |
-|---|---|
-| `documents/` | Text documents, notes, transcripts, exports, and structured data |
-| `imports/` | Source bundles or exports awaiting classification during ingest |
-| `media/` | Audio, images, video, and other media artifacts |
+[`scripts/raw-buckets.json`](../scripts/raw-buckets.json) is the sole tracked taxonomy. `scripts/lint.py --tier1` verifies that every `raw/` subfolder is registered there and rejects registered buckets that are missing from the tree. Read the registry to choose a destination. Change the registry and tracked bucket placeholders together only when a different source taxonomy is useful.
