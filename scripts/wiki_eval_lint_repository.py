@@ -2,6 +2,7 @@
 """Seeded evals for lint repository structure and Git boundaries."""
 
 from eval_lint_fixture import *
+from wiki_entity_catalog import load_entity_catalog
 
 
 def write_sourcing_queue(root: Path, *markers: str) -> None:
@@ -126,22 +127,18 @@ run_case(
 )
 
 
-def configure_fixture_domain(root, active_types):
-    lines = [
-        "---", "title: Domain Config", "type: domain", "created: 2026-06-01",
-        "updated: 2026-06-01", "status: configured",
-    ]
-    lines.append("entity_types_active:")
-    lines.extend(f"  - {value}" for value in active_types)
-    lines.extend(("raw_buckets: []", "example_queries: []", "---", "", "# Domain Config", ""))
-    (root / "wiki" / "domain.md").write_text("\n".join(lines))
+def remove_governed_concepts_folder(root: Path) -> None:
+    for folder in load_entity_catalog().folder_types:
+        (root / "wiki" / folder).mkdir(exist_ok=True)
+    shutil.rmtree(root / "wiki" / "concepts")
+    edit(root, "wiki/domain.md", "status: unconfigured", "status: configured")
 
 
 run_case(
     "configured-layout-drift-fails-tier1",
-    lambda r: configure_fixture_domain(r, ("source",)),
+    remove_governed_concepts_folder,
     expect_code=1,
-    expect=("entity-configuration", "inactive entity folders present: concepts"),
+    expect=("entity-configuration", "governed entity folders missing: concepts"),
 )
 # ---- Tier 1: meta-page dangling links (promoted from Tier-2; gates commit) ----
 run_case(
@@ -364,6 +361,7 @@ def _install_raw_git_fixture(root: Path, real_git: str) -> bytes:
     )
     source = root / "raw/notes/source.txt"
     source.parent.mkdir(parents=True)
+    (source.parent / ".gitkeep").write_text("", encoding="utf-8")
     source_bytes = b"local source artifact\n"
     source.write_bytes(source_bytes)
     (root / "wiki/sources/tracked-source.md").write_text(

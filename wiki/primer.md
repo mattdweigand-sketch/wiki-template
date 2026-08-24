@@ -14,8 +14,8 @@ Routing into the wiki by question type. When an agent gets a question, this page
 | Layer | What it holds |
 |---|---|
 | Core files | Domain declaration, schema, index, glossary, log, sourcing queue, contradictions, and synthesis |
-| Entity folders | One folder per active knowledge type listed in [`domain.md`](domain.md) and [`SCHEMA.md`](SCHEMA.md) |
-| Raw sources | Immutable source artifacts under `raw/`, organized by the configured raw buckets |
+| Entity folders | One folder per governed knowledge type in [`SCHEMA.md`](SCHEMA.md); unused folders may stay empty |
+| Raw sources | Immutable source artifacts under `raw/`, organized by the registered raw buckets |
 
 ## Question Routing
 
@@ -33,7 +33,7 @@ Add domain-specific routing rows below as the wiki grows.
 
 If you are a downstream agent reading this wiki:
 
-1. Read [`domain.md`](domain.md) first for setup status, scope, and active types.
+1. Read [`domain.md`](domain.md) first for the wiki's subject, scope, and example questions.
 2. Use [`index.md`](index.md) to find existing pages instead of scanning folders blindly.
 3. Use [`glossary.md`](glossary.md) to resolve ambiguous terms before assuming meaning.
 4. Use `[[double-bracket]]` links inside authored page bodies and `## Related pages`.

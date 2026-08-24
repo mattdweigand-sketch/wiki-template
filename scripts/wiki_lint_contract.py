@@ -31,7 +31,6 @@ FOLDER_TYPE = ENTITY_CATALOG.folder_types
 ROOT_ALLOWED_FILES = {
     ".gitignore", "AGENTS.md", "CLAUDE.md", "CONTEXT.md", "LICENSE",
     "README.md", "REFERENCES.md",
-    "SETUP.md",
 }
 ROOT_ALLOWED_DIRS = {
     ".agents", ".claude", ".codex", ".github", ".git", ".wiki-transactions", "archive", "deliverables", "raw",

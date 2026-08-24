@@ -71,7 +71,11 @@ def check_no_tracked_raw_artifacts() -> LintFailures:
         if not raw_path:
             continue
         path = raw_path.decode("utf-8", errors="surrogateescape")
-        if path.lower().startswith("raw/") and path not in TRACKED_RAW_EXCEPTIONS:
+        if (
+            path.lower().startswith("raw/")
+            and path not in TRACKED_RAW_EXCEPTIONS
+            and not path.endswith("/.gitkeep")
+        ):
             failures.append((
                 "raw-tracked",
                 path,
@@ -128,7 +132,7 @@ def check_meta_utf8() -> LintFailures:
 
 
 def check_configured_entity_layout() -> LintFailures:
-    """Configured wikis contain exactly their declared active entity folders."""
+    """The ready-to-use wiki contains every governed entity folder."""
     validation = validate_configured_layout(Path.cwd().resolve(), load_entity_catalog())
     return [
         ("entity-configuration", "wiki/domain.md", problem)
@@ -179,8 +183,8 @@ def check_folder_structure() -> LintFailures:
                             fails.append(("wiki-structure", entry_rel,
                                           "direct directory in entity folder; pages must be direct .md files"))
                         elif entry.is_file() and entry.name == ".gitkeep":
-                            # Fresh template clones retain empty entity folders
-                            # with tracked placeholders until setup creates pages.
+                            # Empty governed folders retain tracked placeholders
+                            # until pages are added.
                             continue
                         elif entry.is_file() and entry.suffix != ".md":
                             fails.append(("wiki-structure", entry_rel,

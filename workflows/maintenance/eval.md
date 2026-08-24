@@ -1,6 +1,6 @@
 # Wiki Eval
 
-Run this workflow when the task is to verify the wiki system itself. It covers scripts, durable writes, capture and setup transactions, exact application, backlinks, backup and restore, evidence runs, wrapper parity, schema data, document routing, and Tier-1 lint. The `SUITES` registry in `scripts/wiki_eval.py` is the full list.
+Run this workflow when the task is to verify the wiki system itself. It covers scripts, durable writes, capture transactions, exact application, backlinks, backup and restore, evidence runs, wrapper parity, schema data, document routing, and Tier-1 lint. The `SUITES` registry in `scripts/wiki_eval.py` is the full list.
 
 The tooling supports Python 3.9 and newer. The eval runner prints the exact runtime version in its first line, and CI runs the full checks on Python 3.9 and 3.11 so the user-facing `python3` commands retain that compatibility contract.
 
@@ -33,7 +33,7 @@ python3 scripts/wiki_transactions.py diagnose <transaction-id>
 
 `status` is read-only and does not create the authority. `recover` applies only the deterministic recorded policy. `diagnose` reports paths, states, and hashes without dumping file contents. Never delete or empty `.wiki-transactions/` to make a guard pass. A clean interrupted transaction can be recovered; a conflict or corrupt record is preserved for diagnosis. Tier 1, pre-commit, and export fail closed while the authority is nonclean.
 
-The `durable-files` suite checks guarded atomic replacement. The `transactions` suite checks capture writes and setup deletions. Backlink and log rotation suites check interruption, concurrent edits, and safe reruns without transaction journals.
+The `durable-files` suite checks guarded atomic replacement. The `transactions` suite checks capture writes and recovery. Backlink and log rotation suites check interruption, concurrent edits, and safe reruns without transaction journals.
 
 Do not copy these repo-local skills into `~/.agents/skills/`. Identical personal installs can create duplicate skill entries; if duplicates appear, keep the tracked repo-local copy and remove the personal duplicate by hand.
 

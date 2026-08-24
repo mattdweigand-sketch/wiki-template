@@ -12,13 +12,10 @@ approved private off-device backup.
 
 ## Subfolders
 
-This template starts unconfigured. The one-time initializer replaces the placeholder rows below, creates the selected `raw/<bucket>/` folders, and writes the same definitions to `scripts/raw-buckets.json`. That JSON file is the tracked taxonomy source that `scripts/lint.py --tier1` reads for structural checks.
+The clone includes three neutral buckets. `scripts/raw-buckets.json` is their sole tracked taxonomy source and `scripts/lint.py --tier1` validates the folders against it. Change the registry, this table, and tracked bucket placeholders together only when a different source taxonomy is genuinely useful.
 
 | Folder | Holds |
 |---|---|
-| `customer-research/` | Customer interview notes, support findings, and user research |
-| `internal-memos/` | Strategy, planning, and operating memos |
-| `release-notes/` | Product, API, and changelog artifacts |
-| `ai-research/` | Example AI research and workflow sources, if present in this checkout |
-| `social/` | Example social or screenshot captures, if present in this checkout |
-| `videos/` | Example video transcript captures, if present in this checkout |
+| `documents/` | Text documents, notes, transcripts, exports, and structured data |
+| `imports/` | Source bundles or exports awaiting classification during ingest |
+| `media/` | Audio, images, video, and other media artifacts |

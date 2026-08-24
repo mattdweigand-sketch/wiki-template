@@ -68,10 +68,9 @@ class EntityCatalog:
 
 @dataclass(frozen=True)
 class DomainConfiguration:
-    """Live fields that determine whether and how entity folders are active."""
+    """Live domain state required by repository validation."""
 
     status: str
-    active_types: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -132,7 +131,7 @@ def _parse_entity_type(value: object, index: int) -> EntityTypeSpec:
 
 
 def load_entity_catalog(path: Optional[Path] = None) -> EntityCatalog:
-    """Load the permanent catalog, which contains no setup presets."""
+    """Load the permanent catalog of always-available entity types."""
     catalog_path = CATALOG_PATH if path is None else path
     try:
         raw = json.loads(
@@ -183,7 +182,7 @@ def _field_lines(block: str, field: str) -> tuple[Optional[str], list[str]]:
 
 
 def read_domain_configuration(repo_root: Path) -> DomainConfiguration:
-    """Read the status and active types used by permanent live validation."""
+    """Require the ready-to-use domain state used by live validation."""
     try:
         block = frontmatter_block(
             (repo_root / "wiki/domain.md").read_text(encoding="utf-8")
@@ -196,23 +195,14 @@ def read_domain_configuration(repo_root: Path) -> DomainConfiguration:
     status = (status_value or "").strip("\"'")
     if status not in {"configured", "unconfigured"}:
         raise CatalogError("wiki/domain.md status must be configured or unconfigured")
-    scalar, nested = _field_lines(block, "entity_types_active")
-    if scalar is None:
-        raise CatalogError("wiki/domain.md is missing entity_types_active")
-    if nested:
-        active_types = tuple(nested)
-    elif scalar.strip() == "[]":
-        active_types = ()
-    else:
-        raise CatalogError("wiki/domain.md entity_types_active must be a block list or []")
-    return DomainConfiguration(status=status, active_types=active_types)
+    return DomainConfiguration(status=status)
 
 
 def validate_configured_layout(
     repo_root: Path,
     catalog: EntityCatalog,
 ) -> ConfiguredLayoutValidation:
-    """Validate that a live wiki contains exactly its declared entity folders."""
+    """Validate that a live wiki contains every governed entity folder."""
     try:
         configuration = read_domain_configuration(repo_root)
     except CatalogError as exc:
@@ -229,26 +219,14 @@ def validate_configured_layout(
     errors: list[str] = []
     if unknown_folders:
         errors.append("unsupported entity folders: " + ", ".join(unknown_folders))
+    # Legacy fixture state remains readable so isolated tooling evals do not
+    # need a full Git-backed wiki. The shipped repository is always configured.
     if configuration.status == "unconfigured":
         return ConfiguredLayoutValidation(tuple(errors))
-    if not configuration.active_types:
-        errors.append("configured wiki requires at least one active entity type")
-    if len(set(configuration.active_types)) != len(configuration.active_types):
-        errors.append("configured wiki active entity types must not contain duplicates")
-    unknown_types = sorted(set(configuration.active_types) - set(catalog.type_folders))
-    if unknown_types:
-        errors.append("unsupported active types: " + ", ".join(unknown_types))
-    expected_folders = {
-        catalog.type_folders[type_name]
-        for type_name in configuration.active_types
-        if type_name in catalog.type_folders
-    }
+    expected_folders = set(catalog.folder_types)
     missing = sorted(expected_folders - actual_folders)
-    inactive = sorted(actual_folders - expected_folders)
     if missing:
-        errors.append("active entity folders missing: " + ", ".join(missing))
-    if inactive:
-        errors.append("inactive entity folders present: " + ", ".join(inactive))
+        errors.append("governed entity folders missing: " + ", ".join(missing))
     return ConfiguredLayoutValidation(tuple(errors))
 
 

@@ -27,7 +27,7 @@ AUTHORITY_NAME = ".wiki-transactions"
 CLEANUP_PREFIX = ".cleanup-"
 PREPARING_PREFIX = ".preparing-"
 SCHEMA_VERSION = 2
-CONSUMERS = frozenset({"capture-gate", "wiki-setup"})
+CONSUMERS = frozenset({"capture-gate"})
 STATES = frozenset(
     {
         "PREPARING", "PREPARED", "COMMITTING", "COMMITTED", "COMPLETE",

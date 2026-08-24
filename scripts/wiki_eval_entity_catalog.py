@@ -52,53 +52,44 @@ def main() -> int:
     )
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     results.record(
-        "live-catalog-contains-no-setup-presets",
-        "presets" not in raw and all("presets" not in value for value in raw["types"]),
+        "live-catalog-contains-only-governed-schema-fields",
+        set(raw) == {"schema_version", "description", "types"},
         repr(raw),
     )
 
     with tempfile.TemporaryDirectory(prefix="wiki-live-layout-") as temporary:
         root = Path(temporary)
-        (root / "wiki/sources").mkdir(parents=True)
-        (root / "wiki/concepts").mkdir()
+        (root / "wiki").mkdir(parents=True)
+        for folder in catalog.folder_types:
+            (root / "wiki" / folder).mkdir()
         (root / "wiki/domain.md").write_text(
             "---\ntitle: Domain\ntype: domain\ncreated: 2026-08-20\nupdated: 2026-08-20\n"
             "status: configured\norg: Example\ndomain: Example knowledge\n"
-            "entity_types_active:\n  - concept\n  - source\n"
-            "raw_buckets:\n  - documents\nexample_queries:\n  - One?\n  - Two?\n  - Three?\n"
+            "example_queries:\n  - One?\n  - Two?\n  - Three?\n"
             "---\n\n# Domain\n",
             encoding="utf-8",
         )
         validation = validate_configured_layout(root, catalog)
-        results.record("configured-live-folder-layout-passes", not validation.errors, repr(validation))
-        (root / "wiki/teams").mkdir()
+        results.record("complete-live-folder-layout-passes", not validation.errors, repr(validation))
+        (root / "wiki/teams").rmdir()
         drift = validate_configured_layout(root, catalog)
         results.record(
-            "inactive-live-folder-fails",
-            "inactive entity folders present: teams" in drift.errors,
+            "missing-governed-folder-fails",
+            "governed entity folders missing: teams" in drift.errors,
             repr(drift),
         )
-        (root / "wiki/teams").rmdir()
-        domain_path = root / "wiki/domain.md"
-        domain_path.write_text(
-            domain_path.read_text(encoding="utf-8").replace(
-                "  - concept\n  - source\n",
-                "  - concept\n  - concept\n  - source\n",
-            ),
-            encoding="utf-8",
-        )
-        duplicate = validate_configured_layout(root, catalog)
-        results.record(
-            "duplicate-live-active-type-fails",
-            "configured wiki active entity types must not contain duplicates"
-            in duplicate.errors,
-            repr(duplicate),
-        )
+
+    live_validation = validate_configured_layout(Path(__file__).resolve().parents[1], catalog)
+    results.record(
+        "shipped-repository-has-complete-configured-layout",
+        not live_validation.errors,
+        repr(live_validation),
+    )
 
     with tempfile.TemporaryDirectory(prefix="wiki-catalog-invalid-") as temporary:
         path = Path(temporary) / "catalog.json"
         invalid = dict(raw)
-        invalid["presets"] = ["personal"]
+        invalid["selection"] = ["concept"]
         path.write_text(json.dumps(invalid), encoding="utf-8")
         try:
             load_entity_catalog(path)
@@ -106,7 +97,7 @@ def main() -> int:
             rejected = True
         else:
             rejected = False
-        results.record("setup-preset-field-is-rejected-by-live-catalog", rejected)
+        results.record("folder-selection-field-is-rejected", rejected)
     return results.finish()
 
 

@@ -48,8 +48,9 @@ def _initialize_repository(root: Path, *, manifest: bool = True) -> None:
     (root / "scripts").mkdir()
     (root / "wiki/sources").mkdir(parents=True)
     (root / "raw/fixtures").mkdir(parents=True)
+    (root / "raw/fixtures/.gitkeep").write_text("", encoding="utf-8")
     (root / ".gitignore").write_text(
-        "raw/*\n!raw/.gitkeep\n!raw/README.md\n",
+        "raw/*\n!raw/.gitkeep\n!raw/README.md\n!raw/*/\nraw/*/*\n!raw/*/.gitkeep\n",
         encoding="utf-8",
     )
     _write_json(root / "scripts/raw-buckets.json", {

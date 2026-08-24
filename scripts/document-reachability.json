@@ -5,8 +5,7 @@
     "AGENTS.md",
     "CONTEXT.md",
     "README.md",
-    "REFERENCES.md",
-    "SETUP.md"
+    "REFERENCES.md"
   ],
   "operational_directories": [
     "workflows"

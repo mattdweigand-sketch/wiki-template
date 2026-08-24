@@ -9,15 +9,15 @@ updated: 2026-08-23
 
 Durable reasons for the live wiki design.
 
-## One-time setup
+## Ready-to-use clone
 
-A fresh clone uses one reviewed setup pass. The finalizer writes the configured domain, creates selected folders, records setup provenance, validates the result, and leaves uncommitted changes for review.
+A fresh clone is operational immediately. The user customizes `wiki/domain.md` through ordinary edits instead of running a separate initializer.
 
 ## Governed entity catalog
 
 `scripts/entity-catalog.json` owns supported entity types and folder mappings. `scripts/wiki_entity_catalog.py` validates and exposes it.
 
-A configured wiki contains only the entity folders selected during setup.
+Every governed entity folder ships with the template. Unused folders stay empty, so changing the domain does not change workflow capabilities or require structural migration.
 
 ## Raw artifacts stay immutable
 

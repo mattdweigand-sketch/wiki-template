@@ -361,7 +361,9 @@ def _tracked_raw_issues(view: _RepositoryView) -> tuple[str, ...]:
     return tuple(
         f"{path}: raw source artifacts must not be tracked by Git"
         for path in sorted(view.files)
-        if path.casefold().startswith("raw/") and path not in TRACKED_RAW_EXCEPTIONS
+        if path.casefold().startswith("raw/")
+        and path not in TRACKED_RAW_EXCEPTIONS
+        and not path.endswith("/.gitkeep")
     )
 
 

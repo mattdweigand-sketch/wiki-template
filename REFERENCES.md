@@ -37,7 +37,6 @@ Detailed workflow ownership:
 
 | Workflow | Route | Owns |
 |---|---|---|
-| One-time initialization | `SETUP.md` | Renders exact postimages, binds preview approval to a digest, validates a staged clone, applies one recoverable transaction, archives compact provenance, and removes itself. <!-- wiki-setup:references-setup-workflow:line --> |
 | Ingest | `workflows/ingest/CONTEXT.md` | Raw source handling, `wiki/sources/` summaries, affected entity-page updates, index rows, backlinks, Tier-1 lint, touched-page Tier-2 review, and ingest log entries. |
 | Ask | `workflows/research/ask.md` | Default bounded wiki answers with selective page loading and optional analysis capture. |
 | Research | `workflows/research/research.md` | Explicitly invoked research with exact-page evidence sampling and claim-level independent review. |
@@ -60,8 +59,8 @@ The main control mechanisms are:
 | Schema and citations | `wiki/SCHEMA.md` defines page types, frontmatter, source types, confidence values, authority metadata, and citation rules. Specific facts cite `wiki/sources/` pages. |
 | Link graph | Authors maintain `## Related pages`; `scripts/rebuild_referenced_by.py` regenerates `## Referenced by` from one snapshot and applies the generation as a recoverable transaction. |
 | Deterministic lint | `scripts/lint.py --tier1` catches structural failures. Full lint also surfaces Tier-2 candidates for human or agent judgment. |
-| Durable writes | Exact approved capture and one-time setup use recoverable transactions under `.wiki-transactions/`; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
-| Live evals | `wiki-eval` runs the `SUITES` registry in `scripts/wiki_eval.py`, including parsing, durable files, capture and setup transactions, lint and evidence checks, backlinks, backup and restore, log rotation, schema data, document reachability, and Tier-1 lint. |
+| Durable writes | Exact approved capture uses recoverable transactions under `.wiki-transactions/`; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
+| Live evals | `wiki-eval` runs the `SUITES` registry in `scripts/wiki_eval.py`, including parsing, durable files, capture transactions, lint and evidence checks, backlinks, backup and restore, log rotation, schema data, document reachability, and Tier-1 lint. |
 | Outcome review | `scripts/review_due.py` surfaces due `review_by` checkpoints; `workflows/maintenance/review.md` records what happened and whether confidence changes. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
 | Approval gate | `scripts/capture_gate.py` previews exact `analysis-capture`, `artifact-promotion`, and `synthesis-promotion` proposals, binds approval to their digest, and applies approved targets with the combined ledger postimage through one recoverable transaction. |
@@ -85,7 +84,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 
 | File | Purpose |
 |---|---|
-| `wiki/domain.md` | Context name, scope, active entity types, raw buckets, and template/configured status <!-- wiki-setup:references-domain-summary:line --> |
+| `wiki/domain.md` | Context name, scope, and example questions |
 | `wiki/index.md` | Master catalog: read for browsing, research, promotion, explicit lookup, and ingest link/index steps; not startup context |
 | `wiki/SCHEMA.md` | Entity types, frontmatter spec, source-type templates; read when authoring any new page |
 | `wiki/glossary.md` | Canonical term definitions |
@@ -104,7 +103,6 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/raw-artifacts.json`, `scripts/wiki_provenance.py` | Exact raw/source registry plus live, staged, CI, and restored-tree validation views |
 | `scripts/entity-catalog.json` | Permanent governed entity folders, types, and authoring semantics; consumed through `scripts/wiki_entity_catalog.py` |
 | `scripts/schema-vocabularies.json` | Permanent governed frontmatter and related-link vocabularies; consumed through `scripts/wiki_schema_vocabularies.py` |
-| `scripts/finalize_wiki_setup.py`, `scripts/wiki_setup_initializer.py`, `scripts/wiki_setup_initializer_test.py`, `scripts/wiki-setup-presets.json` | Disposable one-time setup command, implementation, regression test, and preset defaults; all four are removed from a configured wiki <!-- wiki-setup:references-initializer-files:line --> |
 | `scripts/lint-adjudications.json` | Settled Tier-2 lint judgments with reasons and dates; lint suppresses what it lists |
 | `scripts/wiki_evidence.py` | Typed production seam for exact evidence samples, verifier batches, and run validation |
 | `scripts/build_evidence_sample.py`, `scripts/build_verifier_batches.py`, `scripts/verify_evidence_run.py` | Thin agent-neutral CLI adapters for sampled evidence checks |
@@ -114,12 +112,12 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the nine generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
 | `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
 | `scripts/check_document_reachability.py` | Follows Markdown links from declared roots and rejects missing routes or unreachable operational documents |
-| `.wiki-transactions/` | Gitignored recovery authority for exact approved capture and one-time setup; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
+| `.wiki-transactions/` | Gitignored recovery authority for exact approved capture; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
 | `scripts/fixtures/` | Fixture data for live tooling evals |
 
 ## Durable File And Transaction Boundary
 
-`scripts/_durable_files.py` owns stable locks, complete writes, directory synchronization, guarded replacement, and installed-byte checks. Backlink rebuilds and log rotation use these idempotent single-file writes and converge on rerun. `scripts/_transaction_contract.py` owns transaction vocabulary, path confinement, and journal validation. `scripts/_file_transactions.py` applies exact capture generations and the one-time setup file set. Setup is the only consumer that may record an absent postimage.
+`scripts/_durable_files.py` owns stable locks, complete writes, directory synchronization, guarded replacement, and installed-byte checks. Backlink rebuilds and log rotation use these idempotent single-file writes and converge on rerun. `scripts/_transaction_contract.py` owns transaction vocabulary, path confinement, and journal validation. `scripts/_file_transactions.py` applies exact capture generations.
 
 An absent or verified-clean `.wiki-transactions/` root is safe. Any unpublished preparation, unfinished cleanup, nonterminal transaction, changed guard, conflict, corruption, or unknown state blocks mutation, Tier 1, pre-commit, and export. Recovery follows only the recorded deterministic policy; third-party bytes are preserved as a conflict rather than overwritten.
 
@@ -147,12 +145,10 @@ Every file in this project sits at one of five layers, defined by when it loads 
 
 | Layer | When loaded | Files |
 |---|---|---|
-| **L0** | Always: orientation and status | `AGENTS.md` (`CLAUDE.md` is a pointer for Claude agents), `wiki/domain.md` status check |
-| **L1** | Route entry: selected by status or task | One-time `SETUP.md` when unconfigured; `CONTEXT.md` and then `workflows/<workspace>/CONTEXT.md` when configured; `wiki/index.md` only for browsing <!-- wiki-setup:references-layer-one:line --> |
+| **L0** | Always: orientation and scope | `AGENTS.md` (`CLAUDE.md` is a pointer for Claude agents), `wiki/domain.md` |
+| **L1** | Route entry: selected by task | `CONTEXT.md` and then `workflows/<workspace>/CONTEXT.md`; `wiki/index.md` only for browsing |
 | **L2** | Task workflow: selected by route entry | `workflows/maintenance/*.md` and any task-specific workflow file named by the L1 route |
 | **L3** | Per task: stable reference, loaded on demand | `REFERENCES.md`, `wiki/index.md`, `wiki/SCHEMA.md`, `wiki/glossary.md`, `wiki/primer.md`, `wiki/design-notes.md`, `wiki/contradictions.md`, `wiki/sourcing-queue.md`, `wiki/overview.md` |
 | **L4** | During work: content read or written | `wiki/log.md`, `wiki/<entity>/*.md`, `raw/*` |
 
-<!-- wiki-setup:references-loading-principle:start -->
-Loading principle: an agent starting a task should load L0. An unconfigured clone follows `SETUP.md`; a configured wiki uses `CONTEXT.md` to choose the route, then opens only the routed workflow's Load / Skip list. Pull L3 references only when the workflow calls for them. `wiki/index.md` is on-demand for browsing, research, promotion, explicit lookup, and ingest link/index steps; it is not startup context.
-<!-- wiki-setup:references-loading-principle:end -->
+Loading principle: an agent starting a task should load L0, use `CONTEXT.md` to choose the route, then open only the routed workflow's Load / Skip list. Pull L3 references only when the workflow calls for them. `wiki/index.md` is on-demand for browsing, research, promotion, explicit lookup, and ingest link/index steps; it is not startup context.

@@ -656,12 +656,12 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
     configured_source = root / "configured-source"
     shutil.copytree(destination, configured_source)
     for folder in (configured_source / "wiki").iterdir():
-        if folder.is_dir() and folder.name not in {"concepts", "sources"}:
-            shutil.rmtree(folder)
-    for folder_name in ("concepts", "sources"):
-        folder = configured_source / "wiki" / folder_name
-        for entry in folder.iterdir():
-            entry.unlink()
+        if folder.is_dir():
+            for entry in folder.iterdir():
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
     raw_root = configured_source / "raw"
     for entry in raw_root.iterdir():
         if entry.name != "README.md":
@@ -690,11 +690,6 @@ updated: 2026-08-22
 status: configured
 org: Restore Fixture
 domain: exact configured restore validation
-entity_types_active:
-  - concept
-  - source
-raw_buckets:
-  - internal-memos
 example_queries:
   - What evidence supports the closure?
 ---

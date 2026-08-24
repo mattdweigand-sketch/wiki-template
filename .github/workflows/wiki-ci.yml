@@ -38,12 +38,6 @@ jobs:
           python3 scripts/wiki_provenance.py staged
           python3 scripts/wiki_provenance.py ci --trusted-base "$TRUSTED_BASE"
 
-      - name: Test one-time initializer
-        run: |
-          if test -f scripts/wiki_setup_initializer_test.py; then
-            PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/wiki_setup_initializer_test.py
-          fi
-
       - name: Run wiki eval suite
         run: python3 scripts/wiki_eval.py
 
