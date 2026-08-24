@@ -28,6 +28,6 @@ Synthesis promotion uses the same flow with `capture_boundary: synthesis-promoti
 | Refresh the sourcing queue | [`refresh-sourcing-queue.md`](refresh-sourcing-queue.md) | `wiki/sourcing-queue.md`, last ~10 `wiki/log.md` entries | the full wiki, entity pages, raw sources |
 | Synthesize the corpus | [`synthesize.md`](synthesize.md) | `wiki/synthesis.md` first, full `scripts/lint.py` output, `wiki/log.md` since the last synthesis entry, `wiki/index.md`, candidate pages only | `raw/`, entity folders the candidates do not touch |
 | Review due pages | [`review.md`](review.md) | `python3 scripts/review_due.py` output and due pages only | unrelated entity folders, raw sources |
-| Export a corpus zip | [`export.md`](export.md) | nothing else | all wiki pages, raw sources, other task files |
+| Create a complete private backup | [`export.md`](export.md) | nothing else | all wiki pages, raw sources, other task files |
 
 Each task file opens with its own Load / Skip list. Follow it instead of pulling the whole wiki into context.

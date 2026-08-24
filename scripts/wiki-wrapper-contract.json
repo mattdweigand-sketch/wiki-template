@@ -45,8 +45,8 @@
         "workflows/maintenance/export.md"
       ],
       "script_hint": "python3 scripts/export_wiki.py --date YYYY-MM-DD",
-      "claude_description": "Export a complete verified recovery snapshot of the local wiki tree",
-      "codex_description": "Run the wiki export workflow. Use when the user says $wiki-export, wiki-export, export the wiki, back up the wiki, or wants a complete verified recovery snapshot.",
+      "claude_description": "Create a complete verified private backup of the local wiki tree",
+      "codex_description": "Run the wiki export workflow. Use when the user says $wiki-export, wiki-export, export the wiki, back up the wiki, or wants a complete verified private backup.",
       "authorization": "none",
       "claude_arguments": true
     },

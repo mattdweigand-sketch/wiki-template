@@ -50,7 +50,7 @@ Detailed workflow ownership:
 | Rotate log | `workflows/maintenance/rotate-log.md` | Manual `wiki/log.md` archival when `log_rotation_due` fires, preserving payload under `archive/wiki-log/`. |
 | Synthesis | `workflows/maintenance/synthesize.md` | Drafting and approving corpus-level distillations: overview refreshes, gap resolutions, cluster analyses, primer updates, and open questions. |
 | Review | `workflows/maintenance/review.md` | Outcome review for due `review_by` checkpoints: realized outcome, confidence changes, next checkpoint, or closure. |
-| Export | `workflows/maintenance/export.md` | Full local recovery snapshot with an optional upload only when the user supplies an explicit destination. |
+| Export | `workflows/maintenance/export.md` | Complete private backup with an optional off-device copy only when the user approves a private destination. |
 
 The main control mechanisms are:
 
@@ -61,7 +61,7 @@ The main control mechanisms are:
 | Link graph | Authors maintain `## Related pages`; `scripts/rebuild_referenced_by.py` regenerates `## Referenced by` from one snapshot and applies the generation as a recoverable transaction. |
 | Deterministic lint | `scripts/lint.py --tier1` catches structural failures and malformed proof. Full lint also surfaces Tier-2 candidates for human or agent judgment. |
 | Durable writes | Exact approved targets and their ledger postimage use one recoverable transaction under `.wiki-transactions/`; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
-| Live evals | `wiki-eval` runs the `SUITES` registry in `scripts/wiki_eval.py`, including parsing, durable files, transactions, lint and evidence checks, backlinks, gates, ledgers, export and backup receipts, stale-text sweep proof, log rotation, review dates, discoverability, wrapper parity, schema-doc parity, entity-catalog behavior, document reachability, and Tier-1 lint. |
+| Live evals | `wiki-eval` runs the `SUITES` registry in `scripts/wiki_eval.py`, including parsing, durable files, capture transactions, lint and evidence checks, backlinks, gates, ledgers, backup and restore, log rotation, schema data, document reachability, and Tier-1 lint. |
 | Outcome review | `scripts/review_due.py` surfaces due `review_by` checkpoints; `workflows/maintenance/review.md` records what happened and whether confidence changes. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
 | Approval gate | `scripts/capture_gate.py` previews exact `analysis-capture`, `artifact-promotion`, and `synthesis-promotion` proposals, binds approval to their digest, and applies approved targets with the combined ledger postimage through one recoverable transaction. |
@@ -75,19 +75,7 @@ The main control mechanisms are:
 
 Use `[[filename-without-extension]]` for all internal links.
 
-In `## Related pages`, use typed relationship labels when the relationship is clear:
-
-<!-- parity:enum key=related-labels -->
-| Label | Meaning |
-|---|---|
-| `Supports` | This page strengthens, evidences, or confirms the linked page |
-| `Contradicts` | This page conflicts with or materially challenges the linked page |
-| `Depends on` | This page requires the linked page to be understood or true |
-| `Derived from` | This page was created from, generalized from, or synthesized out of the linked page |
-| `Part of` | This page is a component of the linked larger system, project, or framework |
-| `Related` | Meaningful connection, but no stronger typed relationship fits |
-
-Format each item as `- Label: [[page]]`. The canonical label set is enforced by `RELATED_LABELS` in `scripts/wiki_lint_contract.py`; `AGENTS.md` and `wiki/SCHEMA.md` document the same six labels. Do not invent new labels casually. To add one, update `RELATED_LABELS` and this table together; the `schema-docs` eval suite enforces the duplicated vocabulary. Existing untyped related links remain valid, but new or touched pages should prefer labels where they add signal.
+In `## Related pages`, use a typed relationship label when it adds meaning. The governed labels and definitions live in `scripts/schema-vocabularies.json`. Format each item as `- Label: [[page]]`. Existing untyped links remain valid.
 
 When stating a specific fact, append `(source: [[source-filename]])`. When stating an opinion or inference, prefix with `Inference:` or `Hypothesis:`.
 
@@ -115,26 +103,23 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/raw-buckets.json` | Tracked raw bucket taxonomy read by Tier-1 lint |
 | `scripts/raw-artifacts.json`, `scripts/wiki_provenance.py` | Exact raw/source registry plus live, staged, CI, and restored-tree validation views |
 | `scripts/entity-catalog.json` | Permanent governed entity folders, types, and authoring semantics; consumed through `scripts/wiki_entity_catalog.py` |
+| `scripts/schema-vocabularies.json` | Permanent governed frontmatter and related-link vocabularies; consumed through `scripts/wiki_schema_vocabularies.py` |
 | `scripts/finalize_wiki_setup.py`, `scripts/wiki_setup_initializer.py`, `scripts/wiki_setup_initializer_test.py`, `scripts/wiki-setup-presets.json` | Disposable one-time setup command, implementation, regression test, and preset defaults; all four are removed from a configured wiki <!-- wiki-setup:references-initializer-files:line --> |
 | `scripts/lint-adjudications.json` | Settled Tier-2 lint judgments with reasons and dates; lint suppresses what it lists |
-| `scripts/current-state-owners.json` | Optional, strict registry of current-state owner pages; ships disabled and empty |
-| `scripts/wiki_current_state.py` | Typed owner-registry loader, validator, and current-state drift evaluator used by lint |
-| `scripts/wiki_evidence.py` | Typed production seam for exact evidence samples, verifier batches, run validation, and disposable grounded-response packets |
-| `scripts/build_evidence_sample.py`, `scripts/build_verifier_batches.py`, `scripts/verify_evidence_run.py`, `scripts/evidence_response.py` | Thin agent-neutral CLI adapters for sampled evidence and verified returned answers |
+| `scripts/wiki_evidence.py` | Typed production seam for exact evidence samples, verifier batches, and run validation |
+| `scripts/build_evidence_sample.py`, `scripts/build_verifier_batches.py`, `scripts/verify_evidence_run.py` | Thin agent-neutral CLI adapters for sampled evidence checks |
 | `scripts/wiki_backup_receipt.py`, `scripts/backup_state.py` | Destination-redacted verified-upload receipt and nonblocking freshness reporter; the local receipt is gitignored |
 | `scripts/export_wiki.py`, `scripts/restore_wiki.py` | Exact-manifest archive creation, offline verification, and absent-destination restore |
 | `scripts/capture-runs.jsonl` | Combined approval/application ledger; exact proposal apply installs its postimage with approved targets through the shared transaction |
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the nine generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
-| `scripts/check_schema_doc_parity.py` | Verifies the full schema catalog table against `scripts/entity-catalog.json` and duplicated vocabularies against `scripts/wiki_lint_contract.py` constants |
 | `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
 | `scripts/check_document_reachability.py` | Follows Markdown links from declared roots and rejects missing routes or unreachable operational documents |
-| `scripts/check_discoverability.py` | Scope-aware AST check for typed, distinctive production interfaces; eval and fixture findings remain advisory |
-| `.wiki-transactions/` | Gitignored, non-disposable recovery authority for approved application, log rotation, and backlink rebuild; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
+| `.wiki-transactions/` | Gitignored recovery authority for exact approved capture; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
 | `scripts/fixtures/` | Fixture data for live tooling evals |
 
 ## Durable File And Transaction Boundary
 
-`scripts/_durable_files.py` owns stable advisory locks, complete writes, file and directory synchronization, same-directory replacement, and installed-byte verification. `scripts/_transaction_contract.py` owns transaction vocabulary, path confinement, and journal validation; `scripts/_file_transactions.py` remains the stable execution and recovery facade used by exact approved application, log rotation, and backlink rebuilds. Existing byte-identical rotation archives are read-only transaction guards rather than rewritten targets.
+`scripts/_durable_files.py` owns stable locks, complete writes, directory synchronization, guarded replacement, and installed-byte checks. Backlink rebuilds and log rotation use these idempotent single-file writes and converge on rerun. `scripts/_transaction_contract.py` owns transaction vocabulary, path confinement, and journal validation. `scripts/_file_transactions.py` is reserved for exact approved capture where several target files and the approval ledger must commit as one unit.
 
 An absent or verified-clean `.wiki-transactions/` root is safe. Any unpublished preparation, unfinished cleanup, nonterminal transaction, changed guard, conflict, corruption, or unknown state blocks mutation, Tier 1, pre-commit, and export. Recovery follows only the recorded deterministic policy; third-party bytes are preserved as a conflict rather than overwritten.
 
@@ -151,12 +136,10 @@ The wiki separates deterministic capture approval from prose judgment:
 Executable tooling keeps stable CLI facades while assigning each reusable concept one owner:
 
 - `scripts/lint.py` only parses arguments and renders reports. `wiki_lint_contract.py` owns shared vocabulary and the typed `PageContext`; `wiki_lint_frontmatter.py` owns frontmatter/provenance parsing; `wiki_lint_repository_checks.py` owns repository-wide invariants; `wiki_lint_page_checks.py` owns the typed ordered page-rule registries; `wiki_lint_tier1.py` composes hard failures; and `wiki_lint_signals.py` owns `Tier2PageFacts`, `Tier2Context`, the typed signal registry, and review-candidate composition.
-- `scripts/wiki_current_state.py` is the sole production owner for current-state registry parsing and drift semantics. Tier 1 validates opt-in configuration; `wiki_lint_signals.py` adapts its already-parsed corpus context into nonblocking findings.
 - `scripts/wiki_evidence.py` is the stable evidence-fidelity interface. The build/verify scripts are CLI adapters; private modules own artifact schemas and exact validation, and verifier agents consume rendered prompts without model/provider coupling.
 - `scripts/wiki_backup_receipt.py` owns verified-backup receipt schema, redaction, hashing, atomic persistence, and freshness classification. `export_wiki.py` stamps only after remote size and checksum verification; `backup_state.py` only reports.
 - Literal `__all__` declarations identify intentional cross-module interfaces. Local imports must use names in the owner's declared interface, including module-qualified uses. Class constructors follow the same boundary; when `__all__` is absent, normal underscore visibility applies. Internal registry callbacks are not public merely because Python requires a top-level definition. The private transaction modules collaborate through one named execution contract instead of importing individual private helpers.
 - Search-facing function names include their concept, such as `build_backlink_rebuild_plan`, `build_log_rotation_plan`, `collect_due_reviews`, and `contains_approval_path_placeholder`; do not add generic compatibility aliases.
-- Run `python3 scripts/check_discoverability.py` after changing production interfaces. Production blockers fail; test and fixture observations are printed separately and remain advisory.
 
 ## Layer Architecture (L0-L4)
 

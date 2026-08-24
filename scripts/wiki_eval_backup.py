@@ -200,7 +200,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-backup-verified-") as td:
     )
     state = backup_freshness(receipt_path)
     results.record(
-        "verified-remote-export-advances-receipt",
+        "verified-private-remote-backup-advances-receipt",
         proc.returncode == 0 and state.kind == "fresh",
         f"exit={proc.returncode}; state={state}; stderr={proc.stderr!r}",
     )

@@ -86,40 +86,18 @@ def add_index_row(root, rel, summary):
     append(root, "wiki/index.md", f"| [{Path(rel).name}]({rel}) | {summary} |\n")
 
 
-def write_adjudications(root, **kwargs):
+def write_adjudications(root: Path, **kwargs: object) -> None:
     base = {"accepted_orphans": [], "hub_pages": [], "skipped_crossref_pairs": [],
             "reviewed_confidence_low": [], "reviewed_near_duplicates": [],
             "reviewed_quotes": [], "reviewed_recompile_candidates": [],
             "reviewed_authority_missing": [], "reviewed_glossary_volatile": [],
-            "reviewed_unconsumed_sources": [], "reviewed_status_drift": []}
+            "reviewed_unconsumed_sources": []}
     base.update(kwargs)
     (root / "scripts" / "lint-adjudications.json").write_text(json.dumps(base))
 
 
 def write_raw_buckets(root, value):
     (root / "scripts" / "raw-buckets.json").write_text(json.dumps(value))
-
-
-def write_current_state_registry(root, *, enabled, owners):
-    (root / "scripts" / "current-state-owners.json").write_text(json.dumps({
-        "schema_version": 1,
-        "enabled": enabled,
-        "owners": owners,
-    }))
-
-
-def configure_current_state_owner(root, rel, *, updated="2026-07-01", status=None):
-    edit(root, f"wiki/{rel}", "updated: 2026-06-01", f"updated: {updated}")
-    add_authority(
-        root,
-        f"wiki/{rel}",
-        "authority_kind: owner-page",
-        f"authority_ref: wiki/{rel}",
-        "authority_freshness: current-state",
-    )
-    if status:
-        append(root, f"wiki/{rel}", f"\n**Status ({status}):** Fixture current state.\n")
-    write_current_state_registry(root, enabled=True, owners=[rel])
 
 
 def add_source_profile(root, name):
@@ -139,7 +117,7 @@ def add_source_profile(root, name):
            f"| [{name}.md](sources/{name}.md) | Source profile fixture |\n")
 
 
-def add_authority(root, rel, *lines):
+def add_authority(root: Path, rel: str, *lines: str) -> None:
     p = root / rel
     t = p.read_text()
     marker = "confidence: medium\n"
@@ -172,154 +150,6 @@ def fail_prerequisite(name, detail, *, sink=None, emit=True):
 
 # ---- Tier 1: clean fixture is the control ----
 run_case("clean-fixture-passes", None)
-
-# ---- Tier 1: explicit optional current-state-owner configuration ----
-run_case(
-    "current-state-registry-missing-fires",
-    lambda r: (r / "scripts" / "current-state-owners.json").unlink(),
-    expect_code=1,
-    expect=("current-state-registry", "registry is missing"),
-)
-run_case(
-    "current-state-registry-malformed-fires",
-    lambda r: (r / "scripts" / "current-state-owners.json").write_text(
-        '{"schema_version":1,"enabled":true,"enabled":false,"owners":[]}'
-    ),
-    expect_code=1,
-    expect=("current-state-registry", "duplicate JSON key 'enabled'"),
-)
-run_case(
-    "current-state-owner-missing-fires",
-    lambda r: write_current_state_registry(
-        r, enabled=True, owners=["concepts/missing.md"]
-    ),
-    expect_code=1,
-    expect=("current-state-registry", "concepts/missing.md", "missing"),
-)
-run_case(
-    "current-state-owner-needs-current-state-authority",
-    lambda r: write_current_state_registry(
-        r, enabled=True, owners=["concepts/alpha.md"]
-    ),
-    expect_code=1,
-    expect=("current-state-registry", "authority_freshness: current-state"),
-)
-run_case(
-    "configured-current-state-owner-passes-tier1",
-    lambda r: configure_current_state_owner(r, "concepts/alpha.md"),
-)
-
-# ---- Tier 2: optional current-state drift family ----
-run_case(
-    "enabled-empty-current-state-registry-advises",
-    lambda r: write_current_state_registry(r, enabled=True, owners=[]),
-    args=(),
-    expect=("enabled current-state registry with no owners: 1",),
-)
-run_case(
-    "current-state-owner-status-missing-fires",
-    lambda r: configure_current_state_owner(r, "concepts/alpha.md"),
-    args=(),
-    expect=("registered current-state owners with no dated Status note: 1",
-            "concepts/alpha.md: no parseable dated Status note"),
-)
-run_case(
-    "current-state-owner-self-drift-fires",
-    lambda r: configure_current_state_owner(
-        r, "concepts/alpha.md", updated="2026-06-01", status="2026-07-01"
-    ),
-    args=(),
-    expect=("current-state owner Status notes newer than their updated frontmatter: 1",
-            "concepts/alpha.md: updated 2026-06-01, status 2026-07-01"),
-)
-run_case(
-    "current-state-status-drift-fires",
-    lambda r: (
-        configure_current_state_owner(
-            r, "concepts/alpha.md", updated="2026-07-01", status="2026-07-01"
-        ),
-        edit(r, "wiki/concepts/delta-one.md", "[[alpha]]", "[[beta]]"),
-        append(r, "wiki/concepts/beta.md", "\n- Related: [[alpha]]\n"),
-    ),
-    args=(),
-    expect=("pages older than a registered current-state owner they reference: 1",
-            "concepts/beta.md (page 2026-06-01) -> concepts/alpha.md"),
-)
-run_case(
-    "current-state-source-page-is-not-stale-side",
-    lambda r: (
-        configure_current_state_owner(
-            r, "concepts/alpha.md", updated="2026-07-01", status="2026-07-01"
-        ),
-        edit(r, "wiki/concepts/delta-one.md", "[[alpha]]", "[[beta]]"),
-        append(r, "wiki/sources/gamma.md", "\n- Related: [[alpha]]\n"),
-    ),
-    args=(),
-    expect=("pages older than a registered current-state owner they reference: 0",),
-    absent=("sources/gamma.md (page",),
-)
-run_case(
-    "current-state-authority-owner-mismatch-fires",
-    lambda r: (
-        configure_current_state_owner(
-            r, "concepts/alpha.md", updated="2026-07-01", status="2026-07-01"
-        ),
-        add_authority(r, "wiki/concepts/beta.md",
-                      "authority_kind: owner-page",
-                      "authority_ref: wiki/concepts/alpha.md"),
-        write_current_state_registry(r, enabled=True, owners=[]),
-    ),
-    args=(),
-    expect=("owner-page authority references not present in the current-state registry: 1",
-            "concepts/beta.md: authority_ref 'wiki/concepts/alpha.md'"),
-)
-run_case(
-    "current-state-status-drift-adjudication-is-directional",
-    lambda r: (
-        configure_current_state_owner(
-            r, "concepts/alpha.md", updated="2026-07-01", status="2026-07-01"
-        ),
-        edit(r, "wiki/concepts/delta-one.md", "[[alpha]]", "[[beta]]"),
-        append(r, "wiki/concepts/beta.md", "\n- Related: [[alpha]]\n"),
-        write_adjudications(r, reviewed_status_drift=[{
-            "pair": ["concepts/beta.md", "concepts/alpha.md"],
-            "reason": "fixture",
-        }]),
-    ),
-    args=(),
-    expect=("pages older than a registered current-state owner they reference: 0",
-            "adjudicated, suppressed via scripts/lint-adjudications.json: 1"),
-)
-run_case(
-    "current-state-reversed-adjudication-does-not-suppress",
-    lambda r: (
-        configure_current_state_owner(
-            r, "concepts/alpha.md", updated="2026-07-01", status="2026-07-01"
-        ),
-        edit(r, "wiki/concepts/delta-one.md", "[[alpha]]", "[[beta]]"),
-        append(r, "wiki/concepts/beta.md", "\n- Related: [[alpha]]\n"),
-        write_adjudications(r, reviewed_status_drift=[{
-            "pair": ["concepts/alpha.md", "concepts/beta.md"],
-            "reason": "reversed fixture",
-        }]),
-    ),
-    args=(),
-    expect=("pages older than a registered current-state owner they reference: 1",
-            "concepts/beta.md (page 2026-06-01) -> concepts/alpha.md"),
-)
-run_case(
-    "current-state-markdown-link-drives-drift",
-    lambda r: (
-        configure_current_state_owner(
-            r, "concepts/alpha.md", updated="2026-07-01", status="2026-07-01"
-        ),
-        edit(r, "wiki/concepts/delta-one.md", "[[alpha]]", "[[beta]]"),
-        append(r, "wiki/concepts/beta.md", "\n- [Current owner](alpha.md)\n"),
-    ),
-    args=(),
-    expect=("pages older than a registered current-state owner they reference: 1",
-            "concepts/beta.md (page 2026-06-01) -> concepts/alpha.md"),
-)
 
 # ---- Tier 1: each check fires on a seeded violation ----
 run_case(
@@ -961,7 +791,7 @@ def seed_nonclean_transaction(root):
     try:
         run_transaction(
             root,
-            consumer="rebuild-referenced-by",
+            consumer="capture-gate",
             outputs={"wiki/concepts/alpha.md": content + b"\nchanged\n"},
             expected_preimages={"wiki/concepts/alpha.md": content},
             allowed_prefixes=("wiki",),
@@ -1798,7 +1628,7 @@ def write_log(root, lines):
     )
 
 
-def write_sourcing_queue(root, *markers):
+def write_sourcing_queue(root: Path, *markers: str) -> None:
     (root / "wiki" / "sourcing-queue.md").write_text(
         "# Sourcing Queue\n\n" + "\n".join(markers) + "\n"
     )
@@ -2349,12 +2179,17 @@ def _install_raw_git_fixture(root: Path, real_git: str) -> bytes:
         "_transaction_contract.py", "_durable_files.py",
         "wiki_provenance.py", "wiki_lint_frontmatter.py",
         "wiki_lint_contract.py", "wiki_entity_catalog.py",
+        "wiki_schema_vocabularies.py",
         "_wiki_parse.py", "_repo_paths.py",
     ):
         shutil.copyfile(REPO_ROOT / "scripts" / name, root / "scripts" / name)
     shutil.copyfile(
         REPO_ROOT / "scripts/entity-catalog.json",
         root / "scripts/entity-catalog.json",
+    )
+    shutil.copyfile(
+        REPO_ROOT / "scripts/schema-vocabularies.json",
+        root / "scripts/schema-vocabularies.json",
     )
     shutil.copyfile(
         REPO_ROOT / "scripts/hooks/pre-commit", root / "scripts/hooks/pre-commit"

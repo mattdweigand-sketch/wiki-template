@@ -68,7 +68,6 @@ def load_adjudications() -> Adjudications:
         "recompile": set(), "authority_missing": set(),
         "glossary_volatile": set(),
         "unconsumed_sources": set(),
-        "status_drift": set(),
     }
     raw, err = read_adjudications()
     if not raw:
@@ -89,8 +88,6 @@ def load_adjudications() -> Adjudications:
                               for e in raw.get("reviewed_glossary_volatile", [])},
         "unconsumed_sources": {e["page"]
                                for e in raw.get("reviewed_unconsumed_sources", [])},
-        "status_drift": {(e["pair"][0], e["pair"][1])
-                         for e in raw.get("reviewed_status_drift", [])},
     }
 
 

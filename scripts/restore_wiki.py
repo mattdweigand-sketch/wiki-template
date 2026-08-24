@@ -9,6 +9,7 @@ import errno
 import hashlib
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -16,8 +17,8 @@ import zipfile
 from pathlib import Path
 
 from check_document_reachability import document_reachability_problems
-from check_schema_doc_parity import schema_doc_parity_problems
 from export_wiki import verify_backup_archive
+from wiki_schema_vocabularies import SchemaVocabularyError, load_wiki_schema_vocabularies
 
 
 TRUSTED_SCRIPTS = Path(__file__).resolve().parent
@@ -63,7 +64,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def verify_restored_wiki_tree(root: Path, manifest: dict[str, object]) -> list[str]:
-    """Recheck restored bytes and run trusted deterministic repository checks."""
+    """Recheck restored bytes and modes, then run trusted repository checks."""
     errors: list[str] = []
     members = manifest.get("members")
     if not isinstance(members, list):
@@ -82,6 +83,13 @@ def verify_restored_wiki_tree(root: Path, manifest: dict[str, object]) -> list[s
         content = path.read_bytes()
         if len(content) != member.get("size") or hashlib.sha256(content).hexdigest() != member.get("sha256"):
             errors.append(f"restored member does not match manifest: {relative}")
+        if manifest.get("schema_version") == 2:
+            expected_mode = member.get("mode")
+            actual_mode = stat.S_IMODE(path.stat().st_mode)
+            if actual_mode != expected_mode:
+                errors.append(
+                    f"restored member mode does not match manifest: {relative}"
+                )
     actual_paths = sorted(
         path.relative_to(root).as_posix()
         for path in root.rglob("*") if path.is_file() and not path.is_symlink()
@@ -103,10 +111,10 @@ def verify_restored_wiki_tree(root: Path, manifest: dict[str, object]) -> list[s
         if proc.returncode != 0:
             detail = proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}"
             errors.append(f"restored {label} check failed: {detail}")
-    errors.extend(
-        f"restored schema parity check failed: {problem}"
-        for problem in schema_doc_parity_problems(root, use_git=False)
-    )
+    try:
+        load_wiki_schema_vocabularies(root / "scripts/schema-vocabularies.json")
+    except SchemaVocabularyError as exc:
+        errors.append(f"restored schema vocabulary check failed: {exc}")
     errors.extend(
         f"restored document reachability check failed: {problem}"
         for problem in document_reachability_problems(root)
@@ -140,6 +148,15 @@ def restore_backup_archive(archive: Path, destination: Path) -> None:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(relative, "r") as source, target.open("xb") as output:
                     shutil.copyfileobj(source, output, length=1024 * 1024)
+                if manifest.get("schema_version") == 2:
+                    permission_mode = member.get("mode")
+                    assert isinstance(permission_mode, int)
+                else:
+                    archived_mode = (zf.getinfo(relative).external_attr >> 16) & 0xFFFF
+                    permission_mode = (
+                        stat.S_IMODE(archived_mode) if archived_mode else 0o600
+                    )
+                os.chmod(target, permission_mode)
         restored_errors = verify_restored_wiki_tree(staged, manifest)
         if restored_errors:
             raise RestoreError("; ".join(restored_errors))

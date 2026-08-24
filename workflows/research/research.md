@@ -26,23 +26,9 @@ Use this workflow only when the user explicitly invokes `wiki-research`, `$wiki-
    ```
 
 4. Complete the independent evidence check exactly as defined in `workflows/maintenance/lint.md`. Create the hidden plant, publish verifier batches, collect one-to-one verdicts from fresh reviewers, and run `python3 scripts/verify_evidence_run.py`. Do not draft a verified answer from a stale, incomplete, or structurally invalid run.
-5. Write `response-draft.json` in the run directory with exactly `question` and ordered `statements`. Each statement contains exact `text` and one or more claim IDs from the completed run.
-6. Bind the draft to the evidence snapshot.
-
-   ```bash
-   python3 scripts/evidence_response.py create \
-     --run-dir tmp/evidence-check/<run-id>
-   ```
-
-7. Give `response.json` and the named claims to a fresh independent reviewer. Save a one-to-one `response-review.json` bound to each statement ID and hash. Allowed verdicts are `VERIFIED`, `OVEREXTENDED`, `CONFLATED`, `MISMATCH`, and `NOT-FOUND`.
-8. Render the final answer only through the locked renderer.
-
-   ```bash
-   python3 scripts/evidence_response.py render \
-     --run-dir tmp/evidence-check/<run-id>
-   ```
-
-9. Return the rendered output without paraphrasing. The renderer withholds any statement that is not verified and places citations beside each returned claim. State gaps and contradictions separately without presenting them as verified findings.
-10. If the user asks to file the result, use the Analysis Capture rules in `ask.md`.
+5. Draft the answer after the run passes. Bind each returned statement to one or more verified claim IDs. Place the wiki page and source citations beside the statement.
+6. Give the draft and its named claims to a fresh reviewer. The reviewer checks each statement for support, scope, conflation, citation fit, and any flagged source claim.
+7. Return only statements the reviewer marks `VERIFIED`. Remove or label gaps, contradictions, and flagged claims. Do not present them as verified findings.
+8. If the user asks to file the result, use the Analysis Capture rules in `ask.md`.
 
 `wiki-research` adds review cost on purpose. It is for cases where the user wants each returned statement bound to checked claims, not for ordinary corpus questions.

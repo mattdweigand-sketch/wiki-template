@@ -27,7 +27,7 @@ AUTHORITY_NAME = ".wiki-transactions"
 CLEANUP_PREFIX = ".cleanup-"
 PREPARING_PREFIX = ".preparing-"
 SCHEMA_VERSION = 1
-CONSUMERS = frozenset({"rotate-log", "rebuild-referenced-by", "capture-gate"})
+CONSUMERS = frozenset({"capture-gate"})
 STATES = frozenset(
     {
         "PREPARING", "PREPARED", "COMMITTING", "COMMITTED", "COMPLETE",

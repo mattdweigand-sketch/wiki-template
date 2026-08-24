@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Destination-neutral receipts for successfully verified remote exports."""
+"""Destination-neutral receipts for verified private off-device backups."""
 
 from __future__ import annotations
 

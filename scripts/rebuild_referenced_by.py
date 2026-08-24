@@ -2,9 +2,9 @@
 """Rebuild generated ``## Referenced by`` sections for wiki entity pages.
 
 The rebuild is deliberately planned from one immutable UTF-8 snapshot. Every
-page is read and transformed before the first write, and every changed output
-is applied through one recoverable file transaction. Generated sections and
-code spans never feed the reverse link graph back into itself.
+page is read and transformed before the first write. Changed pages use guarded
+atomic replacement and a rerun converges after interruption. Generated sections
+and code spans never feed the reverse link graph back into itself.
 """
 
 from __future__ import annotations
@@ -13,11 +13,10 @@ import sys
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-import hashlib
 import stat
 from pathlib import Path
 
-from _file_transactions import TransactionError, recover_all, run_transaction
+from _durable_files import DurableFileError, atomic_replace_bytes, sha256_bytes
 from _wiki_parse import (
     LINK_RE,
     authored_link_view,
@@ -55,7 +54,7 @@ def load_page_texts(all_pages: list[Path]) -> dict[Path, PageSnapshot]:
             snapshot[page] = PageSnapshot(
                 text=text,
                 content=content,
-                sha256=hashlib.sha256(content).hexdigest(),
+                sha256=sha256_bytes(content),
                 mode=stat.S_IMODE(info.st_mode),
             )
         except (OSError, UnicodeError) as exc:
@@ -171,33 +170,32 @@ def apply_backlink_rebuild_plan(
     repo_root: Path,
     fault: Callable[[str], None] | None = None,
 ) -> list[str]:
-    """Apply only changed pages as one recoverable generated generation."""
+    """Guard and atomically replace each changed generated page."""
     if not changed_only:
         return []
-    outputs: dict[str, bytes] = {}
-    preimages: dict[str, bytes | None] = {}
-    for page, text in changed_only.items():
+    for index, (page, text) in enumerate(sorted(changed_only.items())):
         item = snapshot[page]
         if not (item.mode & stat.S_IWUSR):
             raise RebuildError(f"cannot write {page}: owner write permission is not set")
         relative = page.relative_to(repo_root).as_posix() if page.is_absolute() else page.as_posix()
-        outputs[relative] = text.encode("utf-8")
-        preimages[relative] = item.content
-    try:
-        recovery = run_transaction(
-            repo_root,
-            consumer="rebuild-referenced-by",
-            outputs=outputs,
-            expected_preimages=preimages,
-            allowed_prefixes=("wiki",),
-            fault=fault,
-        )
-    except TransactionError as exc:
-        raise RebuildError(str(exc)) from exc
+        target = repo_root / relative
+        if fault is not None:
+            fault(f"before_page:{index}")
+        try:
+            atomic_replace_bytes(
+                target,
+                text.encode("utf-8"),
+                mode=item.mode,
+                expected_sha256=item.sha256,
+            )
+        except DurableFileError as exc:
+            raise RebuildError(str(exc)) from exc
+        if fault is not None:
+            fault(f"after_page:{index}")
     for page, text in changed_only.items():
         if page.read_bytes() != text.encode("utf-8"):
             raise RebuildError(f"installed backlink output failed verification: {page}")
-    return recovery
+    return []
 
 
 def main() -> int:
@@ -212,25 +210,13 @@ def main() -> int:
     all_pages = get_entity_pages(WIKI_ROOT)
     print(f"Found {len(all_pages)} entity pages.")
     try:
-        try:
-            recovery = recover_all(Path.cwd().resolve())
-        except TransactionError as exc:
-            raise RebuildError(str(exc)) from exc
-        if recovery:
-            print("Recovered interrupted transaction before snapshot:")
-            for message in recovery:
-                print(f"- {message}")
         snapshot = load_page_texts(all_pages)
         changed, inbound_counts = build_backlink_rebuild_plan(snapshot)
-        apply_recovery = apply_backlink_rebuild_plan(
+        apply_backlink_rebuild_plan(
             changed,
             snapshot,
             repo_root=Path.cwd().resolve(),
         )
-        if apply_recovery:
-            print("Recovered interrupted transaction before commit:")
-            for message in apply_recovery:
-                print(f"- {message}")
     except (RebuildError, ValueError) as exc:
         print(f"Error: backlink rebuild failed: {exc}", file=sys.stderr)
         return 1

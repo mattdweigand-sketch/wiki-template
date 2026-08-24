@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "authority_freshness": [
+    "immutable-source",
+    "stable-meaning",
+    "current-state",
+    "event-log",
+    "predictive",
+    "deprecated"
+  ],
+  "authority_kinds": [
+    "raw-source",
+    "source-page",
+    "owner-page",
+    "external-url",
+    "local-resource",
+    "mixed",
+    "none"
+  ],
+  "confidence": [
+    "high",
+    "medium",
+    "low",
+    "contested"
+  ],
+  "related_labels": [
+    {
+      "label": "Supports",
+      "meaning": "Strengthens, evidences, or confirms the linked page."
+    },
+    {
+      "label": "Contradicts",
+      "meaning": "Conflicts with or materially challenges the linked page."
+    },
+    {
+      "label": "Depends on",
+      "meaning": "Requires the linked page to be understood or true."
+    },
+    {
+      "label": "Derived from",
+      "meaning": "Was created or synthesized from the linked page."
+    },
+    {
+      "label": "Part of",
+      "meaning": "Is a component of the linked larger system."
+    },
+    {
+      "label": "Related",
+      "meaning": "Has a useful link when no stronger label fits."
+    }
+  ],
+  "source_types": [
+    "help-doc",
+    "slack-thread",
+    "call-transcript",
+    "exec-memo",
+    "deck",
+    "crm-export",
+    "strategy-doc",
+    "release-note",
+    "press",
+    "analyst-report",
+    "competitor-collateral",
+    "sales-battlecard",
+    "product-spec",
+    "board-doc",
+    "synthesis",
+    "other"
+  ]
+}

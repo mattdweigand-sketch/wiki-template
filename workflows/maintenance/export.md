@@ -1,6 +1,6 @@
 ---
 name: wiki-export
-description: Use this workflow when the user says "export the wiki" or wants a complete recovery snapshot, with optional explicit rclone upload.
+description: Use this workflow when the user says "export the wiki" or wants a complete private backup, with an optional copy to an explicitly approved private off-device destination.
 ---
 
 # Export Workflow
@@ -12,7 +12,7 @@ description: Use this workflow when the user says "export the wiki" or wants a c
 
 ## Why this exists
 
-This export builds one verified recovery archive of the complete local wiki tree.
+`wiki-export` builds one verified private backup of the complete local wiki tree.
 
 ## Steps
 
@@ -22,7 +22,7 @@ This export builds one verified recovery archive of the complete local wiki tree
    python3 scripts/export_wiki.py --date YYYY-MM-DD
    ```
 
-   This includes every regular file under the repo root. That means wiki pages, local-only raw sources, workflows, scripts, wrappers, CI, Git history, local settings, scratch files, deliverables, and any existing backup receipt. Only the exact output archive is excluded. `BACKUP-MANIFEST.json` binds the exact sorted member set, sizes, hashes, creation time, and raw-artifact manifest hash; it does not list itself. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree and any nonclean `.wiki-transactions/` state.
+   This includes every regular file under the repo root. That means wiki pages, local-only raw sources, workflows, scripts, wrappers, CI, Git history, local settings, scratch files, deliverables, and any existing backup receipt. Only the exact output archive is excluded. `BACKUP-MANIFEST.json` binds the exact sorted member set, sizes, hashes, POSIX permission modes, creation time, and raw-artifact manifest hash; it does not list itself. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree and any nonclean `.wiki-transactions/` state.
 
 2. If you need to inspect before building, run:
 
@@ -37,11 +37,11 @@ This export builds one verified recovery archive of the complete local wiki tree
    python3 scripts/restore_wiki.py restore <archive.zip> <absent-destination>
    ```
 
-   Restore refuses an existing destination, validates before extraction, runs restored-tree checks, and atomically installs only the complete verified directory. It restores included Git history without running Git.
+   Restore refuses an existing destination, validates before extraction, restores file permission modes, runs restored-tree checks, and atomically installs only the complete verified directory. It restores included Git history without running Git. Version 1 backups remain supported through their ZIP permission metadata; new version 2 backups bind permissions in the manifest.
 
-3. Report the absolute path to the zip. Do not upload it anywhere unless the user explicitly gives a destination.
+3. Report the absolute path to the zip. Do not copy it off-device unless the user explicitly approves a private backup destination.
 
-4. Optional off-device upload uses `rclone` and requires an explicit target. Nothing is hardcoded into the template. A first-time Google Drive upload can initialize the user's local `rclone` remote and request browser or terminal auth:
+4. An optional private off-device backup copy uses `rclone` and requires an explicit target. Nothing is hardcoded into the template. A first-time Google Drive backup can initialize the user's local `rclone` remote and request browser or terminal auth:
 
    ```bash
    python3 scripts/export_wiki.py --date YYYY-MM-DD \
@@ -56,7 +56,7 @@ This export builds one verified recovery archive of the complete local wiki tree
      --upload-target gdrive:wiki-exports/wiki-export-YYYY-MM-DD.zip
    ```
 
-   The script runs `rclone copyto`, verifies the remote byte size with `rclone lsl`, verifies content identity with `rclone md5sum`, and leaves credentials in the user's local `rclone` config. Only after both checks pass does it atomically update the gitignored `scripts/backup-receipt.json`. The receipt stores a UTC verification time, streamed SHA-256 content hash, byte count, and an opaque hash of the destination; it contains no provider, account, path, or URL. A local-only export or failed remote verification never advances it. Do not commit credentials, tokens, user-specific targets, or the local receipt.
+   The script runs `rclone copyto`, verifies the remote byte size with `rclone lsl`, verifies content identity with `rclone md5sum`, and leaves credentials in the user's local `rclone` config. Only after both checks pass does it atomically update the gitignored `scripts/backup-receipt.json`. The receipt stores a UTC verification time, streamed SHA-256 content hash, byte count, and an opaque hash of the destination; it contains no provider, account, path, or URL. A local-only backup or failed remote verification never advances it. Do not commit credentials, tokens, user-specific targets, or the local receipt.
 
    Report the optional freshness state at any time without turning it into a gate:
 
@@ -70,4 +70,4 @@ This export builds one verified recovery archive of the complete local wiki tree
 
 ## Privacy
 
-The archive may contain source documents, credentials, local settings, deliverables, scratch files, and Git history. Do not upload, email, or share it without explicit user approval for the destination. Passing `--upload-target` is approval for that command invocation only.
+The archive may contain source documents, credentials, local settings, deliverables, scratch files, and Git history. It is a private backup, not a sharing artifact. Do not email, publish, or copy it to a public or shared destination. Passing `--upload-target` approves only the named private backup destination for that command invocation.

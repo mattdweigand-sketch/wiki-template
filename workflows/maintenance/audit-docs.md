@@ -19,7 +19,7 @@ Use this workflow to review the root operating documents, workflow routers, or a
 4. Classify findings as incorrect, stale, dead, duplicative-but-aligned, ambiguous, or verified-current. Report file-and-line evidence and distinguish current defects from future drift risks.
 5. For an audit-only request, stop after the report. Do not edit files, run write workflows, append to `wiki/log.md`, or create a deliverable.
 6. When the user explicitly asks to apply the findings, write a bounded implementation spec, edit only the approved surfaces, and record changed operating rules in `wiki/log.md`. Workflow and documentation updates do not use `capture_gate.py` unless they also cross one of the three approval boundaries in `AGENTS.md`.
-7. Verify proportionately: run `python3 scripts/check_document_reachability.py`, `python3 scripts/check_schema_doc_parity.py`, `python3 scripts/check_wrapper_parity.py`, `python3 scripts/lint.py --tier1`, and `git diff --check`. Run the full eval suite when scripts, wrappers, or enforced contracts changed.
+7. Verify proportionately. Run `python3 scripts/check_document_reachability.py`, `python3 scripts/check_wrapper_parity.py`, `python3 scripts/lint.py --tier1`, and `git diff --check`. Run the full eval suite when scripts, wrappers, or enforced contracts changed.
 8. Re-check `git status --short` when Git metadata is available and report any
    unrelated or concurrent changes separately. For an extracted tree, repeat
    the archive identity and do not claim that a Git worktree remained clean.

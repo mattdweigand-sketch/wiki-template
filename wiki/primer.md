@@ -33,7 +33,7 @@ Add domain-specific routing rows below as the wiki grows.
 
 If you are a downstream agent reading this wiki:
 
-1. Check [`domain.md`](domain.md) first; if it is still `status: unconfigured`, route to [`../SETUP.md`](../SETUP.md). <!-- wiki-setup:primer-status-route:line -->
+1. Read [`domain.md`](domain.md) first for setup status, scope, and active types.
 2. Use [`index.md`](index.md) to find existing pages instead of scanning folders blindly.
 3. Use [`glossary.md`](glossary.md) to resolve ambiguous terms before assuming meaning.
 4. Use `[[double-bracket]]` links inside authored page bodies and `## Related pages`.

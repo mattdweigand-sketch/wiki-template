@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and verify a complete recovery snapshot of one local wiki tree."""
+"""Build and verify a complete private backup of one local wiki tree."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import re
+import stat
 import subprocess
 import sys
 import zipfile
@@ -44,7 +45,10 @@ BACKUP_MANIFEST_NAME = "BACKUP-MANIFEST.json"
 BACKUP_MANIFEST_FIELDS = {
     "schema_version", "created_at", "members", "raw_artifact_manifest_sha256",
 }
-BACKUP_MEMBER_FIELDS = {"path", "size", "sha256"}
+BACKUP_MANIFEST_SCHEMA_VERSION = 2
+SUPPORTED_BACKUP_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2})
+BACKUP_MEMBER_FIELDS_V1 = {"path", "size", "sha256"}
+BACKUP_MEMBER_FIELDS_V2 = {"path", "size", "sha256", "mode"}
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -62,7 +66,7 @@ def _strict_backup_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Build and verify a complete wiki export zip.")
+    p = argparse.ArgumentParser(description="Build and verify a complete private wiki backup.")
     p.add_argument("--date", default=date.today().isoformat(), help="Date stamp for the export filename.")
     p.add_argument("--output-dir", default="tmp", help="Directory for the export zip.")
     p.add_argument("--repo-root", default=".", help="Repository root to export.")
@@ -73,19 +77,19 @@ def parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--upload-target",
-        help=("Optional rclone destination for the verified zip, for example "
-              "gdrive:wiki-exports/wiki-export.zip. Local-only by default."),
+        help=("Optional private rclone backup destination for the verified zip, "
+              "for example gdrive:wiki-exports/wiki-export.zip. Local-only by default."),
     )
     p.add_argument(
         "--init-rclone-drive",
         metavar="REMOTE",
         help=("Create this rclone Google Drive remote if it is missing before "
-              "uploading. Requires --upload-target to use the same remote."),
+              "copying the private backup. Requires --upload-target to use the same remote."),
     )
     p.add_argument(
         "--rclone-bin",
         default="rclone",
-        help="rclone executable used for optional upload and first-run auth.",
+        help="rclone executable used for the optional private backup copy and first-run auth.",
     )
     p.add_argument(
         "--receipt-path",
@@ -143,17 +147,21 @@ def build_backup_manifest(repo_root: Path, files: list[Path]) -> dict[str, objec
     """Build the canonical exact-member manifest for one export snapshot."""
     members = []
     for path in files:
+        metadata = path.lstat()
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError(f"backup member is not a regular file: {path}")
         content = path.read_bytes()
         members.append({
             "path": path.relative_to(repo_root).as_posix(),
             "size": len(content),
             "sha256": hashlib.sha256(content).hexdigest(),
+            "mode": stat.S_IMODE(metadata.st_mode),
         })
     members.sort(key=lambda member: str(member["path"]))
     raw_manifest = repo_root / "scripts/raw-artifacts.json"
     raw_sha = hashlib.sha256(raw_manifest.read_bytes()).hexdigest() if raw_manifest.is_file() else None
     return {
-        "schema_version": 1,
+        "schema_version": BACKUP_MANIFEST_SCHEMA_VERSION,
         "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "members": members,
         "raw_artifact_manifest_sha256": raw_sha,
@@ -202,12 +210,13 @@ def _safe_backup_member_name(name: object) -> bool:
 
 
 def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[str]]:
-    """Verify archive safety plus exact member set, sizes, and hashes."""
+    """Verify archive safety plus exact member paths, bytes, and permission modes."""
     errors: list[str] = []
     try:
         with zipfile.ZipFile(output) as zf:
             infos = zf.infolist()
             names = [info.filename for info in infos]
+            infos_by_name = {info.filename: info for info in infos}
             if len(names) != len(set(names)):
                 errors.append("archive contains duplicate member names")
             unsafe = [name for name in names if not _safe_backup_member_name(name)]
@@ -239,8 +248,21 @@ def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[
                 return None, errors
             if manifest_bytes != _canonical_json_bytes(manifest):
                 errors.append("backup manifest is not canonical JSON")
-            if manifest.get("schema_version") != 1 or isinstance(manifest.get("schema_version"), bool):
-                errors.append("backup manifest schema_version must be integer 1")
+            schema_version = manifest.get("schema_version")
+            if (
+                not isinstance(schema_version, int)
+                or isinstance(schema_version, bool)
+                or schema_version not in SUPPORTED_BACKUP_MANIFEST_SCHEMA_VERSIONS
+            ):
+                errors.append(
+                    "backup manifest schema_version must be a supported integer"
+                )
+                return None, errors
+            member_fields = (
+                BACKUP_MEMBER_FIELDS_V2
+                if schema_version == 2
+                else BACKUP_MEMBER_FIELDS_V1
+            )
             created_at = manifest.get("created_at")
             if not isinstance(created_at, str):
                 errors.append("backup manifest created_at must be a string")
@@ -255,12 +277,13 @@ def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[
                 return None, errors
             member_paths: list[str] = []
             for index, member in enumerate(members):
-                if not isinstance(member, dict) or set(member) != BACKUP_MEMBER_FIELDS:
+                if not isinstance(member, dict) or set(member) != member_fields:
                     errors.append(f"backup manifest members[{index}] has invalid fields")
                     continue
                 path = member.get("path")
                 size = member.get("size")
                 digest = member.get("sha256")
+                permission_mode = member.get("mode")
                 if not _safe_backup_member_name(path) or path == BACKUP_MANIFEST_NAME:
                     errors.append(f"backup manifest members[{index}].path is unsafe")
                     continue
@@ -269,6 +292,23 @@ def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[
                     errors.append(f"backup manifest members[{index}].size is invalid")
                 if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
                     errors.append(f"backup manifest members[{index}].sha256 is invalid")
+                if schema_version == 2:
+                    if (
+                        not isinstance(permission_mode, int)
+                        or isinstance(permission_mode, bool)
+                        or not 0 <= permission_mode <= 0o7777
+                    ):
+                        errors.append(
+                            f"backup manifest members[{index}].mode is invalid"
+                        )
+                    elif path in infos_by_name:
+                        archived_mode = stat.S_IMODE(
+                            (infos_by_name[path].external_attr >> 16) & 0xFFFF
+                        )
+                        if permission_mode != archived_mode:
+                            errors.append(
+                                f"archive member mode does not match manifest: {path}"
+                            )
                 if path in names:
                     content = zf.read(path)
                     if len(content) != size or hashlib.sha256(content).hexdigest() != digest:
@@ -520,7 +560,7 @@ def main() -> int:
         print(f"Export dry run: {len(files)} file(s) would be written to {output}")
         print("Required export coverage: " + ("yes" if not errors else "no"))
         if args.upload_target:
-            print(f"Upload target (dry run only): {args.upload_target}")
+            print(f"Private backup target (dry run only): {args.upload_target}")
         for error in errors:
             print(f"- {error}")
         return 0 if not errors else 1
@@ -544,16 +584,16 @@ def main() -> int:
             args.init_rclone_drive,
         )
         if not ok:
-            print("Wiki export upload failed:")
+            print("Private off-device backup copy failed:")
             for error in errors:
                 print(f"- {error}")
             print(f"Local zip remains: {output}")
             return 1
-        print(f"Upload verified: {args.upload_target}")
+        print(f"Private off-device backup verified: {args.upload_target}")
         try:
             receipt = record_verified_backup(output, args.upload_target, receipt_path)
         except (BackupReceiptError, OSError) as exc:
-            print(f"Verified upload receipt failed: {exc}", file=sys.stderr)
+            print(f"Verified backup receipt failed: {exc}", file=sys.stderr)
             return 1
         print(f"Backup receipt updated: {receipt_path}")
         print(f"Verified at: {receipt.verified_at}")

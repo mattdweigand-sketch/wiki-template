@@ -58,7 +58,7 @@ The repo has nine workflow shortcuts. Claude Code exposes them as slash commands
 | `wiki-lint` | `/wiki-lint` | `$wiki-lint` | Run deterministic checks, judgment candidates, compiled-page recompile review candidates, and evidence review. |
 | `wiki-eval` | `/wiki-eval` | `$wiki-eval` | Verify that the wiki tools and guardrails still work. |
 | `wiki-synthesize` | `/wiki-synthesize` | `$wiki-synthesize` | Draft corpus distillations for review and approved promotion. |
-| `wiki-export` | `/wiki-export` | `$wiki-export` | Build a full recovery snapshot and optionally upload it to an explicit `rclone` target. |
+| `wiki-export` | `/wiki-export` | `$wiki-export` | Build a complete private backup and optionally copy it to an approved private off-device destination. |
 
 Ask answers stay lightweight. Research answers add independent claim review only when `wiki-research` is named. Either can become a durable analysis when worth saving.
 
@@ -86,16 +86,16 @@ The checks and guardrails that protect the corpus:
 | Route-first workflows | Point agents from `AGENTS.md` through the `wiki/domain.md` status check, then to `SETUP.md` or `CONTEXT.md` as appropriate. <!-- wiki-setup:readme-route-row:line --> |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks evidence gaps so weak claims become future work instead of disappearing. |
 | Contradiction tracking | Records conflicts in `wiki/contradictions.md` instead of overwriting inconvenient claims. |
-| Three-tier lint | `scripts/lint.py` reports two deterministic tiers: Tier 1 fails on broken structure and malformed proof; Tier 2 ranks suspicious patterns for review, including compiled pages with newer source inputs, glossary status language, pages likely needing authority metadata, and optional current-state owner drift. Tier 3, genuine judgment, is left to the `wiki-lint` prose workflow, not the script. |
+| Three-tier lint | `scripts/lint.py` reports two deterministic tiers: Tier 1 fails on broken structure and malformed proof; Tier 2 ranks suspicious patterns for review, including compiled pages with newer source inputs, glossary status language, and pages likely needing authority metadata. Tier 3, genuine judgment, is left to the `wiki-lint` prose workflow, not the script. |
 | Evidence review | Full `wiki-lint` creates an exact OS-random sample, immutable verifier batches, a hidden calibration plant, and validated verdict accounting so claims are tested against cited pages and raw evidence without trusting partial or stale runs. |
 | Private raw sources | Tier 1 and the pre-commit hook reject tracked raw artifacts. Local checks still bind each file to the tracked manifest and source page. |
 | Lint adjudications | `scripts/lint-adjudications.json` records reviewed false positives and accepted exceptions so the same candidates are not re-litigated every lint run. |
 | Approval gate and ledger | `scripts/capture_gate.py` makes the agent ask before filing analyses, applying artifact promotions, or approving synthesis; `scripts/capture-runs.jsonl` records exact approved applications. |
-| Durable file updates | Exact approved targets and their ledger postimage use one recoverable multi-file transaction; backlink rebuilds and log rotations use the same fail-closed transaction authority. |
+| Durable file updates | Exact approved targets and their ledger postimage use one recoverable multi-file transaction. Backlink rebuilds and log rotations use guarded atomic writes that converge on rerun. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` is the single manifest for both `.claude/commands/` and `.agents/skills/`; the renderer and parity checker prevent hand-edited drift. |
-| Live evals | `wiki-eval` runs the suites registered in `scripts/wiki_eval.py`, including parsing, durable files, transactions, backlinks, lint and evidence checks, approval gates and ledgers, export and backup receipts, log rotation, review dates, discoverability, wrapper parity, entity-catalog and schema contracts, document reachability, and Tier-1 lint. |
-| Complete recovery snapshot | `wiki-export` includes raw sources, local state, deliverables, scratch files, and Git history. The exact manifest and atomic restore contract remain in force. |
-| Optional backup receipt | An explicit `rclone` upload advances local backup freshness only after remote size and checksum verification. `scripts/backup_state.py` reports missing, stale, invalid, future-dated, or fresh state without making backup configuration a repository gate. |
+| Live evals | `wiki-eval` runs every suite registered in `scripts/wiki_eval.py`, including parsing, durable files, capture transactions, backlinks, lint and evidence checks, approval gates and ledgers, backup and restore, log rotation, schema data, document reachability, and Tier-1 lint. |
+| Complete private backup | `wiki-export` includes raw sources, local state, deliverables, scratch files, and Git history. Its version 2 manifest binds file permission modes as well as bytes, and restore applies them before atomic installation. |
+| Optional backup receipt | A copy to an approved private `rclone` destination advances local backup freshness only after remote size and checksum verification. `scripts/backup_state.py` reports missing, stale, invalid, future-dated, or fresh state without making backup configuration a repository gate. |
 
 Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task instructions live under [`workflows/`](workflows/).
 
@@ -113,7 +113,7 @@ Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task inst
 |
 |-- .claude/commands/          # Claude Code slash-command wrappers
 |-- .agents/skills/            # Repo-local Codex skill wrappers
-|-- .wiki-transactions/        # Gitignored multi-file recovery authority
+|-- .wiki-transactions/        # Gitignored exact-capture recovery authority
 |
 |-- workflows/                 # Vendor-neutral workflow instructions
 |   |-- ingest/                # raw source -> wiki pages

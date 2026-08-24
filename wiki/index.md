@@ -17,7 +17,7 @@ Do not put example `.md` links in this file unless the target page exists; lint 
 
 | File | Summary |
 |---|---|
-| [domain.md](domain.md) | Template status, configured context, active entity types, raw buckets, and example queries <!-- wiki-setup:index-domain-summary:line --> |
+| [domain.md](domain.md) | Setup status, context, active entity types, raw buckets, and example queries |
 | [overview.md](overview.md) | Big-picture narrative for the configured context or domain |
 | [glossary.md](glossary.md) | Canonical definitions of terms used in this wiki |
 | [primer.md](primer.md) | Entry points by question type for downstream agents |

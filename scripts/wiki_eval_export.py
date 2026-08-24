@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -424,7 +425,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-transaction-eval-") as td:
     try:
         run_transaction(
             root,
-            consumer="rebuild-referenced-by",
+            consumer="capture-gate",
             outputs={"wiki/fixture.txt": b"new"},
             expected_preimages={"wiki/fixture.txt": preimage},
             allowed_prefixes=("wiki",),
@@ -462,6 +463,26 @@ def rewrite_archive(source: Path, target: Path, mutation: str) -> None:
                 continue
             if mutation == "changed" and info.filename == "README.md":
                 content += b"changed"
+            if mutation == "zip-mode" and info.filename == "scripts/wiki_eval.py":
+                info.external_attr = 0o100644 << 16
+            if info.filename == export_wiki.BACKUP_MANIFEST_NAME and mutation in {
+                "manifest-mode", "legacy-v1",
+            }:
+                manifest = json.loads(content)
+                if mutation == "manifest-mode":
+                    member = next(
+                        item for item in manifest["members"]
+                        if item["path"] == "README.md"
+                    )
+                    member["mode"] ^= 0o100
+                else:
+                    manifest["schema_version"] = 1
+                    for member in manifest["members"]:
+                        member.pop("mode")
+                content = (
+                    json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+                    + "\n"
+                ).encode("utf-8")
             if mutation == "duplicate-manifest-key" and info.filename == export_wiki.BACKUP_MANIFEST_NAME:
                 content = b'{"schema_version":1,' + content[1:]
             rewritten.writestr(info, content)
@@ -494,9 +515,14 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
     export_wiki.build_zip(REPO_ROOT, archive, files)
     manifest, archive_errors = export_wiki.verify_backup_archive(archive)
     results.record(
-        "backup-manifest-exactly-matches-member-set-and-hashes",
+        "backup-manifest-v2-binds-member-set-hashes-and-modes",
         manifest is not None
         and not archive_errors
+        and manifest["schema_version"] == 2
+        and all(
+            isinstance(member.get("mode"), int)
+            for member in manifest["members"]
+        )
         and export_wiki.BACKUP_MANIFEST_NAME not in {
             member["path"] for member in manifest["members"]
         }
@@ -509,14 +535,14 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
     for mutation in (
         "changed", "missing", "extra", "duplicate", "traversal", "absolute",
         "windows-absolute", "case-collision", "symlink", "special",
-        "duplicate-manifest-key",
+        "duplicate-manifest-key", "manifest-mode", "zip-mode",
     ):
         mutated = root / f"{mutation}.zip"
         rewrite_archive(archive, mutated, mutation)
         checked, errors = export_wiki.verify_backup_archive(mutated)
         mutation_results[mutation] = checked is None and bool(errors)
     results.record(
-        "backup-verifier-rejects-changed-missing-extra-duplicate-and-unsafe-members",
+        "backup-verifier-rejects-changed-missing-extra-unsafe-and-mode-tampering",
         all(mutation_results.values()),
         repr(mutation_results),
     )
@@ -525,7 +551,9 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
     commands: list[list[str]] = []
     real_run = subprocess.run
 
-    def offline_run(command, *args, **kwargs):
+    def offline_run(
+        command: list[str], *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
         commands.append([str(part) for part in command])
         return real_run(command, *args, **kwargs)
 
@@ -537,8 +565,18 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
         "wiki/sources/.gitkeep",
     )
     results.record(
-        "valid-restore-is-member-exact-and-passes-deterministic-checks",
+        "valid-restore-is-byte-and-mode-exact-and-passes-deterministic-checks",
         all((destination / path).read_bytes() == (REPO_ROOT / path).read_bytes() for path in exact_pairs)
+        and all(
+            stat.S_IMODE((destination / path).stat().st_mode)
+            == stat.S_IMODE((REPO_ROOT / path).stat().st_mode)
+            for path in (
+                "README.md",
+                "scripts/capture_gate.py",
+                "scripts/hooks/pre-commit",
+                "scripts/wiki_eval.py",
+            )
+        )
         and (destination / ".git").exists() == (REPO_ROOT / ".git").exists()
         and (
             not (REPO_ROOT / ".git/HEAD").is_file()
@@ -547,6 +585,24 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
         )
         and all("git" not in Path(command[0]).name and "rclone" not in Path(command[0]).name for command in commands),
         repr(commands),
+    )
+
+    legacy_archive = root / "legacy-v1.zip"
+    rewrite_archive(archive, legacy_archive, "legacy-v1")
+    legacy_manifest, legacy_errors = export_wiki.verify_backup_archive(legacy_archive)
+    legacy_destination = root / "legacy-v1-restored"
+    if legacy_manifest is not None:
+        restore_wiki.restore_backup_archive(legacy_archive, legacy_destination)
+    results.record(
+        "version-1-backup-restores-zip-permission-metadata",
+        legacy_manifest is not None
+        and not legacy_errors
+        and legacy_manifest["schema_version"] == 1
+        and stat.S_IMODE((legacy_destination / "scripts/wiki_eval.py").stat().st_mode)
+        == stat.S_IMODE((REPO_ROOT / "scripts/wiki_eval.py").stat().st_mode)
+        and stat.S_IMODE((legacy_destination / "README.md").stat().st_mode)
+        == stat.S_IMODE((REPO_ROOT / "README.md").stat().st_mode),
+        repr(legacy_errors),
     )
     try:
         restore_wiki.restore_backup_archive(archive, destination)
@@ -727,13 +783,10 @@ The configured restore retains exact evidence. (source: [[closure-source]])
     )
     broken_schema_source = root / "broken-schema-source"
     shutil.copytree(configured_source, broken_schema_source)
-    agents_path = broken_schema_source / "AGENTS.md"
-    agents_path.write_text(
-        agents_path.read_text(encoding="utf-8").replace(
-            "analyses, competitors", "analyses, bogus", 1
-        ),
-        encoding="utf-8",
-    )
+    vocabularies_path = broken_schema_source / "scripts/schema-vocabularies.json"
+    vocabularies = json.loads(vocabularies_path.read_text(encoding="utf-8"))
+    vocabularies["source_types"] = []
+    vocabularies_path.write_text(json.dumps(vocabularies), encoding="utf-8")
     broken_schema_archive = root / "broken-schema.zip"
     export_wiki.build_zip(
         broken_schema_source,
@@ -747,12 +800,12 @@ The configured restore retains exact evidence. (source: [[closure-source]])
         )
     except restore_wiki.RestoreError as exc:
         broken_schema_rejected = (
-            "schema parity" in str(exc) and not broken_schema_destination.exists()
+            "schema vocabulary" in str(exc) and not broken_schema_destination.exists()
         )
     else:
         broken_schema_rejected = False
     results.record(
-        "restore-validates-schema-parity-against-staged-tree",
+        "restore-validates-schema-vocabularies-against-staged-tree",
         broken_schema_rejected,
     )
 

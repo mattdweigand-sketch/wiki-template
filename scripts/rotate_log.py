@@ -13,12 +13,7 @@ from datetime import date
 from pathlib import Path
 
 from _wiki_parse import parse_log_entry_date
-from _file_transactions import (
-    TransactionError,
-    recover_all,
-    run_transaction,
-    transaction_status,
-)
+from _durable_files import DurableFileError, atomic_replace_bytes, read_regular_bytes
 from wiki_lint_contract import LOG_ROTATION_WARN_LINES
 
 
@@ -53,6 +48,7 @@ class RotationPlan:
     live_lines: list[str] | None = None
     log_preimage: bytes | None = None
     log_preimage_sha256: str = ""
+    log_mode: int = 0o644
     archive_preimage: bytes | None = None
     archive_preimage_sha256: str | None = None
 
@@ -230,6 +226,9 @@ def build_log_rotation_plan(root: Path, target_lines: int, rotation_date: str) -
         raise RotationError(f"{LOG_PATH} does not exist")
 
     try:
+        log_info = log_path.lstat()
+        if stat.S_ISLNK(log_info.st_mode) or not stat.S_ISREG(log_info.st_mode) or log_info.st_nlink != 1:
+            raise RotationError(f"{LOG_PATH} must be a single-link regular file")
         log_preimage = log_path.read_bytes()
         original_lines = log_preimage.decode("utf-8").splitlines(keepends=True)
     except (OSError, UnicodeDecodeError) as exc:
@@ -243,6 +242,7 @@ def build_log_rotation_plan(root: Path, target_lines: int, rotation_date: str) -
             target_lines=target_lines,
             log_preimage=log_preimage,
             log_preimage_sha256=hashlib.sha256(log_preimage).hexdigest(),
+            log_mode=stat.S_IMODE(log_info.st_mode),
         )
 
     header, entries = parse_log(original_lines)
@@ -348,6 +348,7 @@ def build_log_rotation_plan(root: Path, target_lines: int, rotation_date: str) -
         live_lines=live_lines,
         log_preimage=log_preimage,
         log_preimage_sha256=hashlib.sha256(log_preimage).hexdigest(),
+        log_mode=stat.S_IMODE(log_info.st_mode),
         archive_preimage=archive_preimage,
         archive_preimage_sha256=(
             hashlib.sha256(archive_preimage).hexdigest()
@@ -362,6 +363,11 @@ def apply_log_rotation_plan(
     *,
     fault: Callable[[str], None] | None = None,
 ) -> list[str]:
+    """Install archive then live log with guarded atomic single-file writes.
+
+    If the process stops after the archive write, a rerun reuses those exact
+    bytes and completes the log update without a duplicate archive.
+    """
     if plan.no_op:
         return []
     if (
@@ -375,34 +381,43 @@ def apply_log_rotation_plan(
     archive_bytes = "".join(plan.archive_lines).encode("utf-8")
     live_bytes = "".join(plan.live_lines).encode("utf-8")
     plan.archive_path.parent.mkdir(parents=True, exist_ok=True)
-    outputs = {LOG_PATH.as_posix(): live_bytes}
-    preimages: dict[str, bytes | None] = {LOG_PATH.as_posix(): plan.log_preimage}
-    guards: dict[str, bytes] = {}
     archive_rel = plan.archive_path.relative_to(root).as_posix()
-    if plan.archive_preimage is None:
-        outputs[archive_rel] = archive_bytes
-        preimages[archive_rel] = None
-    elif plan.archive_preimage != archive_bytes:
-        raise RotationError(f"selected archive preimage is not byte-identical: {archive_rel}")
-    else:
-        guards[archive_rel] = plan.archive_preimage
     try:
-        recovery = run_transaction(
-            root,
-            consumer="rotate-log",
-            outputs=outputs,
-            expected_preimages=preimages,
-            guard_preimages=guards,
-            allowed_prefixes=(LOG_PATH.as_posix(), ARCHIVE_DIR.as_posix()),
-            fault=fault,
+        if fault is not None:
+            fault("before_archive")
+        if plan.archive_preimage is None:
+            atomic_replace_bytes(
+                plan.archive_path,
+                archive_bytes,
+                mode=0o644,
+                expected_sha256=None,
+            )
+        elif plan.archive_preimage != archive_bytes:
+            raise RotationError(
+                f"selected archive preimage is not byte-identical: {archive_rel}"
+            )
+        if fault is not None:
+            fault("after_archive")
+        current_archive, _ = read_regular_bytes(plan.archive_path)
+        if current_archive != archive_bytes:
+            raise RotationError(f"archive changed before log install: {archive_rel}")
+        if fault is not None:
+            fault("before_log")
+        atomic_replace_bytes(
+            root / LOG_PATH,
+            live_bytes,
+            mode=plan.log_mode,
+            expected_sha256=plan.log_preimage_sha256,
         )
-    except TransactionError as exc:
+        if fault is not None:
+            fault("after_log")
+    except DurableFileError as exc:
         raise RotationError(str(exc)) from exc
     if (root / LOG_PATH).read_bytes() != live_bytes:
         raise RotationError("installed live log failed byte verification")
     if plan.archive_path.read_bytes() != archive_bytes:
         raise RotationError("installed archive failed byte verification")
-    return recovery
+    return []
 
 
 def print_plan(plan: RotationPlan, *, dry_run: bool) -> None:
@@ -444,27 +459,9 @@ def main() -> int:
     try:
         date.fromisoformat(args.date)
         root = Path.cwd().resolve()
-        if args.dry_run:
-            clean, reports = transaction_status(root)
-            if not clean:
-                raise RotationError("transaction recovery required before dry-run: " + "; ".join(reports))
-            recovery: list[str] = []
-        else:
-            try:
-                recovery = recover_all(root)
-            except TransactionError as exc:
-                raise RotationError(str(exc)) from exc
-            if recovery:
-                print("Recovered interrupted transaction before planning:")
-                for message in recovery:
-                    print(f"- {message}")
         plan = build_log_rotation_plan(root, args.target_lines, args.date)
         if not args.dry_run:
-            write_recovery = apply_log_rotation_plan(root, plan)
-            if write_recovery:
-                print("Recovered interrupted transaction before commit:")
-                for message in write_recovery:
-                    print(f"- {message}")
+            apply_log_rotation_plan(root, plan)
         print_plan(plan, dry_run=args.dry_run)
         return 0
     except ValueError:

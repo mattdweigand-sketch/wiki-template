@@ -36,14 +36,6 @@ from wiki_lint_contract import (
     VOLATILE_STATUS_RE,
     WIKI_ROOT,
 )
-from wiki_current_state import (
-    CurrentStateEvaluation,
-    CurrentStateOwnerRegistry,
-    CurrentStatePage,
-    CurrentStateRegistryError,
-    evaluate_current_state,
-    load_current_state_registry,
-)
 from wiki_lint_frontmatter import authored_body, nonblocking_frontmatter, nonblocking_frontmatter_block, source_items, source_repo_references, tokens
 from wiki_lint_repository_checks import parse_sourcing_queue_count_markers
 
@@ -58,7 +50,6 @@ QUOTED_CITATION_RE = re.compile(
     r'["“]([^"“”]{20,}?)["”]\s*\((?:own[^)]*?, )?source[sd]?:?\s*([^)]*\[\[[^)]*)\)',
     re.IGNORECASE,
 )
-MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)\s]+?\.md)(?:#[^)\s]*)?\)")
 
 
 
@@ -182,7 +173,6 @@ class Tier2PageFacts(TypedDict):
     words: int
     body_links: bool
     source_items: list[str]
-    markdown_links: set[str]
 
 
 Tier2Item = Union[str, tuple[float, str, str], tuple[float, int, str, str]]
@@ -197,10 +187,7 @@ class Tier2Context:
     outbound link graphs, and the adjudication sets), so the individual signal
     functions stay small and never re-walk the corpus."""
 
-    __slots__ = (
-        "pages", "data", "inbound", "outbound", "adj", "adj_used",
-        "current_state",
-    )
+    __slots__ = ("pages", "data", "inbound", "outbound", "adj", "adj_used")
 
     pages: list[Path]
     data: dict[Path, Tier2PageFacts]
@@ -208,7 +195,6 @@ class Tier2Context:
     outbound: dict[Path, set[str]]
     adj: Adjudications
     adj_used: Adjudications
-    current_state: CurrentStateEvaluation
 
     def __init__(
         self,
@@ -244,7 +230,6 @@ class Tier2Context:
                 "body_links": bool(LINK_RE.search(ab)),
                 # Raw-block parse so block-style sources: lists count as cited.
                 "source_items": source_items(nonblocking_frontmatter_block(text)),
-                "markdown_links": set(),
             }
             # Outbound links must be authored; generated "Referenced by" blocks
             # would echo inbound links back and fabricate a bidirectional graph,
@@ -257,50 +242,12 @@ class Tier2Context:
             except FrontmatterError:
                 link_view = ""
             self.outbound[p] = set(LINK_RE.findall(link_view))
-            self.data[p]["markdown_links"] = set(MARKDOWN_LINK_RE.findall(link_view))
 
         stems = {p.stem: p for p in pages}
         for p in pages:
             for slug in self.outbound[p]:
                 if slug in stems and stems[slug] is not p:
                     self.inbound[stems[slug]] += 1
-
-        stem_paths: dict[str, list[str]] = {}
-        for page in pages:
-            stem_paths.setdefault(page.stem, []).append(str(page.relative_to(WIKI_ROOT)))
-        corpus_root = WIKI_ROOT.resolve()
-        current_state_pages = []
-        for page in pages:
-            references = {
-                stem_paths[slug][0]
-                for slug in self.outbound[page]
-                if len(stem_paths.get(slug, ())) == 1
-            }
-            for target in self.data[page]["markdown_links"]:
-                candidate = Path(target) if target.startswith("wiki/") else page.parent / target
-                try:
-                    references.add(str(candidate.resolve().relative_to(corpus_root)))
-                except ValueError:
-                    continue
-            fm = self.data[page]["fm"]
-            authority_ref = fm.get("authority_ref")
-            if authority_ref and authority_ref.startswith("wiki/"):
-                references.add(authority_ref.removeprefix("wiki/"))
-            current_state_pages.append(CurrentStatePage(
-                path=str(page.relative_to(WIKI_ROOT)),
-                is_source=page.parent.name == "sources",
-                updated=frontmatter_updated_date(fm),
-                status_date=self.data[page]["status_date"],
-                freshness=self.data[page]["freshness"],
-                references=frozenset(references),
-                authority_kind=fm.get("authority_kind"),
-                authority_ref=authority_ref,
-            ))
-        try:
-            registry = load_current_state_registry()
-        except CurrentStateRegistryError:
-            registry = CurrentStateOwnerRegistry(False, ())
-        self.current_state = evaluate_current_state(registry, tuple(current_state_pages))
 
         # adjudicated is always supplied by the sole caller (tier2 <- main, which
         # passes load_adjudications()); load_adjudications already returns the
@@ -579,51 +526,6 @@ def signal_authority_missing(ctx: Tier2Context) -> Tier2SignalResult:
     return out, suppressed
 
 
-def signal_status_drift(ctx: Tier2Context) -> Tier2SignalResult:
-    """Compiled pages older than a registered owner status they reference."""
-    out = []
-    suppressed = 0
-    for finding in ctx.current_state.status_drift:
-        pair = (finding.page, finding.owner)
-        if pair in ctx.adj["status_drift"]:
-            ctx.adj_used["status_drift"].add(pair)
-            suppressed += 1
-            continue
-        out.append(
-            f"{finding.page} (page {finding.page_freshness.isoformat()}) -> "
-            f"{finding.owner} (status {finding.owner_status.isoformat()})"
-        )
-    return out, suppressed
-
-
-def signal_owner_status_missing(ctx: Tier2Context) -> Tier2SignalResult:
-    """Registered owner pages whose status clock cannot drive drift checks."""
-    return [f"{path}: no parseable dated Status note" for path in ctx.current_state.owner_status_missing], 0
-
-
-def signal_owner_self_drift(ctx: Tier2Context) -> Tier2SignalResult:
-    """Registered owner status notes newer than their own updated metadata."""
-    return [
-        f"{item.owner}: updated {item.updated.isoformat()}, status {item.status_date.isoformat()}"
-        for item in ctx.current_state.owner_self_drift
-    ], 0
-
-
-def signal_owner_registry_empty(ctx: Tier2Context) -> Tier2SignalResult:
-    """An enabled empty registry on a nonempty configured corpus is inert."""
-    if not ctx.current_state.owner_registry_empty:
-        return [], 0
-    return ["current-state ownership is enabled but no owner pages are registered"], 0
-
-
-def signal_authority_owner_mismatch(ctx: Tier2Context) -> Tier2SignalResult:
-    """owner-page authority references not enrolled in the enabled registry."""
-    return [
-        f"{item.page}: authority_ref {item.authority_ref!r} is not a registered owner"
-        for item in ctx.current_state.authority_owner_mismatch
-    ], 0
-
-
 def signal_unconsumed_sources(ctx: Tier2Context) -> Tier2SignalResult:
     """Source pages that no non-source entity page cites with an authored link.
 
@@ -749,7 +651,6 @@ def signal_adjudication_dead(ctx: Tier2Context) -> Tier2SignalResult:
         "authority_missing": "reviewed_authority_missing",
         "glossary_volatile": "reviewed_glossary_volatile",
         "unconsumed_sources": "reviewed_unconsumed_sources",
-        "status_drift": "reviewed_status_drift",
     }
     for key, category in names.items():
         dead = ctx.adj[key] - ctx.adj_used[key]
@@ -778,11 +679,6 @@ TIER2_SIGNALS: tuple[tuple[str, str, Tier2Signal], ...] = (
     ("recompile_candidates", "compiled pages with newer source inputs (review for no-change, small update, or recompile)", signal_recompile_candidates),
     ("glossary_volatile_status", "glossary entries restating volatile status (rewrite to a dated fact or delegate to the owner page)", signal_glossary_volatile_status),
     ("authority_missing", "pages likely needing authority metadata but lacking authority_kind", signal_authority_missing),
-    ("status_drift", "pages older than a registered current-state owner they reference", signal_status_drift),
-    ("owner_status_missing", "registered current-state owners with no dated Status note", signal_owner_status_missing),
-    ("owner_self_drift", "current-state owner Status notes newer than their updated frontmatter", signal_owner_self_drift),
-    ("owner_registry_empty", "enabled current-state registry with no owners", signal_owner_registry_empty),
-    ("authority_owner_mismatch", "owner-page authority references not present in the current-state registry", signal_authority_owner_mismatch),
     ("unconsumed_sources", "source pages not consumed by any non-source entity page (wire an authored link or adjudicate)", signal_unconsumed_sources),
     ("review_by_missing", "goals and decisions with no review_by (enroll in the outcome-review loop or leave for now)", signal_review_by_missing),
     ("review_due", "outcome reviews due (review_by has passed; run the review workflow)", signal_review_due),

@@ -38,7 +38,7 @@ surgery. Do not put rotation in a git hook, cron job, or autonomous commit path.
    The script preserves every original log entry exactly once, cuts only at
    recognized entry headers, writes the archive under `archive/wiki-log/`, keeps
    at least the newest entry live, and appends the maintenance entry itself. It
-   applies the archive and live-log update as one recoverable transaction.
+   writes the archive first, then guards and atomically replaces the live log.
 
 4. Verify:
 
@@ -60,9 +60,6 @@ surgery. Do not put rotation in a git hook, cron job, or autonomous commit path.
 - Do not run `scripts/rebuild_referenced_by.py` for this task unless another
   changed file actually alters authored wiki links. `wiki/log.md` is a meta page,
   and archived logs are not wiki pages.
-- **Interrupted rotation recovery:** a mutating rerun first recovers any clean
-  interrupted transaction, then continues. A dry run reports that recovery is
-  required without changing files. Inspect with
-  `python3 scripts/wiki_transactions.py status`; use `diagnose <transaction-id>`
-  for a preserved conflict or corrupt record. Never delete transaction state to
-  force a retry.
+- **Interrupted rotation:** rerun the command. It reuses a byte-identical archive
+  and completes the live-log write without creating a duplicate. A concurrent
+  edit to either file is preserved and reported.

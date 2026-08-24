@@ -150,7 +150,7 @@ Never silently overwrite verified content. Additions to an existing page go in c
    python3 scripts/lint.py --tier1
    ```
 
-   Backlink changes are system-generated maintenance applied as one recoverable generation. Preserve `.wiki-transactions/` and diagnose a named conflict or corrupt record before retrying or promoting the synthesis.
+   Backlink changes are system-generated maintenance. They use guarded atomic page writes and converge when rerun after interruption.
 
    All three must pass.
 

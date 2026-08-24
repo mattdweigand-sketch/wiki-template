@@ -285,7 +285,7 @@ def main() -> int:
         receipt = root / "archive/setup/finalization-receipt.json"
         setup_residue = [path for path in SETUP_DELETE_PATHS if (root / path).exists()]
         live_documents = (
-            ".github/workflows/wiki-ci.yml", "AGENTS.md", "CONTEXT.md", "README.md",
+            "AGENTS.md", "CONTEXT.md", "README.md",
             "REFERENCES.md", "raw/README.md", "wiki/design-notes.md", "wiki/domain.md",
             "wiki/index.md", "wiki/log.md", "wiki/primer.md", "workflows/ingest/CONTEXT.md",
             "workflows/maintenance/lint.md",
@@ -307,6 +307,9 @@ def main() -> int:
             if path.is_file()
             and ".git" not in path.relative_to(root).parts
             and path.relative_to(root).parts[:2] != ("archive", "setup")
+            and path.relative_to(root).as_posix() not in {
+                ".github/workflows/wiki-ci.yml", "scripts/wiki_lint_contract.py"
+            }
             and path.suffix in {".json", ".md", ".py", ".yaml", ".yml"}
             for term in ("SETUP.md", "finalize_wiki_setup", "wiki_setup_initializer", "wiki-setup-presets")
             if term in path.read_text(encoding="utf-8")

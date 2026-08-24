@@ -10,6 +10,7 @@ from pathlib import Path
 
 from _wiki_parse import FrontmatterError, META_PAGES, frontmatter_block, split_frontmatter
 from wiki_entity_catalog import load_entity_catalog
+from wiki_schema_vocabularies import load_wiki_schema_vocabularies
 
 
 LintFailure = tuple[str, str, str]
@@ -26,15 +27,14 @@ STALE_SWEEP_PROOF_REQUIRED_FROM = date(2026, 7, 5)
 # corpus enumeration cannot drift between linter and rebuild.
 
 ENTITY_CATALOG = load_entity_catalog()
+SCHEMA_VOCABULARIES = load_wiki_schema_vocabularies()
 # Stable compatibility mapping derived from the governed catalog. Callers do
 # not read entity-catalog.json directly.
 FOLDER_TYPE = ENTITY_CATALOG.folder_types
 ROOT_ALLOWED_FILES = {
     ".gitignore", "AGENTS.md", "CLAUDE.md", "CONTEXT.md", "LICENSE",
     "README.md", "REFERENCES.md",
-# wiki-setup:lint-contract-setup-root:start
     "SETUP.md",
-# wiki-setup:lint-contract-setup-root:end
 }
 ROOT_ALLOWED_DIRS = {
     ".agents", ".claude", ".codex", ".github", ".git", ".wiki-transactions", "archive", "deliverables", "raw",
@@ -43,28 +43,17 @@ ROOT_ALLOWED_DIRS = {
 WIKI_ALLOWED_FILES = {f"{name}.md" for name in META_PAGES}
 WIKI_ALLOWED_DIRS = set(FOLDER_TYPE)
 RAW_ALLOWED_FILES = {".gitkeep", "README.md"}
-VALID_CONFIDENCE = {"high", "medium", "low", "contested"}
-VALID_SOURCE_TYPE = {
-    "help-doc", "slack-thread", "call-transcript", "exec-memo", "deck",
-    "crm-export", "strategy-doc", "release-note", "press", "analyst-report",
-    "competitor-collateral", "sales-battlecard", "product-spec", "board-doc",
-    "synthesis", "other",
-}
-VALID_AUTHORITY_KIND = {
-    "raw-source", "source-page", "owner-page", "external-url",
-    "local-resource", "mixed", "none",
-}
-VALID_AUTHORITY_FRESHNESS = {
-    "immutable-source", "stable-meaning", "current-state", "event-log",
-    "predictive", "deprecated",
-}
+VALID_CONFIDENCE = frozenset(SCHEMA_VOCABULARIES.confidence)
+VALID_SOURCE_TYPE = frozenset(SCHEMA_VOCABULARIES.source_types)
+VALID_AUTHORITY_KIND = frozenset(SCHEMA_VOCABULARIES.authority_kinds)
+VALID_AUTHORITY_FRESHNESS = frozenset(SCHEMA_VOCABULARIES.authority_freshness)
 AUTHORITY_ANCHOR_FIELDS = (
     "authority_ref", "authority_freshness", "verify_before_action",
     "last_verified",
 )
 AUTHORITY_METADATA_FIELDS = ("authority_kind",) + AUTHORITY_ANCHOR_FIELDS
 BASE_KEYS = {"title", "type", "created", "updated", "sources", "tags", "confidence"}
-RELATED_LABELS = {"Supports", "Contradicts", "Depends on", "Derived from", "Part of", "Related"}
+RELATED_LABELS = frozenset(SCHEMA_VOCABULARIES.related_label_names)
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 STATUS_RE = re.compile(r"\*\*Status(?: note)?\s*\((\d{4}-\d{2}-\d{2})\)")
@@ -177,6 +166,7 @@ __all__ = [
     "REVIEW_BY_REQUIRED_FOLDERS",
     "ROOT_ALLOWED_DIRS",
     "ROOT_ALLOWED_FILES",
+    "SCHEMA_VOCABULARIES",
     "SOURCING_QUEUE_COUNT_ATTR_RE",
     "SOURCING_QUEUE_COUNT_MARKER_INTENT_RE",
     "SOURCING_QUEUE_COUNT_MARKER_RE",

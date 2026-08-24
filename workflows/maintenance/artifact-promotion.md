@@ -33,8 +33,6 @@ python3 scripts/capture_gate.py --proposal tmp/<proposal>.json \
 
 The descriptor names `analysis-capture` or `artifact-promotion`, the primary destination, the full editable scope, and each target's expected and staged bytes. Preview is display-only. Apply requires the exact digest, writes targets and one combined `capture-runs.jsonl` postimage through the shared transaction, and returns `ALREADY_APPLIED` for an exact retry. Do not manually copy staged content.
 
-Collaborative drafting is chat-only by default. Requests like "work with me," "let's discuss," "let's define," "refine this," "make this sharper," or "help me think through" are not promotion intent, even when the topic already has a wiki page, the repo is the current working directory, or the result might be reusable. If the draft becomes clearly durable, ask whether to save it; do not edit files first.
-
 ## Load / Skip
 
 - **Load:** the artifact to evaluate, `wiki/SCHEMA.md`, `wiki/index.md`, and only the pages the artifact directly touches.
@@ -147,7 +145,7 @@ When creating a wiki page:
 4. Cite source pages with `(source: [[page]])` when stating specific facts.
 5. Use `## Related pages` with typed relationship labels when clear.
 6. Update `wiki/index.md`.
-7. Run `python3 scripts/rebuild_referenced_by.py`. The rebuild applies one recoverable generation; preserve and diagnose any reported transaction conflict instead of deleting `.wiki-transactions/`.
+7. Run `python3 scripts/rebuild_referenced_by.py`. It plans from one snapshot and uses guarded atomic page writes. If interrupted, rerun it.
 
 When updating operating docs:
 
@@ -175,7 +173,7 @@ When updating operating docs:
    python3 scripts/lint.py --tier1
    ```
 
-   The backlink rebuild is system-generated maintenance after the approved application. It plans from one authored-page snapshot and applies one recoverable generation. If it reports a conflict or corrupt transaction, preserve the recovery authority and diagnose the named transaction before continuing.
+   The backlink rebuild is system-generated maintenance after the approved application. It plans from one authored-page snapshot. It preserves a concurrent page edit and can be rerun after interruption.
 
 The staged `wiki/log.md` postimage uses:
 

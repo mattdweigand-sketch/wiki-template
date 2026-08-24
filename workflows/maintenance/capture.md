@@ -19,7 +19,7 @@ Neither capture route requires `scripts/capture_gate.py` approval unless it is b
    - **Experience:** what happened; what was learned; what would be done differently; when it occurred; what it connects to.
 3. Cross-link from affected or related entity pages back to this page.
 4. Add or update the `wiki/index.md` row for the page.
-5. Run `python3 scripts/rebuild_referenced_by.py`. It applies one recoverable generation; preserve and diagnose any transaction conflict instead of deleting `.wiki-transactions/`.
+5. Run `python3 scripts/rebuild_referenced_by.py`. It uses guarded atomic page writes. If interrupted, rerun it.
 6. Run `python3 scripts/lint.py --tier1`
 7. Append to `wiki/log.md`:
 

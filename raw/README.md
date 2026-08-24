@@ -8,7 +8,7 @@ Source artifacts stay on the local machine and must never be committed. Git
 tracks this guide, the raw bucket taxonomy, source pages, and
 `scripts/raw-artifacts.json`. The manifest binds every source file by exact
 path, size, and SHA-256. Use `wiki-export` for a complete local or explicitly
-approved off-device backup.
+approved private off-device backup.
 
 ## Subfolders
 

@@ -25,19 +25,15 @@ from _evidence_fidelity import (
 )
 from eval_lib import Results
 from wiki_evidence import (
-    EvidenceResponseStatement,
-    create_evidence_response_packet,
     create_evidence_sample,
     create_targeted_evidence_sample,
     publish_evidence_batches,
-    render_verified_evidence_response,
     validate_evidence_run,
 )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = REPO_ROOT / "scripts/fixtures/wiki-evidence"
-RESPONSE_CLI = REPO_ROOT / "scripts/evidence_response.py"
 results = Results()
 
 
@@ -161,7 +157,7 @@ def duplicate_for_omitted(_root, run_dir, _sample, _plant, _batches):
 case("duplicate-for-omitted-fails", duplicate_for_omitted, fragment="sample-to-batch claims")
 
 
-def missing_verdict(_root, run_dir, *_args):
+def missing_verdict(_root: Path, run_dir: Path, *_args: object) -> None:
     path = run_dir / "verdicts/batch-01.json"
     data = load_json(path)
     data["verdicts"].pop()
@@ -205,7 +201,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-missing-count-") as td:
     )
 
 
-def extra_verdict(_root, run_dir, *_args):
+def extra_verdict(_root: Path, run_dir: Path, *_args: object) -> None:
     path = run_dir / "verdicts/batch-01.json"
     data = load_json(path)
     duplicate = copy.deepcopy(data["verdicts"][0])
@@ -229,7 +225,9 @@ def plant_verified(_root, run_dir, _sample, _plant, batches):
 case("plant-verified-fails", plant_verified, fragment="returned VERIFIED")
 
 
-def stale_source(root, _run_dir, sample, *_args):
+def stale_source(
+    root: Path, _run_dir: Path, sample: dict[str, object], *_args: object
+) -> None:
     path = root / sample["claims"][0]["path"]
     path.write_text(path.read_text(encoding="utf-8") + "changed\n", encoding="utf-8")
 
@@ -237,7 +235,9 @@ def stale_source(root, _run_dir, sample, *_args):
 case("stale-file-fails-without-metrics", stale_source, status="STALE SNAPSHOT", fragment="STALE SNAPSHOT")
 
 
-def line_drift(root, _run_dir, sample, *_args):
+def line_drift(
+    root: Path, _run_dir: Path, sample: dict[str, object], *_args: object
+) -> None:
     path = root / sample["claims"][0]["path"]
     path.write_text("inserted\n" + path.read_text(encoding="utf-8"), encoding="utf-8")
 
@@ -254,7 +254,7 @@ def reveal_plant(_root, run_dir, _sample, _plant, batches):
 case("revealed-plant-prompt-fails", reveal_plant, fragment="prompt is not the exact batch render")
 
 
-def altered_plant(_root, run_dir, *_args):
+def altered_plant(_root: Path, run_dir: Path, *_args: object) -> None:
     plant = load_json(run_dir / "plant.json")
     plant["line_number"] += 1
     atomic_json(run_dir / "plant.json", plant)
@@ -263,7 +263,7 @@ def altered_plant(_root, run_dir, *_args):
 case("altered-plant-location-fails", altered_plant, fragment="must match the source claim")
 
 
-def bad_hash(_root, run_dir, *_args):
+def bad_hash(_root: Path, run_dir: Path, *_args: object) -> None:
     sample = load_json(run_dir / "sample.json")
     sample["manifest_sha256"] = "0" * 64
     atomic_json(run_dir / "sample.json", sample)
@@ -272,7 +272,7 @@ def bad_hash(_root, run_dir, *_args):
 case("bad-manifest-hash-fails", bad_hash, fragment="manifest_sha256 mismatch")
 
 
-def unknown_field(_root, run_dir, *_args):
+def unknown_field(_root: Path, run_dir: Path, *_args: object) -> None:
     sample = load_json(run_dir / "sample.json")
     sample["unknown"] = True
     sample["manifest_sha256"] = manifest_hash(sample)
@@ -292,7 +292,7 @@ def malformed_claims(_root, run_dir, _sample, _plant, _batches):
 case("malformed-sample-claims-fails-without-crash", malformed_claims, fragment="claims must be a list")
 
 
-def duplicate_key(_root, run_dir, *_args):
+def duplicate_key(_root: Path, run_dir: Path, *_args: object) -> None:
     path = run_dir / "plant.json"
     raw = path.read_text(encoding="utf-8")
     path.write_text(raw.replace('"plant_id": "plant-01",', '"plant_id": "plant-01",\n  "plant_id": "plant-01",', 1), encoding="utf-8")
@@ -301,7 +301,7 @@ def duplicate_key(_root, run_dir, *_args):
 case("duplicate-json-key-fails", duplicate_key, fragment="duplicate JSON key")
 
 
-def symlinked_plant(root, run_dir, *_args):
+def symlinked_plant(root: Path, run_dir: Path, *_args: object) -> None:
     outside = root / "outside-plant.json"
     shutil.copyfile(run_dir / "plant.json", outside)
     (run_dir / "plant.json").unlink()
@@ -311,7 +311,9 @@ def symlinked_plant(root, run_dir, *_args):
 case("symlinked-artifact-file-fails", symlinked_plant, fragment="not a regular file")
 
 
-def symlinked_verdict_directory(root, run_dir, *_args):
+def symlinked_verdict_directory(
+    root: Path, run_dir: Path, *_args: object
+) -> None:
     outside = root / "outside-verdicts"
     shutil.move(run_dir / "verdicts", outside)
     (run_dir / "verdicts").symlink_to(outside, target_is_directory=True)
@@ -557,174 +559,4 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-flagged-") as td:
         and result.review == "FLAGGED",
         f"result={result}",
     )
-    response_path = create_evidence_response_packet(
-        root,
-        run_dir.relative_to(root),
-        "Can the flagged claim be returned?",
-        (EvidenceResponseStatement(
-            text="This must be withheld because its source claim is flagged.",
-            claim_ids=(real_item["source_id"],),
-        ),),
-    )
-    response_packet = load_json(response_path)
-    atomic_json(run_dir / "response-review.json", {
-        "schema_version": 1,
-        "evidence_snapshot_sha256": sample["manifest_sha256"],
-        "statements": [{
-            "statement_id": "statement-001",
-            "statement_sha256": response_packet["statements"][0]["statement_sha256"],
-            "verdict": "VERIFIED",
-        }],
-    })
-    flagged_render = render_verified_evidence_response(root, run_dir.relative_to(root))
-    results.record(
-        "verified-response-is-withheld-when-origin-claim-is-flagged",
-        "This must be withheld" not in flagged_render
-        and "Withheld 1 statement" in flagged_render,
-        flagged_render,
-    )
-
-
-with tempfile.TemporaryDirectory(prefix="wiki-evidence-response-") as td:
-    root = Path(td).resolve()
-    run_dir, sample, _plant, _batches = make_repo(root, "response")
-    claim = sample["claims"][0]
-    statement = EvidenceResponseStatement(
-        text="The response statement is supported.",
-        claim_ids=(claim["claim_id"],),
-    )
-    response_path = create_evidence_response_packet(
-        root, run_dir.relative_to(root), "What is supported?", (statement,),
-    )
-    packet = load_json(response_path)
-    review = {
-        "schema_version": 1,
-        "evidence_snapshot_sha256": packet["evidence_snapshot_sha256"],
-        "statements": [{
-            "statement_id": "statement-001",
-            "statement_sha256": packet["statements"][0]["statement_sha256"],
-            "verdict": "VERIFIED",
-        }],
-    }
-    atomic_json(run_dir / "response-review.json", review)
-    rendered = render_verified_evidence_response(root, run_dir.relative_to(root))
-    expected_page = Path(claim["path"]).stem
-    expected_source = claim["cited_slugs"][0]
-    results.record(
-        "reviewed-response-renders-adjacent-citations",
-        statement.text in rendered
-        and f"(wiki: [[{expected_page}]])" in rendered
-        and f"(source: [[{expected_source}]])" in rendered,
-        rendered,
-    )
-    bad_question_packet = load_json(response_path)
-    bad_question_packet["question_sha256"] = 7
-    atomic_json(response_path, bad_question_packet)
-    try:
-        render_verified_evidence_response(root, run_dir.relative_to(root))
-    except EvidenceError:
-        bad_question_rejected = True
-    else:
-        bad_question_rejected = False
-    results.record(
-        "malformed-response-question-digest-fails",
-        bad_question_rejected,
-        "malformed question digest rendered" if not bad_question_rejected else "",
-    )
-    atomic_json(response_path, packet)
-    review["statements"][0]["verdict"] = "MISMATCH"
-    atomic_json(run_dir / "response-review.json", review)
-    withheld = render_verified_evidence_response(root, run_dir.relative_to(root))
-    results.record(
-        "flagged-response-is-withheld-with-limitation",
-        statement.text not in withheld and "Withheld 1 statement" in withheld,
-        withheld,
-    )
-    review["statements"][0]["verdict"] = "VERIFIED"
-    atomic_json(run_dir / "response-review.json", review)
-    changed_packet = load_json(response_path)
-    changed_packet["statements"][0]["text"] = "Changed after review."
-    atomic_json(response_path, changed_packet)
-    try:
-        render_verified_evidence_response(root, run_dir.relative_to(root))
-    except EvidenceError:
-        changed_rejected = True
-    else:
-        changed_rejected = False
-    results.record(
-        "changed-response-text-requires-new-review", changed_rejected,
-        "changed response rendered" if not changed_rejected else "",
-    )
-    atomic_json(response_path, packet)
-    raw_path = claim["source_closure"][0]["files"][0]["path"]
-    (root / raw_path).write_bytes(b"stale after response review\n")
-    try:
-        render_verified_evidence_response(root, run_dir.relative_to(root))
-    except EvidenceError:
-        stale_rejected = True
-    else:
-        stale_rejected = False
-    results.record(
-        "stale-evidence-cannot-render-verified-response", stale_rejected,
-        "stale response rendered" if not stale_rejected else "",
-    )
-
-
-with tempfile.TemporaryDirectory(prefix="wiki-evidence-response-cli-") as td:
-    root = Path(td).resolve()
-    run_dir, sample, _plant, _batches = make_repo(root, "response-cli")
-    claim = sample["claims"][0]
-    atomic_json(run_dir / "response-draft.json", {
-        "question": "What does the evidence support?",
-        "statements": [{
-            "text": "The CLI response is supported.",
-            "claim_ids": [claim["claim_id"]],
-        }],
-    })
-    create_proc = subprocess.run(
-        [
-            sys.executable, str(RESPONSE_CLI), "create",
-            "--repo-root", str(root),
-            "--run-dir", str(run_dir.relative_to(root)),
-        ],
-        cwd=root, text=True, capture_output=True, check=False,
-    )
-    response_path = run_dir / "response.json"
-    results.record(
-        "response-cli-creates-exact-packet",
-        create_proc.returncode == 0 and response_path.is_file(),
-        create_proc.stdout + create_proc.stderr,
-    )
-    if response_path.is_file():
-        packet = load_json(response_path)
-        atomic_json(run_dir / "response-review.json", {
-            "schema_version": 1,
-            "evidence_snapshot_sha256": packet["evidence_snapshot_sha256"],
-            "statements": [{
-                "statement_id": "statement-001",
-                "statement_sha256": packet["statements"][0]["statement_sha256"],
-                "verdict": "VERIFIED",
-            }],
-        })
-        render_proc = subprocess.run(
-            [
-                sys.executable, str(RESPONSE_CLI), "render",
-                "--repo-root", str(root),
-                "--run-dir", str(run_dir.relative_to(root)),
-            ],
-            cwd=root, text=True, capture_output=True, check=False,
-        )
-        rendered = render_proc.stdout
-    else:
-        render_proc = None
-        rendered = ""
-    results.record(
-        "response-cli-renders-only-reviewed-output",
-        render_proc is not None
-        and render_proc.returncode == 0
-        and "The CLI response is supported." in rendered
-        and f"(source: [[{claim['cited_slugs'][0]}]])" in rendered,
-        rendered + (render_proc.stderr if render_proc is not None else "response missing"),
-    )
-
 sys.exit(results.finish())

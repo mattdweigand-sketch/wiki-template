@@ -34,7 +34,6 @@ SETUP_DELETE_PATHS = (
     "scripts/wiki_setup_initializer.py",
 )
 SETUP_WRITE_PATHS = (
-    ".github/workflows/wiki-ci.yml",
     "AGENTS.md",
     "CONTEXT.md",
     "README.md",
@@ -44,16 +43,11 @@ SETUP_WRITE_PATHS = (
     "raw/README.md",
     "scripts/document-reachability.json",
     "scripts/raw-buckets.json",
-    "scripts/wiki_lint_contract.py",
-    "wiki/design-notes.md",
     "wiki/domain.md",
-    "wiki/index.md",
     "wiki/log.md",
-    "wiki/primer.md",
 )
 KEBAB_CASE_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 MARKDOWN_SETUP_MARKER_SYNTAX = ("<!-- ", " -->")
-HASH_SETUP_MARKER_SYNTAX = ("# ", "")
 
 
 class WikiSetupInitializerError(ValueError):
@@ -367,7 +361,7 @@ def _render_raw_readme(answers: WikiSetupAnswers) -> str:
         "Source artifacts stay local and must never be committed. Git tracks this "
         "guide, the raw bucket taxonomy, source pages, and the exact path, size, and "
         "SHA-256 manifest. Use `wiki-export` for a complete local or explicitly "
-        "approved off-device backup.\n\n"
+        "approved private off-device backup.\n\n"
         "## Subfolders\n\n"
         "| Folder | Holds |\n|---|---|\n"
         f"{rows}\n"
@@ -628,59 +622,6 @@ def _render_live_documents(
         "explicit lookup, and ingest link/index steps; it is not startup context.",
     )
     documents["REFERENCES.md"] = references
-    primer = (repo_root / "wiki/primer.md").read_text(encoding="utf-8")
-    primer = _replace_single_wiki_setup_line(
-        primer,
-        "primer-status-route",
-        "1. Read [`domain.md`](domain.md) for the configured context and active "
-        "types.",
-    )
-    documents["wiki/primer.md"] = primer
-    index = (repo_root / "wiki/index.md").read_text(encoding="utf-8")
-    documents["wiki/index.md"] = _replace_single_wiki_setup_line(
-        index,
-        "index-domain-summary",
-        "| [domain.md](domain.md) | Configured context, active entity types, raw "
-        "buckets, and example queries |",
-    )
-    design = (repo_root / "wiki/design-notes.md").read_text(encoding="utf-8")
-    design = _replace_single_wiki_setup_block(
-        design, "design-initializer-decision", ""
-    )
-    design = _replace_single_wiki_setup_block(
-        design,
-        "design-catalog-owner",
-        "Chosen seam: `scripts/entity-catalog.json` defines the exact 24 supported\n"
-        "entity records, while `scripts/wiki_entity_catalog.py` is the only production\n"
-        "interface for loading and validating the catalog, looking up folder/type pairs,\n"
-        "and validating configured layouts. Lint, parity, and eval code call that\n"
-        "interface.",
-    )
-    design = _replace_single_wiki_setup_block(
-        design,
-        "design-configured-layout",
-        "A configured wiki contains exactly the folders mapped from its explicit active\n"
-        "types. The live catalog contains only runtime folder/type mappings and authoring\n"
-        "guidance.",
-    )
-    documents["wiki/design-notes.md"] = design
-    lint_contract = (repo_root / "scripts/wiki_lint_contract.py").read_text(
-        encoding="utf-8"
-    )
-    documents["scripts/wiki_lint_contract.py"] = _replace_single_wiki_setup_block(
-        lint_contract,
-        "lint-contract-setup-root",
-        "",
-        HASH_SETUP_MARKER_SYNTAX,
-    )
-    ci = (repo_root / ".github/workflows/wiki-ci.yml").read_text(encoding="utf-8")
-    ci = _replace_single_wiki_setup_block(
-        ci,
-        "ci-initializer-test",
-        "",
-        HASH_SETUP_MARKER_SYNTAX,
-    )
-    documents[".github/workflows/wiki-ci.yml"] = ci
     log = (repo_root / "wiki/log.md").read_text(encoding="utf-8")
     documents["wiki/log.md"] = _replace_single_wiki_setup_block(
         log,
