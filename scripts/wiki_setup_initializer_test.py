@@ -115,6 +115,7 @@ def main() -> int:
             and payload.get("valid") is True
             and payload.get("active_types") == PERSONAL_TYPES
             and payload.get("create_raw_folders") == ["raw/documents", "raw/media"]
+            and len(payload.get("authorization_digest", "")) == 64
             and "archive/setup/answers.json" in payload.get("write_paths", [])
             and payload.get("remove_folders") == [
                 "competitors", "customers", "features", "initiatives", "metrics",
@@ -144,6 +145,29 @@ def main() -> int:
             ).stdout == ""
             and (root / "tmp/wiki-setup-answers.json").exists(),
             f"exit={unapproved.returncode} stderr={unapproved.stderr!r}",
+        )
+        wrong_digest = subprocess.run(
+            [
+                PYTHON, "scripts/finalize_wiki_setup.py", "apply",
+                "--answers", "tmp/wiki-setup-answers.json",
+                "--approve-digest", "0" * 64,
+            ],
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        results.record(
+            "apply-rejects-wrong-authorization-digest",
+            wrong_digest.returncode != 0
+            and "approval digest does not match" in wrong_digest.stderr
+            and subprocess.run(
+                ["git", "status", "--porcelain"], cwd=root, check=True,
+                stdout=subprocess.PIPE, text=True,
+            ).stdout == ""
+            and (root / "tmp/wiki-setup-answers.json").exists(),
+            f"exit={wrong_digest.returncode} stderr={wrong_digest.stderr!r}",
         )
         readme_path = root / "README.md"
         original_readme = readme_path.read_text(encoding="utf-8")
@@ -260,10 +284,13 @@ def main() -> int:
             ["git", "rev-parse", "HEAD"], cwd=root, check=True,
             stdout=subprocess.PIPE, text=True,
         ).stdout.strip()
+        approved_preview = run_setup_preview(root)
+        approved_digest = json.loads(approved_preview.stdout)["authorization_digest"]
         process = subprocess.run(
             [
                 PYTHON, "scripts/finalize_wiki_setup.py", "apply",
-                "--answers", "tmp/wiki-setup-answers.json", "--approve",
+                "--answers", "tmp/wiki-setup-answers.json",
+                "--approve-digest", approved_digest,
             ],
             cwd=root,
             stdout=subprocess.PIPE,
@@ -325,7 +352,7 @@ def main() -> int:
             "approved-apply-produces-live-wiki-and-removes-initializer",
             process.returncode == 0
             and payload.get("valid") is True
-            and payload.get("transaction") == "working-tree-changes"
+            and payload.get("transaction") == "recoverable-wiki-setup"
             and head_before == head_after
             and not setup_residue
             and not live_residue

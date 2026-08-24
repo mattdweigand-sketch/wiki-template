@@ -1,1 +1,1 @@
-{"description":"Append-only exact application records written by scripts/capture_gate.py. Legacy capture and synthesis approval records remain valid as history but are no longer created. Free routes remain unrecorded here.","record_type":"schema","schema_version":1}
+{"description":"Append-only exact application records written by scripts/capture_gate.py.","record_type":"schema","schema_version":1}

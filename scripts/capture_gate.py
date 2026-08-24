@@ -1,36 +1,5 @@
 #!/usr/bin/env python3
-"""Diagnose capture routes or apply one exact approved proposal.
-
-Flat mode is display-only. Durable analysis capture, artifact promotion, and
-synthesis promotion use proposal mode, which binds approval to exact staged
-bytes and applies through the shared transaction engine.
-
-Phases other than `accepted` never cross an approval boundary; the gate takes a
-short non-approval path for them (route judgment lives in the routed prose
-workflows). Two deterministic guards still apply on that path: no concrete
-destination may sit under wiki/analyses/ (placeholders are skipped by design on
-this display-only path), and every concrete destination must be under an
-allowed durable root.
-
-Determinism: the gate anchors on checkable facts, not only declared flags.
-- Any capture route with a wiki/analyses/ destination in its declared scope
-  requires --path to the drafted artifact; the gate counts its words itself.
-  There is no declared word-count input. The synthesis branch may only touch
-  wiki/analyses/ pages that already exist on disk; new analysis pages must go
-  through the measured analysis-capture route.
-- Approval-required routes reject placeholder paths and paths outside the
-  allowed durable roots so diagnosis names a concrete proposed scope.
-- Synthesis diagnosis displays the declared draft and file scope.
-
-Measurement scope: flat diagnosis measures word count from --path.
-`synthesized_pages` remains a declared count used only for route selection.
-
-Exit codes:
-  0: exact proposal applied, exact retry confirmed, or free route diagnosed
-  2: exact proposal or approval is required
-  3: invalid or blocked route (argparse usage errors are remapped here so that
-     exit 2 always means exactly "approval required")
-"""
+"""Preview or apply one exact approved wiki capture proposal."""
 
 from __future__ import annotations
 
@@ -47,35 +16,18 @@ from _durable_files import DurableFileError, read_regular_bytes, sha256_bytes
 from _file_transactions import recover_all, run_transaction
 from _repo_paths import EXISTING_FILE, MAY_CREATE_FILE, RepoPathError, resolve_repo_path
 from _transaction_contract import TransactionError
-from capture_approval_policy import (
-    ACTION_LABELS,
-    ANALYSES_PREFIX,
-    APPROVAL_ROUTES,
-    PROMOTION_TRIGGERS,
-    approval_guard,
-    classify_accepted,
-    contains_approval_path_placeholder,
-    is_analyses_path,
-    measure_draft,
-    normalize_path,
-    real_destinations,
-    scope_with_home,
-)
 from capture_approval_records import (
-    SYNTHESIS_DEFAULT_HOME,
     capture_application_from_ledger,
     capture_application_record,
     render_capture_application_ledger,
 )
-from ledger_common import (
-    ALLOWED_ROOT_FILES,
-    ALLOWED_ROOTS,
-    LedgerIntegrityError,
-    split_scope,
+from capture_ledger import (
+    ALLOWED_CAPTURE_ROOT_FILES,
+    ALLOWED_CAPTURE_ROOTS,
+    CaptureLedgerIntegrityError,
 )
 
 
-FREE_PHASES = ("drafting", "source", "decision", "experience", "workflow")
 PROPOSAL_FIELDS = {
     "schema_version", "capture_boundary", "purpose", "primary_destination",
     "editable_scope", "targets",
@@ -158,13 +110,15 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
         raise CaptureProposalError(
             f"{CAPTURE_LEDGER_PATH} is a system output and cannot be a proposal target"
         )
-    allowed_prefixes = tuple(prefix.rstrip("/") for prefix in ALLOWED_ROOTS)
+    allowed_prefixes = tuple(
+        prefix.rstrip("/") for prefix in ALLOWED_CAPTURE_ROOTS
+    )
     for destination in scope:
         resolve_repo_path(
             destination,
             repo_root=root,
             allowed_prefixes=allowed_prefixes,
-            allowed_root_files=ALLOWED_ROOT_FILES,
+            allowed_root_files=ALLOWED_CAPTURE_ROOT_FILES,
             mode=MAY_CREATE_FILE,
         )
     primary = descriptor.get("primary_destination")
@@ -338,308 +292,51 @@ def apply_capture_proposal(
     }
 
 
-def yn(value: str) -> bool:
-    lowered = value.lower()
-    if lowered in {"yes", "true", "1", "y"}:
-        return True
-    if lowered in {"no", "false", "0", "n"}:
-        return False
-    raise argparse.ArgumentTypeError("expected yes/no")
-
-
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Require approval for wiki analysis capture, promotion, or synthesis.",
-    )
-    p.add_argument("--artifact", default="", help="Short description of the artifact.")
-    p.add_argument("--proposal", default="", help="Canonical exact-application descriptor under tmp/.")
-    p.add_argument("--approve-digest", default="", help="Exact Authorization ID approved after proposal preview.")
-    p.add_argument("--json", action="store_true", help="Emit proposal-mode output as canonical JSON.")
-    p.add_argument(
-        "--kind",
-        choices=["capture", "synthesis"],
-        default="capture",
-        help="Approval branch. Default capture preserves existing phase-derived behavior.",
+        description="Preview or apply one exact approved wiki capture proposal.",
     )
     p.add_argument(
-        "--phase",
-        choices=["accepted", *FREE_PHASES],
-        help="Current state of the user request. Required for --kind=capture. Only "
-             "'accepted' can derive an approval route; every other phase takes the "
-             "short non-approval path.",
+        "--proposal",
+        required=True,
+        help="Canonical exact-application descriptor under tmp/.",
     )
-    p.add_argument("--primary-home", default="", help="Exact intended path, if known.")
-    p.add_argument("--pages-touched", default="", help="Comma-separated intended paths.")
-    p.add_argument("--source-path", default="", help="Source path or URL if a source is involved.")
     p.add_argument(
-        "--path",
+        "--approve-digest",
         default="",
-        help="Path to the drafted artifact on disk. Required whenever the primary "
-             "home is under wiki/analyses/; the gate counts its words itself.",
+        help="Exact authorization digest approved after proposal preview.",
     )
-    p.add_argument("--drafts", default="", help="Reviewed synthesis content for --kind=synthesis.")
-    p.add_argument("--synthesized-pages", type=int, default=0)
-    p.add_argument(
-        "--domain-context",
-        dest="domain_context",
-        type=yn,
-        default=False,
-        help="Whether the answer is about this wiki's configured domain.",
-    )
-    p.add_argument(
-        "--trigger",
-        action="append",
-        choices=PROMOTION_TRIGGERS,
-        default=[],
-        help="Reusable-artifact trigger. Repeat for multiple triggers.",
-    )
-    p.add_argument(
-        "--approved",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
+    p.add_argument("--json", action="store_true", help="Emit canonical JSON only.")
     return p
 
 
-
-
-def print_capture_summary(args: argparse.Namespace, route: str, home: str, reason: str,
-                          scope: list[str]) -> None:
-    files = ", ".join(scope) if scope else (home if home else "none")
-    print("CAPTURE GATE")
-    print(f"Artifact: {args.artifact}")
-    print(f"Machine mode: {route}")
-    if route in ACTION_LABELS:
-        print(f"Proposed action: {ACTION_LABELS[route]}")
-    print(f"Primary home: {home}")
-    print(f"Reason: {reason}")
-    print(f"Pages touched: {files}")
-
-
-def print_synthesis_summary(args: argparse.Namespace, home: str, scope: list[str]) -> None:
-    print("CAPTURE GATE")
-    print(f"Artifact: {args.artifact}")
-    print("Machine mode: synthesis")
-    print("Proposed action: Approve synthesis content and update the synthesis ledger.")
-    print(f"Primary home: {home}")
-    print(f"Drafts for review: {args.drafts}")
-    print(f"Proposed file scope: {', '.join(scope)}")
-
-
-def print_capture_approval_request(args: argparse.Namespace, route: str, home: str,
-                                   scope: list[str]) -> None:
-    action = ACTION_LABELS[route]
-    files = ", ".join(scope)
-    print()
-    print("APPROVAL REQUIRED")
-    print("Flat mode is read-only route diagnosis. No files have been changed.")
-    print()
-    print("What you are approving:")
-    print(f"- Durable action: {action}")
-    print(f"- Artifact: {args.artifact}")
-    print(f"- Primary destination: {home}")
-    print(f"- Files the agent may edit: {files}")
-    print('Reply with plain-language approval only after exact proposal preview.')
-    print("Stage exact postimages and run --proposal before requesting approval.")
-
-
-def print_synthesis_approval_request() -> None:
-    print()
-    print("APPROVAL REQUIRED")
-    print("Flat mode is read-only route diagnosis.")
-    print("Do not update wiki/synthesis.md, flip draft confidence/status, or log a synthesis promotion yet.")
-    print("Stage exact postimages and run --proposal before requesting approval.")
-
-
-def blocked(reason: str, args: argparse.Namespace) -> int:
-    """Print the BLOCKED banner with the reason and return exit code 3."""
-    print("CAPTURE GATE: BLOCKED")
-    print(f"Artifact: {args.artifact}")
-    print(f"Reason: {reason}")
-    return 3
-
-
-def synthesis_guard(args: argparse.Namespace, home: str, scope: list[str]) -> str | None:
-    if not args.artifact.strip():
-        return "--artifact must be a non-empty description."
-    if not args.drafts.strip():
-        return "Synthesis approval requires --drafts so the user can review what changed."
-    if not args.pages_touched.strip():
-        return "Synthesis approval requires --pages-touched so the editable scope is explicit."
-
-    checked_scope = scope + [home]
-    placeholders = [p for p in checked_scope if p and contains_approval_path_placeholder(p)]
-    if placeholders:
-        return f"approval scope must name concrete paths, not placeholders: {placeholders}"
-    if home not in scope:
-        return f"primary home {home} must be included in --pages-touched."
-    # Synthesis flips status on existing, already-reviewed analyses pages. A
-    # NEW analysis has a draft to measure, so it must go through the measured
-    # analysis-capture route instead of this unmeasured branch.
-    missing_analyses = [p for p in checked_scope
-                        if p and is_analyses_path(p) and not Path(p).is_file()]
-    if missing_analyses:
-        return (f"synthesis may only touch existing {ANALYSES_PREFIX} pages; file a "
-                f"new analysis through analysis-capture with a measured draft: "
-                f"missing {missing_analyses}")
-    return None
-
-
-def run_synthesis(args: argparse.Namespace) -> int:
-    home = args.primary_home.strip() or SYNTHESIS_DEFAULT_HOME
-    if home and not contains_approval_path_placeholder(home):
-        home = normalize_path(home)
-    scope = list(dict.fromkeys(normalize_path(p) for p in split_scope(args.pages_touched)))
-
-    reason = synthesis_guard(args, home, scope)
-    if reason:
-        return blocked(reason, args)
-
-    print_synthesis_summary(args, home, scope)
-    print_synthesis_approval_request()
-    return 2
-
-
-def run_free_phase(args: argparse.Namespace) -> int:
-    """Phases other than accepted never require this gate; the routed prose
-    workflows own that judgment. Two deterministic guards still apply so a
-    mistaken invocation cannot legitimize a bad destination."""
-    home = args.primary_home.strip()
-    if home and home != "none" and not contains_approval_path_placeholder(home):
-        home = normalize_path(home)
-
-    if any(is_analyses_path(d) for d in real_destinations(home, args.pages_touched)):
-        return blocked(f"phase '{args.phase}' may not write to {ANALYSES_PREFIX}; "
-                       "an analysis must go through analysis-capture or promotion-audit.",
-                       args)
-
-    print("CAPTURE GATE")
-    print(f"Artifact: {args.artifact}")
-    print(f"Machine mode: non-approval (phase {args.phase})")
-    print("Approval: not required; only --phase accepted can cross an approval "
-          "boundary. Route judgment lives in the routed workflows; do not edit "
-          "files a drafting conversation has not asked for.")
-    return 0
-
-
-def run_capture(args: argparse.Namespace) -> int:
-    if not args.phase:
-        return blocked("--phase is required when --kind=capture.", args)
-
-    if args.phase != "accepted":
-        return run_free_phase(args)
-
-    # Measure the word count from the real draft when a path is given, so the
-    # decision rests on a fact rather than a declared number. An unreadable
-    # --path blocks here with the precise diagnosis; letting it fall through
-    # would misclassify the run as chat-only and report the wrong problem.
-    word_count = 0
-    if args.path:
-        measured = measure_draft(args.path)
-        if measured is None:
-            return blocked(f"--path {args.path!r} is not a readable file.", args)
-        word_count, _draft_sha256, _draft_text = measured
-
-    if args.synthesized_pages < 0:
-        return blocked("--synthesized-pages must be a non-negative count of "
-                       "distinct wiki pages synthesized.", args)
-
-    route, home, reason = classify_accepted(args, word_count)
-    # Normalize a concrete home once so every downstream check and stored record
-    # see the same resolved path.
-    if home and home != "none" and not contains_approval_path_placeholder(home):
-        home = normalize_path(home)
-
-    # These guards check the DECLARED inputs, not the route-derived home: a
-    # chat-only classification discards --primary-home, and a discarded
-    # analyses or out-of-root declaration must still block rather than exit 0.
-    declared_home = args.primary_home.strip()
-    if route not in APPROVAL_ROUTES:
-        analyses_declared = [d for d in real_destinations(declared_home, args.pages_touched)
-                             if is_analyses_path(d)]
-        if analyses_declared:
-            hint = ""
-            if not args.path:
-                hint = (" If this is a drafted analysis, re-run with --path to the "
-                        "draft so its word count is measured, not declared.")
-            return blocked(f"route '{route}' may not write to {ANALYSES_PREFIX}; "
-                           "an analysis must go through analysis-capture or "
-                           f"promotion-audit.{hint}", args)
-
-    approval_required = route in APPROVAL_ROUTES
-
-    if approval_required:
-        block = approval_guard(args, route, home)
-        if block:
-            return blocked(block, args)
-
-    scope = scope_with_home(home, args.pages_touched)
-    print_capture_summary(args, route, home, reason, scope)
-
-    if route == "chat-only":
-        print("Approval: not required; do not edit files.")
-        return 0
-
-    print_capture_approval_request(args, route, home, scope)
-    return 2
-
-
 def main() -> int:
+    args = parser().parse_args()
     try:
-        args = parser().parse_args()
-    except SystemExit as exc:
-        # argparse exits 2 on usage errors, which would collide with this
-        # gate's "approval required" code; remap so exit 2 keeps one meaning.
-        if exc.code == 2:
-            return 3
-        return exc.code if isinstance(exc.code, int) else 3
-    args.trigger = sorted(set(args.trigger))
-    try:
-        if args.approved:
-            raise CaptureProposalError(
-                "legacy --approved is disabled; stage exact postimages and use --proposal"
+        if args.approve_digest:
+            payload = apply_capture_proposal(
+                Path(__file__).resolve().parents[1],
+                args.proposal,
+                args.approve_digest,
             )
-        if args.proposal:
-            if any(
-                value for value in (
-                    args.artifact, args.phase, args.primary_home, args.pages_touched,
-                    args.source_path, args.path, args.drafts, args.trigger,
-                )
-            ) or args.kind != "capture":
-                raise CaptureProposalError(
-                    "proposal mode accepts only --proposal, optional --approve-digest, and --json"
-                )
-            if args.approve_digest:
-                payload = apply_capture_proposal(
-                    Path(__file__).resolve().parents[1],
-                    args.proposal,
-                    args.approve_digest,
-                )
-                print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-                return 0
-            prepared = prepare_capture_proposal(
-                Path(__file__).resolve().parents[1], args.proposal
-            )
-            preview = prepared["preview"]
-            print(json.dumps(preview, sort_keys=True, separators=(",", ":")))
-            if not args.json:
-                print(f"Authorization ID: {prepared['authorization_digest']}")
-            return 2
-        if args.approve_digest or args.json:
-            raise CaptureProposalError("--approve-digest and --json require --proposal")
-        if not args.artifact.strip():
-            return blocked("--artifact must be a non-empty description.", args)
-        if args.kind == "synthesis":
-            return run_synthesis(args)
-        return run_capture(args)
+            print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+            return 0
+        prepared = prepare_capture_proposal(
+            Path(__file__).resolve().parents[1], args.proposal
+        )
+        print(json.dumps(prepared["preview"], sort_keys=True, separators=(",", ":")))
+        if not args.json:
+            print(f"Authorization ID: {prepared['authorization_digest']}")
+        return 2
     except (
         CaptureProposalError,
         DurableFileError,
         RepoPathError,
-        LedgerIntegrityError,
+        CaptureLedgerIntegrityError,
         TransactionError,
     ) as exc:
-        return blocked(str(exc), args)
+        print(f"capture proposal blocked: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

@@ -63,8 +63,7 @@ def load_adjudications() -> Adjudications:
     lint stays fully operable without it.
     """
     empty: Adjudications = {
-        "orphans": set(), "hubs": set(), "pairs": set(),
-        "confidence": set(), "duplicates": set(), "quotes": set(),
+        "orphans": set(), "quotes": set(),
         "recompile": set(), "authority_missing": set(),
         "glossary_volatile": set(),
         "unconsumed_sources": set(),
@@ -75,10 +74,6 @@ def load_adjudications() -> Adjudications:
         return empty
     return {
         "orphans": {e["page"] for e in raw.get("accepted_orphans", [])},
-        "hubs": {e["page"] for e in raw.get("hub_pages", [])},
-        "pairs": {frozenset(e["pair"]) for e in raw.get("skipped_crossref_pairs", [])},
-        "confidence": {e["page"] for e in raw.get("reviewed_confidence_low", [])},
-        "duplicates": {frozenset(e["pair"]) for e in raw.get("reviewed_near_duplicates", [])},
         "quotes": {(e["page"], normalize_quote(e["quote"]))
                    for e in raw.get("reviewed_quotes", [])},
         "recompile": {(e["pair"][0], e["pair"][1])

@@ -78,24 +78,17 @@ The wiki runs one loop: preserve the evidence, turn it into pages, build durable
 
 ## What Keeps It Reliable
 
-The checks and guardrails that protect the corpus:
+The main checks that protect the corpus:
 
 | Mechanism | Purpose |
 |---|---|
-| One-time initialization and CI | `SETUP.md` collects temporary answers, previews exact changes, and applies them once after approval. The initializer then deletes itself. GitHub Actions validates repository mechanics on pushes and pull requests. <!-- wiki-setup:readme-ci-row:line --> |
+| Setup and CI | `SETUP.md` previews one exact, digest-bound setup. Apply validates a staged clone, uses a recoverable transaction, then removes the initializer. GitHub Actions checks pushes and pull requests. <!-- wiki-setup:readme-ci-row:line --> |
 | Route-first workflows | Point agents from `AGENTS.md` through the `wiki/domain.md` status check, then to `SETUP.md` or `CONTEXT.md` as appropriate. <!-- wiki-setup:readme-route-row:line --> |
-| Sourcing queue | `wiki/sourcing-queue.md` tracks evidence gaps so weak claims become future work instead of disappearing. |
-| Contradiction tracking | Records conflicts in `wiki/contradictions.md` instead of overwriting inconvenient claims. |
-| Three-tier lint | `scripts/lint.py` reports two deterministic tiers: Tier 1 fails on broken structure and malformed proof; Tier 2 ranks suspicious patterns for review, including compiled pages with newer source inputs, glossary status language, and pages likely needing authority metadata. Tier 3, genuine judgment, is left to the `wiki-lint` prose workflow, not the script. |
-| Evidence review | Full `wiki-lint` creates an exact OS-random sample, immutable verifier batches, a hidden calibration plant, and validated verdict accounting so claims are tested against cited pages and raw evidence without trusting partial or stale runs. |
-| Private raw sources | Tier 1 and the pre-commit hook reject tracked raw artifacts. Local checks still bind each file to the tracked manifest and source page. |
-| Lint adjudications | `scripts/lint-adjudications.json` records reviewed false positives and accepted exceptions so the same candidates are not re-litigated every lint run. |
-| Approval gate and ledger | `scripts/capture_gate.py` makes the agent ask before filing analyses, applying artifact promotions, or approving synthesis; `scripts/capture-runs.jsonl` records exact approved applications. |
-| Durable file updates | Exact approved targets and their ledger postimage use one recoverable multi-file transaction. Backlink rebuilds and log rotations use guarded atomic writes that converge on rerun. |
-| Generated wrappers | `scripts/wiki-wrapper-contract.json` is the single manifest for both `.claude/commands/` and `.agents/skills/`; the renderer and parity checker prevent hand-edited drift. |
-| Live evals | `wiki-eval` runs every suite registered in `scripts/wiki_eval.py`, including parsing, durable files, capture transactions, backlinks, lint and evidence checks, approval gates and ledgers, backup and restore, log rotation, schema data, document reachability, and Tier-1 lint. |
-| Complete private backup | `wiki-export` includes raw sources, local state, deliverables, scratch files, and Git history. Its version 2 manifest binds file permission modes as well as bytes, and restore applies them before atomic installation. |
-| Optional backup receipt | A copy to an approved private `rclone` destination advances local backup freshness only after remote size and checksum verification. `scripts/backup_state.py` reports missing, stale, invalid, future-dated, or fresh state without making backup configuration a repository gate. |
+| Evidence and conflicts | Sources, citations, the sourcing queue, contradiction tracking, and sampled evidence review keep claims tied to evidence. |
+| Lint and evals | Tier 1 blocks broken structure. Tier 2 surfaces focused review candidates. `wiki-eval` checks the tools and recovery paths. |
+| Exact approval | Analysis capture, artifact promotion, and synthesis promotion bind approval to exact target bytes and apply through one recoverable transaction. |
+| Generated wrappers | `scripts/wiki-wrapper-contract.json` owns both agent shortcut surfaces. Render and parity checks block drift. |
+| Complete private backup | `wiki-export` includes raw sources, local state, deliverables, scratch files, and Git history. Version 3 binds file and directory modes before absent-destination restore. |
 
 Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task instructions live under [`workflows/`](workflows/).
 
@@ -113,7 +106,7 @@ Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task inst
 |
 |-- .claude/commands/          # Claude Code slash-command wrappers
 |-- .agents/skills/            # Repo-local Codex skill wrappers
-|-- .wiki-transactions/        # Gitignored exact-capture recovery authority
+|-- .wiki-transactions/        # Gitignored capture and setup recovery authority
 |
 |-- workflows/                 # Vendor-neutral workflow instructions
 |   |-- ingest/                # raw source -> wiki pages
@@ -146,7 +139,7 @@ Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task inst
 <!-- wiki-setup:readme-configuration:start -->
 ## Configuration
 
-A fresh clone starts unconfigured. [`SETUP.md`](SETUP.md) collects the context owner, domain, starting preset, final supported entity types, raw buckets, example questions, and privacy acknowledgement in a temporary answers file. `scripts/finalize_wiki_setup.py preview` validates the answers and reports every change without writing. Its approved `apply` command configures the wiki, archives only the answers and receipt, removes the initializer, runs validation, and leaves ordinary Git changes for review.
+A fresh clone starts unconfigured. [`SETUP.md`](SETUP.md) collects the context owner, domain, starting preset, final supported entity types, raw buckets, example questions, and privacy acknowledgement in a temporary answers file. Preview renders every postimage and returns an approval digest without writing. Apply requires that digest, validates a staged clone, then installs the exact file set through one recoverable transaction. It archives only the answers and receipt, removes the initializer, and leaves Git changes for review.
 
 The final active-type list is literal. All presets include `source`, `analysis`, and `decision` so the standard ingest, analysis-capture, and decision-capture routes have destinations. Remove one only when the configured wiki will not use that route.
 

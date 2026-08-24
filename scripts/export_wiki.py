@@ -45,10 +45,12 @@ BACKUP_MANIFEST_NAME = "BACKUP-MANIFEST.json"
 BACKUP_MANIFEST_FIELDS = {
     "schema_version", "created_at", "members", "raw_artifact_manifest_sha256",
 }
-BACKUP_MANIFEST_SCHEMA_VERSION = 2
-SUPPORTED_BACKUP_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2})
+BACKUP_MANIFEST_FIELDS_V3 = BACKUP_MANIFEST_FIELDS | {"directories"}
+BACKUP_MANIFEST_SCHEMA_VERSION = 3
+SUPPORTED_BACKUP_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2, 3})
 BACKUP_MEMBER_FIELDS_V1 = {"path", "size", "sha256"}
 BACKUP_MEMBER_FIELDS_V2 = {"path", "size", "sha256", "mode"}
+BACKUP_DIRECTORY_FIELDS_V3 = {"path", "mode"}
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -160,10 +162,19 @@ def build_backup_manifest(repo_root: Path, files: list[Path]) -> dict[str, objec
     members.sort(key=lambda member: str(member["path"]))
     raw_manifest = repo_root / "scripts/raw-artifacts.json"
     raw_sha = hashlib.sha256(raw_manifest.read_bytes()).hexdigest() if raw_manifest.is_file() else None
+    directories = [
+        {
+            "path": path.relative_to(repo_root).as_posix(),
+            "mode": stat.S_IMODE(path.lstat().st_mode),
+        }
+        for path in sorted(repo_root.rglob("*"))
+        if path.is_dir() and not path.is_symlink()
+    ]
     return {
         "schema_version": BACKUP_MANIFEST_SCHEMA_VERSION,
         "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "members": members,
+        "directories": directories,
         "raw_artifact_manifest_sha256": raw_sha,
     }
 
@@ -243,8 +254,8 @@ def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[
                 )
             except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateBackupKey) as exc:
                 return None, [*errors, f"backup manifest is invalid JSON: {exc}"]
-            if not isinstance(manifest, dict) or set(manifest) != BACKUP_MANIFEST_FIELDS:
-                errors.append("backup manifest has missing or unknown fields")
+            if not isinstance(manifest, dict):
+                errors.append("backup manifest must be an object")
                 return None, errors
             if manifest_bytes != _canonical_json_bytes(manifest):
                 errors.append("backup manifest is not canonical JSON")
@@ -258,9 +269,17 @@ def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[
                     "backup manifest schema_version must be a supported integer"
                 )
                 return None, errors
+            expected_manifest_fields = (
+                BACKUP_MANIFEST_FIELDS_V3
+                if schema_version == 3
+                else BACKUP_MANIFEST_FIELDS
+            )
+            if set(manifest) != expected_manifest_fields:
+                errors.append("backup manifest has missing or unknown fields")
+                return None, errors
             member_fields = (
                 BACKUP_MEMBER_FIELDS_V2
-                if schema_version == 2
+                if schema_version in {2, 3}
                 else BACKUP_MEMBER_FIELDS_V1
             )
             created_at = manifest.get("created_at")
@@ -292,7 +311,7 @@ def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[
                     errors.append(f"backup manifest members[{index}].size is invalid")
                 if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
                     errors.append(f"backup manifest members[{index}].sha256 is invalid")
-                if schema_version == 2:
+                if schema_version in {2, 3}:
                     if (
                         not isinstance(permission_mode, int)
                         or isinstance(permission_mode, bool)
@@ -318,6 +337,41 @@ def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[
             archive_members = sorted(name for name in names if name != BACKUP_MANIFEST_NAME)
             if archive_members != member_paths:
                 errors.append("archive member set does not match backup manifest")
+            if schema_version == 3:
+                directories = manifest.get("directories")
+                if not isinstance(directories, list):
+                    errors.append("backup manifest directories must be a list")
+                    return None, errors
+                directory_paths: list[str] = []
+                for index, directory in enumerate(directories):
+                    if (
+                        not isinstance(directory, dict)
+                        or set(directory) != BACKUP_DIRECTORY_FIELDS_V3
+                    ):
+                        errors.append(
+                            f"backup manifest directories[{index}] has invalid fields"
+                        )
+                        continue
+                    path = directory.get("path")
+                    permission_mode = directory.get("mode")
+                    if not _safe_backup_member_name(path):
+                        errors.append(
+                            f"backup manifest directories[{index}].path is unsafe"
+                        )
+                        continue
+                    directory_paths.append(path)
+                    if (
+                        not isinstance(permission_mode, int)
+                        or isinstance(permission_mode, bool)
+                        or not 0 <= permission_mode <= 0o7777
+                    ):
+                        errors.append(
+                            f"backup manifest directories[{index}].mode is invalid"
+                        )
+                if directory_paths != sorted(set(directory_paths)):
+                    errors.append(
+                        "backup manifest directory paths must be sorted and unique"
+                    )
             raw_sha = manifest.get("raw_artifact_manifest_sha256")
             if raw_sha is not None and (
                 not isinstance(raw_sha, str) or not SHA256_RE.fullmatch(raw_sha)

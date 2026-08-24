@@ -37,7 +37,7 @@ Detailed workflow ownership:
 
 | Workflow | Route | Owns |
 |---|---|---|
-| One-time initialization | `SETUP.md` | Collects temporary answers, previews exact changes, applies once after approval, archives compact provenance, validates, and removes itself. <!-- wiki-setup:references-setup-workflow:line --> |
+| One-time initialization | `SETUP.md` | Renders exact postimages, binds preview approval to a digest, validates a staged clone, applies one recoverable transaction, archives compact provenance, and removes itself. <!-- wiki-setup:references-setup-workflow:line --> |
 | Ingest | `workflows/ingest/CONTEXT.md` | Raw source handling, `wiki/sources/` summaries, affected entity-page updates, index rows, backlinks, Tier-1 lint, touched-page Tier-2 review, and ingest log entries. |
 | Ask | `workflows/research/ask.md` | Default bounded wiki answers with selective page loading and optional analysis capture. |
 | Research | `workflows/research/research.md` | Explicitly invoked research with exact-page evidence sampling and claim-level independent review. |
@@ -59,9 +59,9 @@ The main control mechanisms are:
 | Route-first loading | Start with `AGENTS.md`, check `wiki/domain.md`, route through `CONTEXT.md`, then open only the selected workflow and its Load / Skip list. |
 | Schema and citations | `wiki/SCHEMA.md` defines page types, frontmatter, source types, confidence values, authority metadata, and citation rules. Specific facts cite `wiki/sources/` pages. |
 | Link graph | Authors maintain `## Related pages`; `scripts/rebuild_referenced_by.py` regenerates `## Referenced by` from one snapshot and applies the generation as a recoverable transaction. |
-| Deterministic lint | `scripts/lint.py --tier1` catches structural failures and malformed proof. Full lint also surfaces Tier-2 candidates for human or agent judgment. |
-| Durable writes | Exact approved targets and their ledger postimage use one recoverable transaction under `.wiki-transactions/`; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
-| Live evals | `wiki-eval` runs the `SUITES` registry in `scripts/wiki_eval.py`, including parsing, durable files, capture transactions, lint and evidence checks, backlinks, gates, ledgers, backup and restore, log rotation, schema data, document reachability, and Tier-1 lint. |
+| Deterministic lint | `scripts/lint.py --tier1` catches structural failures. Full lint also surfaces Tier-2 candidates for human or agent judgment. |
+| Durable writes | Exact approved capture and one-time setup use recoverable transactions under `.wiki-transactions/`; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
+| Live evals | `wiki-eval` runs the `SUITES` registry in `scripts/wiki_eval.py`, including parsing, durable files, capture and setup transactions, lint and evidence checks, backlinks, backup and restore, log rotation, schema data, document reachability, and Tier-1 lint. |
 | Outcome review | `scripts/review_due.py` surfaces due `review_by` checkpoints; `workflows/maintenance/review.md` records what happened and whether confidence changes. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
 | Approval gate | `scripts/capture_gate.py` previews exact `analysis-capture`, `artifact-promotion`, and `synthesis-promotion` proposals, binds approval to their digest, and applies approved targets with the combined ledger postimage through one recoverable transaction. |
@@ -110,16 +110,16 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/build_evidence_sample.py`, `scripts/build_verifier_batches.py`, `scripts/verify_evidence_run.py` | Thin agent-neutral CLI adapters for sampled evidence checks |
 | `scripts/wiki_backup_receipt.py`, `scripts/backup_state.py` | Destination-redacted verified-upload receipt and nonblocking freshness reporter; the local receipt is gitignored |
 | `scripts/export_wiki.py`, `scripts/restore_wiki.py` | Exact-manifest archive creation, offline verification, and absent-destination restore |
-| `scripts/capture-runs.jsonl` | Combined approval/application ledger; exact proposal apply installs its postimage with approved targets through the shared transaction |
+| `scripts/capture-runs.jsonl`, `scripts/capture_ledger.py` | Exact application ledger and its strict parser; proposal apply installs the ledger postimage with approved targets through the shared transaction |
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the nine generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
 | `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
 | `scripts/check_document_reachability.py` | Follows Markdown links from declared roots and rejects missing routes or unreachable operational documents |
-| `.wiki-transactions/` | Gitignored recovery authority for exact approved capture; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
+| `.wiki-transactions/` | Gitignored recovery authority for exact approved capture and one-time setup; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
 | `scripts/fixtures/` | Fixture data for live tooling evals |
 
 ## Durable File And Transaction Boundary
 
-`scripts/_durable_files.py` owns stable locks, complete writes, directory synchronization, guarded replacement, and installed-byte checks. Backlink rebuilds and log rotation use these idempotent single-file writes and converge on rerun. `scripts/_transaction_contract.py` owns transaction vocabulary, path confinement, and journal validation. `scripts/_file_transactions.py` is reserved for exact approved capture where several target files and the approval ledger must commit as one unit.
+`scripts/_durable_files.py` owns stable locks, complete writes, directory synchronization, guarded replacement, and installed-byte checks. Backlink rebuilds and log rotation use these idempotent single-file writes and converge on rerun. `scripts/_transaction_contract.py` owns transaction vocabulary, path confinement, and journal validation. `scripts/_file_transactions.py` applies exact capture generations and the one-time setup file set. Setup is the only consumer that may record an absent postimage.
 
 An absent or verified-clean `.wiki-transactions/` root is safe. Any unpublished preparation, unfinished cleanup, nonterminal transaction, changed guard, conflict, corruption, or unknown state blocks mutation, Tier 1, pre-commit, and export. Recovery follows only the recorded deterministic policy; third-party bytes are preserved as a conflict rather than overwritten.
 
@@ -127,7 +127,7 @@ An absent or verified-clean `.wiki-transactions/` root is safe. Any unpublished 
 
 The wiki separates deterministic capture approval from prose judgment:
 
-- `scripts/capture_approval_policy.py` owns route classification and destination confinement; `scripts/capture_approval_records.py` owns exact durable record construction; `scripts/capture_gate.py` composes them into the stable CLI and output contract.
+- `scripts/capture_gate.py` owns exact proposal validation and application. `scripts/capture_approval_records.py` builds the durable record. `scripts/capture_ledger.py` validates the ledger.
 - Workflow prose decides quality: what belongs in the page, which evidence matters, how links should be written, and how contradictions should be handled.
 - Do not replace route-specific workflows with scripts unless the behavior is objectively checkable.
 

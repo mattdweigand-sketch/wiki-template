@@ -83,7 +83,7 @@ def verify_restored_wiki_tree(root: Path, manifest: dict[str, object]) -> list[s
         content = path.read_bytes()
         if len(content) != member.get("size") or hashlib.sha256(content).hexdigest() != member.get("sha256"):
             errors.append(f"restored member does not match manifest: {relative}")
-        if manifest.get("schema_version") == 2:
+        if manifest.get("schema_version") in {2, 3}:
             expected_mode = member.get("mode")
             actual_mode = stat.S_IMODE(path.stat().st_mode)
             if actual_mode != expected_mode:
@@ -96,6 +96,33 @@ def verify_restored_wiki_tree(root: Path, manifest: dict[str, object]) -> list[s
     )
     if actual_paths != expected_paths:
         errors.append("restored member set does not match manifest")
+    if manifest.get("schema_version") == 3:
+        directories = manifest.get("directories")
+        if not isinstance(directories, list):
+            errors.append("backup manifest directories are unavailable")
+        else:
+            expected_directories = []
+            for directory in directories:
+                if not isinstance(directory, dict) or not isinstance(directory.get("path"), str):
+                    errors.append("backup manifest contains an invalid restored directory")
+                    continue
+                relative = directory["path"]
+                expected_directories.append(relative)
+                path = root.joinpath(*relative.split("/"))
+                if not path.is_dir() or path.is_symlink():
+                    errors.append(f"restored directory is missing or unsafe: {relative}")
+                    continue
+                if stat.S_IMODE(path.stat().st_mode) != directory.get("mode"):
+                    errors.append(
+                        f"restored directory mode does not match manifest: {relative}"
+                    )
+            actual_directories = sorted(
+                path.relative_to(root).as_posix()
+                for path in root.rglob("*")
+                if path.is_dir() and not path.is_symlink()
+            )
+            if actual_directories != expected_directories:
+                errors.append("restored directory set does not match manifest")
     if errors:
         return errors
 
@@ -141,6 +168,14 @@ def restore_backup_archive(archive: Path, destination: Path) -> None:
         with zipfile.ZipFile(archive) as zf:
             members = manifest["members"]
             assert isinstance(members, list)
+            if manifest.get("schema_version") == 3:
+                directories = manifest.get("directories")
+                assert isinstance(directories, list)
+                for directory in directories:
+                    assert isinstance(directory, dict) and isinstance(directory.get("path"), str)
+                    staged.joinpath(*directory["path"].split("/")).mkdir(
+                        parents=True, exist_ok=True
+                    )
             for member in members:
                 assert isinstance(member, dict) and isinstance(member.get("path"), str)
                 relative = member["path"]
@@ -148,7 +183,7 @@ def restore_backup_archive(archive: Path, destination: Path) -> None:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(relative, "r") as source, target.open("xb") as output:
                     shutil.copyfileobj(source, output, length=1024 * 1024)
-                if manifest.get("schema_version") == 2:
+                if manifest.get("schema_version") in {2, 3}:
                     permission_mode = member.get("mode")
                     assert isinstance(permission_mode, int)
                 else:
@@ -157,6 +192,16 @@ def restore_backup_archive(archive: Path, destination: Path) -> None:
                         stat.S_IMODE(archived_mode) if archived_mode else 0o600
                     )
                 os.chmod(target, permission_mode)
+            if manifest.get("schema_version") == 3:
+                for directory in sorted(
+                    manifest["directories"],
+                    key=lambda item: len(item["path"].split("/")),
+                    reverse=True,
+                ):
+                    os.chmod(
+                        staged.joinpath(*directory["path"].split("/")),
+                        directory["mode"],
+                    )
         restored_errors = verify_restored_wiki_tree(staged, manifest)
         if restored_errors:
             raise RestoreError("; ".join(restored_errors))

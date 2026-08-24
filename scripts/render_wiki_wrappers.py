@@ -15,19 +15,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = Path("scripts/wiki-wrapper-contract.json")
-EXPECTED_NAMES = frozenset(
-    {
-        "wiki-capture",
-        "wiki-ask",
-        "wiki-eval",
-        "wiki-export",
-        "wiki-ingest",
-        "wiki-lint",
-        "wiki-promote",
-        "wiki-research",
-        "wiki-synthesize",
-    }
-)
 AUTHORIZATIONS = frozenset({"none", "lint-evidence-check"})
 TOP_FIELDS = frozenset({"schema_version", "description", "shortcuts"})
 SHORTCUT_FIELDS = frozenset(
@@ -111,13 +98,8 @@ def load_contract(repo_root: Path = REPO_ROOT, contract_path: Path = CONTRACT_PA
     if not isinstance(records, dict):
         problems.append("contract: shortcuts must be an object keyed by shortcut name")
         records = {}
-    if set(records) != EXPECTED_NAMES:
-        missing = EXPECTED_NAMES - set(records)
-        extra = set(records) - EXPECTED_NAMES
-        if missing:
-            problems.append(f"contract: missing shortcut keys: {', '.join(sorted(missing))}")
-        if extra:
-            problems.append(f"contract: unknown shortcut keys: {', '.join(sorted(extra))}")
+    if not records:
+        problems.append("contract: shortcuts must contain at least one record")
 
     shortcuts: list[Shortcut] = []
     for key in sorted(records):

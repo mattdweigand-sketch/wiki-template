@@ -21,7 +21,7 @@ Start by reading `wiki/domain.md` only far enough to check `status:`. If `status
 - `.claude/commands/` - tracked Claude Code slash-command wrappers for the default wrapped workflows: `wiki-ask`, `wiki-research`, `wiki-ingest`, `wiki-capture`, `wiki-lint`, `wiki-eval`, `wiki-promote`, `wiki-synthesize`, and `wiki-export`. Both wrapper surfaces are deterministic renders of `scripts/wiki-wrapper-contract.json`; canonical behavior lives in `workflows/` and is routed through `CONTEXT.md`.
 - `.agents/skills/` - tracked repo-local Codex skill wrappers for the same nine wiki shortcuts. Current Codex discovers this directory while working in the repo. Generate both surfaces with `python3 scripts/render_wiki_wrappers.py --render`; `python3 scripts/check_wrapper_parity.py` verifies exact rendered parity.
 - `scripts/` - deterministic checks and file operations. The detailed ownership map lives in `REFERENCES.md`.<!-- wiki-setup:agents-initializer-files:start --> Setup-only scripts and presets are removed after approved setup.<!-- wiki-setup:agents-initializer-files:end -->
-- `.wiki-transactions/` - gitignored recovery authority for exact approved capture. Never delete it to clear a gate. Use `python3 scripts/wiki_transactions.py status`, `recover`, or `diagnose <transaction-id>`.
+- `.wiki-transactions/` - gitignored recovery authority for exact approved capture and one-time setup. Never delete it to clear a gate. Use `python3 scripts/wiki_transactions.py status`, `recover`, or `diagnose <transaction-id>`.
 - `scripts/fixtures/` - eval mini-wikis for live tooling: `wiki-rebuild` guards link-graph invariants and `wiki-lint` proves lint checks can fire.
 - `scripts/lint-adjudications.json` - settled Tier-2 lint judgments with reasons and dates, so lint stops re-surfacing what has been adjudicated.
 - `tmp/` - gitignored scratch space. Everything in it is disposable at all times.
@@ -48,7 +48,7 @@ Stage every exact target postimage under `tmp/`, then write one canonical JSON d
 
 Run `python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --json`. Show the complete preview and its `authorization_digest`, then stop. Plain-language approval authorizes only that displayed digest. After approval, run `python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --approve-digest <authorization_digest> --json`. Apply rereads the descriptor and staged bytes, rechecks destination preimages, and commits the exact targets plus the combined ledger postimage through one recoverable transaction. `ALREADY_APPLIED` is an exact byte no-op.
 
-Do not manually copy staged bytes after approval. The legacy flat CLI may diagnose route policy, but `--approved` always fails; only exact proposal mode applies target files.
+Do not manually copy staged bytes after approval. Only exact proposal mode applies target files.
 
 ## Synthesis Approval Gate
 

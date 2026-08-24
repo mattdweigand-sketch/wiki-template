@@ -37,7 +37,7 @@ description: Use this workflow when the user says "export the wiki" or wants a c
    python3 scripts/restore_wiki.py restore <archive.zip> <absent-destination>
    ```
 
-   Restore refuses an existing destination, validates before extraction, restores file permission modes, runs restored-tree checks, and atomically installs only the complete verified directory. It restores included Git history without running Git. Version 1 backups remain supported through their ZIP permission metadata; new version 2 backups bind permissions in the manifest.
+   Restore refuses an existing destination, validates before extraction, restores file and directory permission modes, runs restored-tree checks, and atomically installs only the complete verified directory. It restores included Git history without running Git. Version 1 and 2 backups remain supported. New version 3 backups bind file and directory modes in the manifest.
 
 3. Report the absolute path to the zip. Do not copy it off-device unless the user explicitly approves a private backup destination.
 

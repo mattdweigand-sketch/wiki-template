@@ -9,7 +9,7 @@ Use this workflow only when the user explicitly invokes `wiki-research`, `$wiki-
 
 ## Load / Skip
 
-- **Load:** `wiki/index.md`, `wiki/primer.md`, the pages needed to answer the question, their cited source pages, and only the raw files required to verify those claims. Load the evidence-check section of `workflows/maintenance/lint.md` and the citation and provenance rules in `wiki/SCHEMA.md`.
+- **Load:** `wiki/index.md`, `wiki/primer.md`, the pages needed to answer the question, their cited source pages, only the raw files required to verify those claims, `workflows/maintenance/evidence-review.md`, and the citation and provenance rules in `wiki/SCHEMA.md`.
 - **Skip:** unrelated entity folders, unrelated raw files, and maintenance workflows other than the evidence-check instructions.
 
 ## Steps
@@ -25,7 +25,7 @@ Use this workflow only when the user explicitly invokes `wiki-research`, `$wiki-
      --path wiki/<entity-folder>/<other-page>.md
    ```
 
-4. Complete the independent evidence check exactly as defined in `workflows/maintenance/lint.md`. Create the hidden plant, publish verifier batches, collect one-to-one verdicts from fresh reviewers, and run `python3 scripts/verify_evidence_run.py`. Do not draft a verified answer from a stale, incomplete, or structurally invalid run.
+4. Complete the independent evidence check exactly as defined in `workflows/maintenance/evidence-review.md`. Create the hidden plant, publish verifier batches, collect one-to-one verdicts from fresh reviewers, and run `python3 scripts/verify_evidence_run.py`. Do not draft a verified answer from a stale, incomplete, or structurally invalid run.
 5. Draft the answer after the run passes. Bind each returned statement to one or more verified claim IDs. Place the wiki page and source citations beside the statement.
 6. Give the draft and its named claims to a fresh reviewer. The reviewer checks each statement for support, scope, conflation, citation fit, and any flagged source claim.
 7. Return only statements the reviewer marks `VERIFIED`. Remove or label gaps, contradictions, and flagged claims. Do not present them as verified findings.

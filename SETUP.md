@@ -45,7 +45,7 @@ From the repository root, run:
 PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/finalize_wiki_setup.py preview --answers tmp/wiki-setup-answers.json
 ```
 
-Preview is read-only. Show the complete JSON result to the user. It reports the exact active types, entity and raw folders created or removed, blocked removals, files written, files deleted (including the temporary answers), validation errors, and `valid`.
+Preview is read-only. Show the complete JSON result to the user. It reports the exact active types, entity and raw folders created or removed, blocked removals, files written, files deleted, validation errors, `valid`, and an `authorization_digest` bound to every preimage and postimage.
 
 The initializer owns only document fragments identified by named `wiki-setup` markers. Multi-line fragments use start/end pairs; single rows carry one line marker. Preview fails if a required marker is missing, duplicated, reversed, or left unconsumed. Rewording template prose inside a marked fragment does not break marker lookup. The configured replacement text remains defined in `scripts/wiki_setup_initializer.py`.
 
@@ -56,10 +56,10 @@ Stop if `valid` is false. The finalizer never removes a nonempty or symlinked en
 After the user approves the displayed preview, run:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/finalize_wiki_setup.py apply --answers tmp/wiki-setup-answers.json --approve
+PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/finalize_wiki_setup.py apply --answers tmp/wiki-setup-answers.json --approve-digest <authorization_digest>
 ```
 
-Apply requires a normal Git clone with no tracked working-tree changes. It:
+Apply requires a normal Git clone with no tracked working-tree changes and the exact digest from preview. It:
 
 - writes the configured `wiki/domain.md`;
 - updates the live operating documents;
@@ -68,7 +68,8 @@ Apply requires a normal Git clone with no tracked working-tree changes. It:
 - replaces the template log entry with the initialization entry in `wiki/log.md`;
 - archives the exact answers and a compact receipt under `archive/setup/`;
 - deletes the temporary answers and all initializer files, including this guide;
-- runs the complete eval suite and Tier‑1 lint; and
+- renders the complete result in a staged clone and runs the eval suite and Tier 1 lint there before live changes;
+- applies every file write and deletion through one recoverable transaction; and
 - leaves the result as uncommitted Git changes for review.
 
 The only setup artifacts retained are:
@@ -76,7 +77,7 @@ The only setup artifacts retained are:
 - `archive/setup/answers.json`
 - `archive/setup/finalization-receipt.json`
 
-There is no reconfigure command. If apply reports a validation failure, inspect or restore the ordinary Git changes before committing. Do not rebuild a setup subsystem inside the configured wiki.
+There is no reconfigure command. If apply is interrupted, use `python3 scripts/wiki_transactions.py status` and `recover`. Do not delete `.wiki-transactions/`. Do not rebuild a setup subsystem inside the configured wiki.
 
 ## 6. Hand off the configured wiki
 

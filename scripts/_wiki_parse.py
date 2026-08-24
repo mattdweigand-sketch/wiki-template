@@ -9,7 +9,7 @@ across callers.
 
 Vendor-neutral: stdlib only, no dependencies. Importable as a sibling module by
 any scripts/*.py run from the repo root (the script's own directory is on
-sys.path[0], exactly as ledger_common is imported).
+sys.path[0], exactly as capture_ledger is imported).
 """
 
 from __future__ import annotations

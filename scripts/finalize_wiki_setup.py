@@ -27,7 +27,7 @@ def setup_finalizer_parser() -> argparse.ArgumentParser:
     preview.add_argument("--answers", type=Path, required=True)
     apply = subparsers.add_parser("apply")
     apply.add_argument("--answers", type=Path, required=True)
-    apply.add_argument("--approve", action="store_true", required=True)
+    apply.add_argument("--approve-digest", required=True)
     return parser
 
 
@@ -48,7 +48,9 @@ def main() -> int:
             preview = preview_wiki_setup(Path.cwd(), args.answers)
             print(json.dumps(preview.to_dict(), sort_keys=True, separators=(",", ":")))
             return 0 if preview.valid else 2
-        result = finalize_wiki_setup(Path.cwd(), args.answers)
+        result = finalize_wiki_setup(
+            Path.cwd(), args.answers, args.approve_digest
+        )
         print(json.dumps(result.to_dict(), sort_keys=True, separators=(",", ":")))
         return 0 if result.valid else 1
     except (WikiSetupInitializerError, CatalogError) as exc:

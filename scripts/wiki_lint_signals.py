@@ -6,7 +6,6 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Collection, Sequence
 from datetime import date
-from itertools import combinations
 from pathlib import Path
 from typing import TypedDict, Union
 
@@ -36,7 +35,7 @@ from wiki_lint_contract import (
     VOLATILE_STATUS_RE,
     WIKI_ROOT,
 )
-from wiki_lint_frontmatter import authored_body, nonblocking_frontmatter, nonblocking_frontmatter_block, source_items, source_repo_references, tokens
+from wiki_lint_frontmatter import authored_body, nonblocking_frontmatter, nonblocking_frontmatter_block, source_items, source_repo_references
 from wiki_lint_repository_checks import parse_sourcing_queue_count_markers
 
 # A quoted span followed by an inline source citation, e.g.
@@ -50,10 +49,6 @@ QUOTED_CITATION_RE = re.compile(
     r'["“]([^"“”]{20,}?)["”]\s*\((?:own[^)]*?, )?source[sd]?:?\s*([^)]*\[\[[^)]*)\)',
     re.IGNORECASE,
 )
-
-
-
-
 
 def quote_fragments(quote):
     """Split a quote on ellipses and bracketed edits; fragments of 6+ words
@@ -169,7 +164,6 @@ class Tier2PageFacts(TypedDict):
     fm: dict[str, str]
     status_date: date | None
     freshness: date | None
-    tokens: set[str]
     words: int
     body_links: bool
     source_items: list[str]
@@ -183,7 +177,7 @@ Tier2Report = dict[str, Union[list[Tier2Item], int]]
 class Tier2Context:
     """Shared per-page state every Tier-2 signal reads.
 
-    Computed once in run_tier2_lint() (page text, tokens, word counts, the inbound and
+    Computed once in run_tier2_lint() (page text, word counts, the inbound and
     outbound link graphs, and the adjudication sets), so the individual signal
     functions stay small and never re-walk the corpus."""
 
@@ -224,7 +218,6 @@ class Tier2Context:
                 "fm": fm or {},
                 "status_date": status_date,
                 "freshness": max(dates) if dates else None,
-                "tokens": tokens(ab),
                 "words": len(re.findall(r"\w+", ab)),
                 # A [[link]] inside a code example is not a citation.
                 "body_links": bool(LINK_RE.search(ab)),
@@ -280,28 +273,6 @@ def signal_orphans(ctx: Tier2Context) -> Tier2SignalResult:
     return out, suppressed
 
 
-def signal_near_duplicate(ctx: Tier2Context) -> Tier2SignalResult:
-    """Derived-page pairs whose token sets overlap heavily (Jaccard >= 0.35).
-
-    Compares derived pages only; a source page mirroring its own concept or
-    analysis is expected overlap, not a duplicate."""
-    derived = [p for p in ctx.pages if p.parent.name != "sources"]
-    dups, suppressed = [], 0
-    for a, b in combinations(derived, 2):
-        ta, tb = ctx.data[a]["tokens"], ctx.data[b]["tokens"]
-        if not ta or not tb:
-            continue
-        j = len(ta & tb) / len(ta | tb)
-        if j >= 0.35:
-            ra, rb = str(a.relative_to(WIKI_ROOT)), str(b.relative_to(WIKI_ROOT))
-            if frozenset((ra, rb)) in ctx.adj["duplicates"]:
-                ctx.adj_used["duplicates"].add(frozenset((ra, rb)))
-                suppressed += 1
-                continue
-            dups.append((j, ra, rb))
-    return sorted(dups, reverse=True)[:15], suppressed
-
-
 def signal_uncited(ctx: Tier2Context) -> Tier2SignalResult:
     """Non-source pages with no sources and no body links. Checked via
     source_items on the raw frontmatter block: the key parser flattens a
@@ -321,58 +292,6 @@ def signal_thin(ctx: Tier2Context) -> Tier2SignalResult:
         f"{p.relative_to(WIKI_ROOT)} ({ctx.data[p]['words']}w)"
         for p in ctx.pages if ctx.data[p]["words"] < 80
     ), 0
-
-
-def signal_confidence_upgrade(ctx: Tier2Context) -> Tier2SignalResult:
-    """confidence:low pages with >=2 inbound links (candidates to upgrade)."""
-    upgrade, suppressed = [], 0
-    for p in ctx.pages:
-        if p.parent.name == "sources":
-            continue
-        fm = ctx.data[p]["fm"]
-        if fm.get("confidence") == "low" and ctx.inbound[p] >= 2:
-            rel = str(p.relative_to(WIKI_ROOT))
-            if rel in ctx.adj["confidence"]:
-                ctx.adj_used["confidence"].add(rel)
-                suppressed += 1
-                continue
-            upgrade.append(f"{p.relative_to(WIKI_ROOT)} ({ctx.inbound[p]} inbound)")
-    return sorted(upgrade), suppressed
-
-
-def signal_missing_related(ctx: Tier2Context) -> Tier2SignalResult:
-    """Page pairs whose outbound link profiles overlap heavily but are not linked.
-
-    Scores co-citation by normalized overlap (Jaccard of outbound link sets), not
-    absolute shared count: an absolute count grows with page size, so link-rich
-    pages dominate regardless of relationship strength. The 0.5 bar means the
-    pair's link profiles mostly coincide; the floor of 3 shared links keeps
-    trivially small pages out. Above-bar only, so an empty list is achievable and
-    means "nothing worth reviewing"."""
-    cocite, suppressed = [], 0
-    for a, b in combinations(ctx.pages, 2):
-        if a.parent.name == "sources" and b.parent.name == "sources":
-            continue
-        shared = ctx.outbound[a] & ctx.outbound[b]
-        shared.discard(a.stem)
-        shared.discard(b.stem)
-        if len(shared) < 3 or b.stem in ctx.outbound[a] or a.stem in ctx.outbound[b]:
-            continue
-        union = (ctx.outbound[a] | ctx.outbound[b]) - {a.stem, b.stem}
-        score = len(shared) / len(union) if union else 0.0
-        if score < 0.5:
-            continue
-        ra, rb = str(a.relative_to(WIKI_ROOT)), str(b.relative_to(WIKI_ROOT))
-        if ra in ctx.adj["hubs"] or rb in ctx.adj["hubs"] or frozenset((ra, rb)) in ctx.adj["pairs"]:
-            for hub in (ra, rb):
-                if hub in ctx.adj["hubs"]:
-                    ctx.adj_used["hubs"].add(hub)
-            if frozenset((ra, rb)) in ctx.adj["pairs"]:
-                ctx.adj_used["pairs"].add(frozenset((ra, rb)))
-            suppressed += 1
-            continue
-        cocite.append((score, len(shared), ra, rb))
-    return sorted(cocite, reverse=True), suppressed
 
 
 def signal_log_rotation_due(ctx: Tier2Context) -> Tier2SignalResult:
@@ -638,15 +557,11 @@ def signal_adjudication_dead(ctx: Tier2Context) -> Tier2SignalResult:
     registry position, because it reads which entries those signals actually
     consumed via ctx.adj_used.
 
-    hub_pages is excluded on purpose: it suppresses event-driven co-citation
-    candidates that can legitimately go quiet between events and re-fire later,
-    so "suppressed nothing this run" says nothing about whether the entry is
-    inert. The lint workflow documents the exclusion."""
+    """
     out = []
     names = {
         "orphans": "accepted_orphans",
-        "pairs": "skipped_crossref_pairs", "confidence": "reviewed_confidence_low",
-        "duplicates": "reviewed_near_duplicates", "quotes": "reviewed_quotes",
+        "quotes": "reviewed_quotes",
         "recompile": "reviewed_recompile_candidates",
         "authority_missing": "reviewed_authority_missing",
         "glossary_volatile": "reviewed_glossary_volatile",
@@ -669,11 +584,8 @@ def signal_adjudication_dead(ctx: Tier2Context) -> Tier2SignalResult:
 TIER2_SIGNALS: tuple[tuple[str, str, Tier2Signal], ...] = (
     ("quote_mismatch", "quote mismatches (quoted text not verbatim in cited source)", signal_quote_mismatch),
     ("orphans", "orphans (no inbound links)", signal_orphans),
-    ("near_duplicate", "near-duplicate pairs (prefer updating over creating)", signal_near_duplicate),
     ("uncited", "uncited (no sources, no body links)", signal_uncited),
     ("thin", "thin pages (<80 words)", signal_thin),
-    ("confidence_upgrade", "confidence:low with >=2 inbound (upgrade?)", signal_confidence_upgrade),
-    ("missing_related", "missing cross-refs (link profiles >=50% overlapping, not linked)", signal_missing_related),
     ("log_rotation_due", "log rotation due", signal_log_rotation_due),
     ("sourcing_queue_count_drift", "sourcing queue entity count drift", signal_sourcing_queue_count_drift),
     ("recompile_candidates", "compiled pages with newer source inputs (review for no-change, small update, or recompile)", signal_recompile_candidates),

@@ -7,8 +7,10 @@ import json
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -20,6 +22,7 @@ from wiki_entity_catalog import (
     load_entity_catalog,
     read_domain_configuration,
 )
+from _file_transactions import run_transaction
 
 
 SETUP_ANSWERS_FIELDS = {
@@ -79,6 +82,7 @@ class WikiSetupPreview:
     raw_buckets: tuple[str, ...]
     write_paths: tuple[str, ...]
     delete_paths: tuple[str, ...]
+    authorization_digest: str
     errors: tuple[str, ...]
 
     @property
@@ -98,6 +102,7 @@ class WikiSetupPreview:
             "create_raw_folders": [f"raw/{value}" for value in self.raw_buckets],
             "write_paths": list(self.write_paths),
             "delete_paths": list(self.delete_paths),
+            "authorization_digest": self.authorization_digest,
             "errors": list(self.errors),
             "valid": self.valid,
         }
@@ -120,12 +125,24 @@ class WikiSetupResult:
     def to_dict(self) -> dict[str, object]:
         return {
             "schema_version": 1,
-            "transaction": "working-tree-changes",
+            "transaction": "recoverable-wiki-setup",
             "changed_paths": list(self.changed_paths),
             "validations": list(self.validations),
             "errors": list(self.errors),
             "valid": self.valid,
         }
+
+
+@dataclass(frozen=True)
+class _WikiSetupPlan:
+    """Exact setup postimages plus the directory changes around them."""
+
+    outputs: dict[str, bytes | None]
+    expected_preimages: dict[str, bytes | None]
+    create_directories: tuple[str, ...]
+    remove_directories: tuple[str, ...]
+    authorization_digest: str
+    changed_paths: tuple[str, ...]
 
 
 def _load_setup_presets(repo_root: Path, catalog: EntityCatalog) -> dict[str, tuple[str, ...]]:
@@ -277,10 +294,6 @@ def preview_wiki_setup(
     active_types = tuple(value for value in catalog_order if value in answers.active_types)
     if answers.active_types != active_types:
         errors.append("active_types must follow catalog order")
-    try:
-        _render_live_documents(root, answers, date.today().isoformat())
-    except WikiSetupInitializerError as exc:
-        errors.append(str(exc))
     active_folders = {entity_catalog.type_folders[value] for value in active_types}
     existing_folders = {
         path.name for path in (root / "wiki").iterdir()
@@ -293,6 +306,18 @@ def preview_wiki_setup(
     blocked_removals = tuple(
         folder for folder in inactive if not _placeholder_only(root / "wiki" / folder)
     )
+    authorization_digest = ""
+    try:
+        plan = _build_wiki_setup_plan(
+            root,
+            answers,
+            create_folders=tuple(sorted(active_folders - existing_folders)),
+            remove_folders=remove_folders,
+            finalized_on=date.today().isoformat(),
+        )
+        authorization_digest = plan.authorization_digest
+    except WikiSetupInitializerError as exc:
+        errors.append(str(exc))
     return WikiSetupPreview(
         context_name=answers.context_name,
         preset=answers.preset,
@@ -303,6 +328,7 @@ def preview_wiki_setup(
         raw_buckets=tuple(answers.raw_buckets),
         write_paths=SETUP_WRITE_PATHS,
         delete_paths=SETUP_DELETE_PATHS + ("tmp/wiki-setup-answers.json",),
+        authorization_digest=authorization_digest,
         errors=tuple(dict.fromkeys(errors)),
     )
 
@@ -641,6 +667,163 @@ def _render_live_documents(
     return documents
 
 
+def _read_setup_preimage(repo_root: Path, relative: str) -> bytes | None:
+    """Read one planned setup target without following a symlink."""
+    path = repo_root / relative
+    if path.is_symlink():
+        raise WikiSetupInitializerError(f"setup target is a symlink: {relative}")
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise WikiSetupInitializerError(
+            f"cannot read setup target {relative}: {exc}"
+        ) from exc
+
+
+def _build_wiki_setup_plan(
+    repo_root: Path,
+    answers: WikiSetupAnswers,
+    *,
+    create_folders: tuple[str, ...],
+    remove_folders: tuple[str, ...],
+    finalized_on: str,
+) -> _WikiSetupPlan:
+    """Render every setup postimage and bind it to its current preimage."""
+    live_documents = _render_live_documents(repo_root, answers, finalized_on)
+    answers_relative = "tmp/wiki-setup-answers.json"
+    answer_bytes = _read_setup_preimage(repo_root, answers_relative)
+    if answer_bytes is None:
+        raise WikiSetupInitializerError("setup answers file is missing")
+    template_commit = _git_output(repo_root, "rev-parse", "HEAD")
+    outputs: dict[str, bytes | None] = {
+        relative: content.encode("utf-8")
+        for relative, content in live_documents.items()
+    }
+    outputs["wiki/domain.md"] = _render_domain_page(answers, finalized_on).encode("utf-8")
+    outputs["raw/README.md"] = _render_raw_readme(answers).encode("utf-8")
+    raw_registry = {
+        "description": "Canonical raw source-artifact bucket taxonomy for this wiki.",
+        "policy": "Raw source artifacts are immutable, local-only, and never tracked by Git.",
+        "buckets": answers.raw_buckets,
+    }
+    outputs["scripts/raw-buckets.json"] = (
+        json.dumps(raw_registry, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
+    ).encode("utf-8")
+    manifest_path = repo_root / "scripts/document-reachability.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise WikiSetupInitializerError(
+            f"cannot read scripts/document-reachability.json: {exc}"
+        ) from exc
+    manifest["roots"] = [value for value in manifest["roots"] if value != "SETUP.md"]
+    outputs["scripts/document-reachability.json"] = (
+        json.dumps(manifest, sort_keys=True, indent=2) + "\n"
+    ).encode("utf-8")
+    outputs["archive/setup/answers.json"] = answer_bytes
+    receipt = {
+        "schema_version": 1,
+        "template_commit": template_commit,
+        "finalized_on": finalized_on,
+        "context_name": answers.context_name,
+        "answers_sha256": hashlib.sha256(answer_bytes).hexdigest(),
+        "history_preserved": True,
+    }
+    outputs["archive/setup/finalization-receipt.json"] = (
+        json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    for folder in create_folders:
+        outputs[f"wiki/{folder}/.gitkeep"] = b""
+    for folder in remove_folders:
+        placeholder = f"wiki/{folder}/.gitkeep"
+        if _read_setup_preimage(repo_root, placeholder) is not None:
+            outputs[placeholder] = None
+    for relative in (*SETUP_DELETE_PATHS, answers_relative):
+        outputs[relative] = None
+
+    expected_preimages = {
+        relative: _read_setup_preimage(repo_root, relative)
+        for relative in outputs
+    }
+    effect_rows = []
+    for relative in sorted(outputs):
+        preimage = expected_preimages[relative]
+        postimage = outputs[relative]
+        effect_rows.append({
+            "path": relative,
+            "preimage": "ABSENT" if preimage is None else hashlib.sha256(preimage).hexdigest(),
+            "postimage": "ABSENT" if postimage is None else hashlib.sha256(postimage).hexdigest(),
+        })
+    create_directories = tuple(sorted({
+        "archive/setup",
+        *(f"raw/{folder}" for folder in answers.raw_buckets),
+        *(f"wiki/{folder}" for folder in create_folders),
+    }))
+    remove_directories = tuple(sorted(f"wiki/{folder}" for folder in remove_folders))
+    authorization_record = {
+        "schema_version": 1,
+        "context_name": answers.context_name,
+        "create_directories": list(create_directories),
+        "remove_directories": list(remove_directories),
+        "targets": effect_rows,
+    }
+    authorization_digest = hashlib.sha256(
+        json.dumps(
+            authorization_record,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    return _WikiSetupPlan(
+        outputs=outputs,
+        expected_preimages=expected_preimages,
+        create_directories=create_directories,
+        remove_directories=remove_directories,
+        authorization_digest=authorization_digest,
+        changed_paths=tuple(sorted(outputs)),
+    )
+
+
+def _apply_wiki_setup_plan_to_candidate(candidate_root: Path, plan: _WikiSetupPlan) -> None:
+    """Install an already rendered setup plan in a disposable candidate tree."""
+    for relative in plan.create_directories:
+        (candidate_root / relative).mkdir(parents=True, exist_ok=True)
+    for relative, postimage in sorted(plan.outputs.items()):
+        path = candidate_root / relative
+        if postimage is None:
+            if path.exists():
+                path.unlink()
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(postimage)
+    for relative in plan.remove_directories:
+        path = candidate_root / relative
+        if path.exists():
+            path.rmdir()
+
+
+def _validate_wiki_setup_candidate(
+    repo_root: Path,
+    plan: _WikiSetupPlan,
+) -> tuple[dict[str, object], ...]:
+    """Run the live checks on the complete post-setup tree before live writes."""
+    with tempfile.TemporaryDirectory(prefix="wiki-setup-candidate-") as temporary:
+        candidate = Path(temporary) / "repo"
+        shutil.copytree(
+            repo_root,
+            candidate,
+            symlinks=True,
+            ignore=shutil.ignore_patterns(
+                ".wiki-transactions", "__pycache__", "*.pyc", "deliverables"
+            ),
+        )
+        _apply_wiki_setup_plan_to_candidate(candidate, plan)
+        return _run_live_validations(candidate)
+
+
 def _run_live_validations(repo_root: Path) -> tuple[dict[str, object], ...]:
     commands = (
         (sys.executable, "scripts/wiki_eval.py"),
@@ -666,8 +849,9 @@ def _run_live_validations(repo_root: Path) -> tuple[dict[str, object], ...]:
 def finalize_wiki_setup(
     repo_root: Path,
     answers_path: Path,
+    authorization_digest: str,
 ) -> WikiSetupResult:
-    """Apply the approved initializer once and leave ordinary Git changes."""
+    """Validate the full candidate, then apply its exact approved transaction."""
     root = repo_root.resolve()
     preview = preview_wiki_setup(root, answers_path)
     if not preview.valid:
@@ -679,99 +863,60 @@ def finalize_wiki_setup(
         raise WikiSetupInitializerError(
             "tracked worktree changes must be committed or restored first"
         )
-    if (root / "archive/setup").exists():
-        raise WikiSetupInitializerError("archive/setup already exists")
+    setup_archive = root / "archive/setup"
+    if setup_archive.is_symlink() or (
+        setup_archive.exists()
+        and (not setup_archive.is_dir() or any(setup_archive.iterdir()))
+    ):
+        raise WikiSetupInitializerError("archive/setup already contains setup state")
     for relative in SETUP_DELETE_PATHS:
         path = root / relative
         if not path.is_file() or path.is_symlink():
             raise WikiSetupInitializerError(f"setup path is missing or unsafe: {relative}")
     answers = load_wiki_setup_answers(answers_path)
-    finalized_on = date.today().isoformat()
-    live_documents = _render_live_documents(root, answers, finalized_on)
-    template_commit = _git_output(root, "rev-parse", "HEAD")
-    answer_bytes = answers_path.read_bytes()
-    changed: set[str] = set()
-
-    (root / "wiki/domain.md").write_text(
-        _render_domain_page(answers, finalized_on), encoding="utf-8"
+    plan = _build_wiki_setup_plan(
+        root,
+        answers,
+        create_folders=preview.create_folders,
+        remove_folders=preview.remove_folders,
+        finalized_on=date.today().isoformat(),
     )
-    changed.add("wiki/domain.md")
-    for relative, content in live_documents.items():
-        (root / relative).write_text(content, encoding="utf-8")
-        changed.add(relative)
-    (root / "raw/README.md").write_text(_render_raw_readme(answers), encoding="utf-8")
-    changed.add("raw/README.md")
-    raw_registry = {
-        "description": "Canonical raw source-artifact bucket taxonomy for this wiki.",
-        "policy": "Raw source artifacts are immutable, local-only, and never tracked by Git.",
-        "buckets": answers.raw_buckets,
-    }
-    (root / "scripts/raw-buckets.json").write_text(
-        json.dumps(raw_registry, sort_keys=True, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    changed.add("scripts/raw-buckets.json")
-    for folder in answers.raw_buckets:
-        (root / "raw" / folder).mkdir(exist_ok=True)
-    for folder in preview.create_folders:
-        destination = root / "wiki" / folder
-        destination.mkdir()
-        (destination / ".gitkeep").write_bytes(b"")
-        changed.add(f"wiki/{folder}/.gitkeep")
-    for folder in preview.remove_folders:
-        destination = root / "wiki" / folder
-        if not _placeholder_only(destination):
-            raise WikiSetupInitializerError(
-                f"inactive entity folder changed after preview: {folder}"
-            )
-        placeholder = destination / ".gitkeep"
-        if placeholder.exists():
-            placeholder.unlink()
-            changed.add(f"wiki/{folder}/.gitkeep")
-        destination.rmdir()
-
-    manifest_path = root / "scripts/document-reachability.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["roots"] = [value for value in manifest["roots"] if value != "SETUP.md"]
-    manifest_path.write_text(
-        json.dumps(manifest, sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    changed.add("scripts/document-reachability.json")
-
-    archive = root / "archive/setup"
-    archive.mkdir(parents=True)
-    (archive / "answers.json").write_bytes(answer_bytes)
-    receipt = {
-        "schema_version": 1,
-        "template_commit": template_commit,
-        "finalized_on": finalized_on,
-        "context_name": answers.context_name,
-        "answers_sha256": hashlib.sha256(answer_bytes).hexdigest(),
-        "history_preserved": True,
-    }
-    (archive / "finalization-receipt.json").write_text(
-        json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n",
-        encoding="utf-8",
-    )
-    changed.update(("archive/setup/answers.json", "archive/setup/finalization-receipt.json"))
-    for relative in SETUP_DELETE_PATHS:
+    if authorization_digest != plan.authorization_digest:
+        raise WikiSetupInitializerError(
+            "approval digest does not match the current setup plan"
+        )
+    candidate_validations = _validate_wiki_setup_candidate(root, plan)
+    failed_candidate = [
+        record for record in candidate_validations if record["exit_code"] != 0
+    ]
+    if failed_candidate:
+        failed_commands = [" ".join(record["argv"]) for record in failed_candidate]
+        raise WikiSetupInitializerError(
+            "staged candidate validation failed: " + ", ".join(failed_commands)
+        )
+    for relative in plan.create_directories:
         path = root / relative
-        if not path.is_file() or path.is_symlink():
-            raise WikiSetupInitializerError(f"setup path is missing or unsafe: {relative}")
-        path.unlink()
-        changed.add(relative)
-    answers_path.unlink()
-    changed.add("tmp/wiki-setup-answers.json")
-    validations = _run_live_validations(root)
-    errors = tuple(
-        "live validation failed: " + " ".join(record["argv"])
-        for record in validations if record["exit_code"] != 0
+        if path.is_symlink() or (path.exists() and not path.is_dir()):
+            raise WikiSetupInitializerError(f"setup directory is unsafe: {relative}")
+        path.mkdir(parents=True, exist_ok=True)
+    allowed_prefixes = tuple(sorted({
+        Path(relative).parts[0] for relative in plan.outputs
+    }))
+    run_transaction(
+        root,
+        consumer="wiki-setup",
+        outputs=plan.outputs,
+        expected_preimages=plan.expected_preimages,
+        allowed_prefixes=allowed_prefixes,
     )
+    for relative in plan.remove_directories:
+        path = root / relative
+        if path.exists():
+            path.rmdir()
     return WikiSetupResult(
-        changed_paths=tuple(sorted(changed)),
-        validations=validations,
-        errors=errors,
+        changed_paths=plan.changed_paths,
+        validations=candidate_validations,
+        errors=(),
     )
 
 

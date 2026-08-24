@@ -26,8 +26,8 @@ from _durable_files import (
 AUTHORITY_NAME = ".wiki-transactions"
 CLEANUP_PREFIX = ".cleanup-"
 PREPARING_PREFIX = ".preparing-"
-SCHEMA_VERSION = 1
-CONSUMERS = frozenset({"capture-gate"})
+SCHEMA_VERSION = 2
+CONSUMERS = frozenset({"capture-gate", "wiki-setup"})
 STATES = frozenset(
     {
         "PREPARING", "PREPARED", "COMMITTING", "COMMITTED", "COMPLETE",
@@ -52,12 +52,13 @@ JOURNAL_FIELDS = frozenset(
         "guards", "integrity_sha256",
     }
 )
-TARGET_FIELDS = frozenset(
+TARGET_V1_FIELDS = frozenset(
     {
         "path", "pre_state", "pre_sha256", "pre_mode", "pre_blob",
         "output_sha256", "output_mode", "output_blob", "installed",
     }
 )
+TARGET_FIELDS = TARGET_V1_FIELDS | {"output_state"}
 GUARD_FIELDS = frozenset({"path", "sha256", "mode"})
 FaultHook = Callable[[str], None]
 
@@ -113,8 +114,9 @@ def _plan_hash(
                 key: target[key]
                 for key in (
                     "path", "pre_state", "pre_sha256", "pre_mode",
-                    "output_sha256", "output_mode",
+                    "output_state", "output_sha256", "output_mode",
                 )
+                if key in target
             }
             for target in targets
         ],
@@ -258,8 +260,9 @@ def validate_journal(journal: object) -> list[str]:
     errors: list[str] = []
     if set(journal) != JOURNAL_FIELDS:
         errors.append(f"journal fields differ: missing={sorted(JOURNAL_FIELDS - set(journal))} unknown={sorted(set(journal) - JOURNAL_FIELDS)}")
-    if journal.get("schema_version") != 1 or isinstance(journal.get("schema_version"), bool):
-        errors.append("schema_version must be integer 1")
+    schema_version = journal.get("schema_version")
+    if schema_version not in {1, 2} or isinstance(schema_version, bool):
+        errors.append("schema_version must be integer 1 or 2")
     try:
         uuid.UUID(str(journal.get("transaction_id")))
     except ValueError:
@@ -296,7 +299,8 @@ def validate_journal(journal: object) -> list[str]:
         if not isinstance(target, dict):
             errors.append(f"{label} must be an object")
             continue
-        if set(target) != TARGET_FIELDS:
+        expected_target_fields = TARGET_V1_FIELDS if schema_version == 1 else TARGET_FIELDS
+        if set(target) != expected_target_fields:
             errors.append(f"{label} fields differ")
         path = target.get("path")
         if not _canonical_relative(path):
@@ -315,7 +319,13 @@ def validate_journal(journal: object) -> list[str]:
                 errors.append(f"{label} invalid regular preimage fields")
             elif target.get("pre_blob") != f"blobs/pre-{index:04d}.bin":
                 errors.append(f"{label} has noncanonical pre_blob")
-        if not _is_sha(target.get("output_sha256")) or not _is_mode(target.get("output_mode")) or not isinstance(target.get("output_blob"), str):
+        output_state = target.get("output_state", "regular")
+        if output_state not in {"absent", "regular"}:
+            errors.append(f"{label} invalid output_state")
+        if output_state == "absent":
+            if any(target.get(key) is not None for key in ("output_sha256", "output_mode", "output_blob")):
+                errors.append(f"{label} absent output-state must use null output fields")
+        elif not _is_sha(target.get("output_sha256")) or not _is_mode(target.get("output_mode")) or not isinstance(target.get("output_blob"), str):
             errors.append(f"{label} invalid output fields")
         elif target.get("output_blob") != f"blobs/output-{index:04d}.bin":
             errors.append(f"{label} has noncanonical output_blob")

@@ -477,6 +477,7 @@ def rewrite_archive(source: Path, target: Path, mutation: str) -> None:
                     member["mode"] ^= 0o100
                 else:
                     manifest["schema_version"] = 1
+                    manifest.pop("directories", None)
                     for member in manifest["members"]:
                         member.pop("mode")
                 content = (
@@ -515,13 +516,17 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
     export_wiki.build_zip(REPO_ROOT, archive, files)
     manifest, archive_errors = export_wiki.verify_backup_archive(archive)
     results.record(
-        "backup-manifest-v2-binds-member-set-hashes-and-modes",
+        "backup-manifest-v3-binds-file-and-directory-modes",
         manifest is not None
         and not archive_errors
-        and manifest["schema_version"] == 2
+        and manifest["schema_version"] == 3
         and all(
             isinstance(member.get("mode"), int)
             for member in manifest["members"]
+        )
+        and all(
+            isinstance(directory.get("mode"), int)
+            for directory in manifest["directories"]
         )
         and export_wiki.BACKUP_MANIFEST_NAME not in {
             member["path"] for member in manifest["members"]
@@ -576,6 +581,11 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
                 "scripts/hooks/pre-commit",
                 "scripts/wiki_eval.py",
             )
+        )
+        and all(
+            stat.S_IMODE((destination / path).stat().st_mode)
+            == stat.S_IMODE((REPO_ROOT / path).stat().st_mode)
+            for path in ("scripts", "wiki", ".github")
         )
         and (destination / ".git").exists() == (REPO_ROOT / ".git").exists()
         and (

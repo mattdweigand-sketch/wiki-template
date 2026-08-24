@@ -19,9 +19,6 @@ LintFailures = list[LintFailure]
 WIKI_ROOT = Path("wiki")
 ADJUDICATIONS_PATH = Path("scripts/lint-adjudications.json")
 LOG_ROTATION_WARN_LINES = 2500
-# Date-only log entries before this cutoff predate the structured stale-text
-# sweep proof template. Do not rewrite old history just to satisfy this check.
-STALE_SWEEP_PROOF_REQUIRED_FROM = date(2026, 7, 5)
 
 # META_PAGES is shared with rebuild_referenced_by.py via _wiki_parse, so the
 # corpus enumeration cannot drift between linter and rebuild.
@@ -170,7 +167,6 @@ __all__ = [
     "SOURCING_QUEUE_COUNT_ATTR_RE",
     "SOURCING_QUEUE_COUNT_MARKER_INTENT_RE",
     "SOURCING_QUEUE_COUNT_MARKER_RE",
-    "STALE_SWEEP_PROOF_REQUIRED_FROM",
     "STATUS_RE",
     "STOPWORDS",
     "Tier1Check",

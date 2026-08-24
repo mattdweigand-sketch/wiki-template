@@ -6,15 +6,15 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from ledger_common import LedgerIntegrityError
-from validate_capture_runs import validate_approval
+from capture_ledger import (
+    CaptureLedgerIntegrityError,
+    validate_capture_application,
+    validate_capture_ledger_text,
+)
 
 
-SYNTHESIS_DEFAULT_HOME = "wiki/synthesis.md"
 LEDGER_SCHEMA_DESCRIPTION = (
-    "Append-only exact application records written by scripts/capture_gate.py. "
-    "Legacy capture and synthesis approval records remain valid as history but "
-    "are no longer created. Free routes remain unrecorded here."
+    "Append-only exact application records written by scripts/capture_gate.py."
 )
 
 
@@ -55,19 +55,21 @@ def capture_application_from_ledger(
     try:
         text = ledger_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise LedgerIntegrityError(f"capture ledger is not valid UTF-8: {exc}") from exc
-    from ledger_common import APPROVAL_RECORD_TYPES, validate_ledger_text
-
-    validation = validate_ledger_text(text, APPROVAL_RECORD_TYPES, validate_approval)
+        raise CaptureLedgerIntegrityError(
+            f"capture ledger is not valid UTF-8: {exc}"
+        ) from exc
+    validation = validate_capture_ledger_text(text)
     if validation.errors:
-        raise LedgerIntegrityError(validation.errors)
+        raise CaptureLedgerIntegrityError(validation.errors)
     matches = [
-        item.record for item in validation.approvals
+        item.record for item in validation.applications
         if item.record.get("record_type") == "capture_application"
         and item.record.get("authorization_digest") == authorization_digest
     ]
     if len(matches) > 1:
-        raise LedgerIntegrityError("capture ledger repeats one authorization digest")
+        raise CaptureLedgerIntegrityError(
+            "capture ledger repeats one authorization digest"
+        )
     return matches[0] if matches else None
 
 
@@ -81,27 +83,26 @@ def render_capture_application_ledger(
     )
     if existing is not None:
         if existing != record:
-            raise LedgerIntegrityError("authorization digest already names a different record")
+            raise CaptureLedgerIntegrityError(
+                "authorization digest already names a different record"
+            )
         return ledger_bytes
-    problems = validate_approval(record)
+    problems = validate_capture_application(record)
     if problems:
-        raise LedgerIntegrityError([f"candidate: {problem}" for problem in problems])
+        raise CaptureLedgerIntegrityError(
+            [f"candidate: {problem}" for problem in problems]
+        )
     separator = b"" if ledger_bytes.endswith(b"\n") else b"\n"
     line = json.dumps(record, sort_keys=True, separators=(",", ":")).encode("utf-8")
     projected = ledger_bytes + separator + line + b"\n"
-    from ledger_common import APPROVAL_RECORD_TYPES, validate_ledger_text
-
-    validation = validate_ledger_text(
-        projected.decode("utf-8"), APPROVAL_RECORD_TYPES, validate_approval
-    )
+    validation = validate_capture_ledger_text(projected.decode("utf-8"))
     if validation.errors:
-        raise LedgerIntegrityError(validation.errors)
+        raise CaptureLedgerIntegrityError(validation.errors)
     return projected
 
 
 __all__ = [
     "LEDGER_SCHEMA_DESCRIPTION",
-    "SYNTHESIS_DEFAULT_HOME",
     "capture_application_from_ledger",
     "capture_application_record",
     "render_capture_application_ledger",

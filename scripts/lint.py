@@ -9,8 +9,8 @@ match, dangling [[links]], index coverage. (Em dashes are allowed in the wiki
 corpus by decision, so they are not checked.)
 
 Tier 2 (expert-checkable): ranked candidates, not verdicts. The script computes
-signals a maintainer cannot eyeball across hundreds of pages (near-duplicates,
-orphans, uncited pages, compiled pages with newer source inputs, review dates,
+signals a maintainer cannot eyeball across hundreds of pages (orphans, uncited
+pages, compiled pages with newer source inputs, review dates,
 log growth, and sourcing-queue count drift) and surfaces them for a human or
 agent to adjudicate. Tier 2 never fails the run unless --strict is passed.
 
@@ -37,7 +37,6 @@ from wiki_lint_contract import (
     WIKI_ROOT,
 )
 from wiki_lint_signals import TIER2_SIGNALS, run_tier2_lint
-from wiki_lint_repository_checks import validate_stale_sweep_proof
 from wiki_lint_tier1 import parse_index_targets, run_tier1_lint
 
 
@@ -115,14 +114,7 @@ def main() -> int:
             items = t2[key]
             print(f"  {label}: {len(items)}")
             for it in items:
-                if key == "near_duplicate":
-                    j, a, b = it
-                    print(f"      {a}  ~  {b}  (jaccard {j:.2f})")
-                elif key == "missing_related":
-                    score, n, a, b = it
-                    print(f"      {a}  +  {b}  (overlap {score:.2f}, {n} shared)")
-                else:
-                    print(f"      {it}")
+                print(f"      {it}")
         if suppressed:
             print(f"  (adjudicated, suppressed via {ADJUDICATIONS_PATH}: {suppressed})")
         print()

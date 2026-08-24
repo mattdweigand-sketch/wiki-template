@@ -5,14 +5,12 @@ from __future__ import annotations
 
 import json
 import re
-import shlex
 import subprocess
-from datetime import date
 from pathlib import Path
 from typing import Optional
 
 from _file_transactions import transaction_status
-from _wiki_parse import META_PAGES, get_entity_pages, parse_log_entry_date, parse_log_entry_type
+from _wiki_parse import META_PAGES, get_entity_pages, parse_log_entry_date
 from wiki_lint_contract import (
     ADJUDICATIONS_PATH,
     FOLDER_TYPE,
@@ -24,7 +22,6 @@ from wiki_lint_contract import (
     SOURCING_QUEUE_COUNT_ATTR_RE,
     SOURCING_QUEUE_COUNT_MARKER_INTENT_RE,
     SOURCING_QUEUE_COUNT_MARKER_RE,
-    STALE_SWEEP_PROOF_REQUIRED_FROM,
     WIKI_ALLOWED_DIRS,
     WIKI_ALLOWED_FILES,
     WIKI_ROOT,
@@ -36,7 +33,6 @@ from wiki_entity_catalog import load_entity_catalog, validate_configured_layout
 RawBucketRegistry = tuple[Optional[set[str]], Optional[str]]
 SourcingQueueMarker = tuple[str, int, int]
 SourcingQueueMarkers = tuple[list[SourcingQueueMarker], LintFailures]
-LogEntry = dict[str, object]
 AdjudicationDocument = dict[str, object]
 TRACKED_RAW_EXCEPTIONS = frozenset({"raw/.gitkeep", "raw/README.md"})
 
@@ -433,220 +429,6 @@ def check_log_entry_headers() -> LintFailures:
     return fails
 
 
-def log_entries(text: str) -> list[LogEntry]:
-    """Return recognized wiki/log.md entries with header metadata and body lines."""
-    entries = []
-    current = None
-    for line_no, line in enumerate(text.splitlines(), 1):
-        entry_date = parse_log_entry_date(line)
-        if entry_date is not None:
-            if current is not None:
-                entries.append(current)
-            current = {
-                "line": line_no,
-                "header": line,
-                "date": entry_date,
-                "type": parse_log_entry_type(line),
-                "body": [],
-            }
-        elif current is not None:
-            current["body"].append((line_no, line))
-    if current is not None:
-        entries.append(current)
-    return entries
-
-
-def split_stale_sweep_fields(payload):
-    """Split semicolon fields while allowing semicolons inside JSON strings."""
-    out = []
-    cur = []
-    in_string = False
-    escape = False
-    depth = 0
-    for ch in payload:
-        if in_string:
-            cur.append(ch)
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-        elif ch in "[{":
-            depth += 1
-        elif ch in "]}":
-            depth -= 1
-            if depth < 0:
-                return [], "unbalanced JSON brackets"
-        elif ch == ";" and depth == 0:
-            out.append("".join(cur).strip())
-            cur = []
-            continue
-        cur.append(ch)
-    if in_string:
-        return [], "unterminated quoted string"
-    if depth != 0:
-        return [], "unbalanced JSON brackets"
-    out.append("".join(cur).strip())
-    return [x for x in out if x], None
-
-
-def json_string_array(value, field):
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError as e:
-        return None, f"{field} must be a JSON array of strings: {e.msg}"
-    if not isinstance(parsed, list) or not all(isinstance(x, str) for x in parsed):
-        return None, f"{field} must be a JSON array of strings"
-    return parsed, None
-
-
-def validate_stale_sweep_command(command):
-    try:
-        parts = shlex.split(command)
-    except ValueError as e:
-        return f"commands entries must be shell-parseable: {e}"
-    if not parts or parts[0] != "rg":
-        return "commands entries must be rg evidence shaped like: rg -n -i -- '<phrase>' wiki"
-    try:
-        sep = parts.index("--")
-    except ValueError:
-        return "commands entries must include -- before the phrase"
-    flags = parts[1:sep]
-    if flags != ["-n", "-i"]:
-        return "commands entries must use exactly -n -i before --"
-    tail = parts[sep + 1:]
-    if len(tail) != 2:
-        return "commands entries must name exactly one phrase and the wiki root after --"
-    phrase, root = tail
-    if not phrase.strip():
-        return "commands entries must include a non-empty phrase"
-    if root.rstrip("/") != "wiki":
-        return "commands entries must search the wiki root (wiki or wiki/)"
-    return None
-
-
-def validate_stale_sweep_proof(line: str) -> str | None:
-    prefix = "Stale-text sweep:"
-    if not line.startswith(prefix):
-        return "line must start with 'Stale-text sweep:'"
-    payload = line[len(prefix):].strip()
-    if not payload:
-        return "missing status field"
-    segments, err = split_stale_sweep_fields(payload)
-    if err:
-        return err
-    fields = {}
-    for segment in segments:
-        if "=" not in segment:
-            return f"field segment missing '=': {segment!r}"
-        key, value = segment.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if not key:
-            return f"field segment has empty key: {segment!r}"
-        if key in fields:
-            return f"duplicate field '{key}'"
-        fields[key] = value
-
-    status = fields.get("status")
-    if status not in {"completed", "not_applicable"}:
-        return "status must be completed or not_applicable"
-
-    if status == "completed":
-        required = {
-            "status", "commands", "hit_count", "pages_fixed",
-            "historical_no_change_hits",
-        }
-        extra = set(fields) - required
-        missing = required - set(fields)
-        if missing:
-            return "completed proof missing field(s): " + ", ".join(sorted(missing))
-        if extra:
-            return "completed proof has unexpected field(s): " + ", ".join(sorted(extra))
-        commands, err = json_string_array(fields["commands"], "commands")
-        if err:
-            return err
-        if not commands:
-            return "commands must include at least one command string"
-        for command in commands:
-            err = validate_stale_sweep_command(command)
-            if err:
-                return err
-        for field in ("pages_fixed", "historical_no_change_hits"):
-            _parsed, err = json_string_array(fields[field], field)
-            if err:
-                return err
-        if not re.fullmatch(r"\d+", fields["hit_count"]):
-            return "hit_count must be a non-negative integer"
-        return None
-
-    required = {"status", "reason"}
-    extra = set(fields) - required
-    missing = required - set(fields)
-    if missing:
-        return "not_applicable proof missing field(s): " + ", ".join(sorted(missing))
-    if extra:
-        return "not_applicable proof has unexpected field(s): " + ", ".join(sorted(extra))
-    try:
-        reason = json.loads(fields["reason"])
-    except json.JSONDecodeError as e:
-        return f"reason must be a JSON string: {e.msg}"
-    if not isinstance(reason, str) or not reason.strip():
-        return "reason must be a non-empty JSON string"
-    return None
-
-
-def check_stale_sweep_proof_entries() -> LintFailures:
-    """New ingest log entries must carry parseable stale-text sweep evidence.
-
-    This validates the proof shape only. It deliberately does not decide whether
-    the search terms or hit classifications were semantically complete.
-    """
-    fails = []
-    path = WIKI_ROOT / "log.md"
-    if not path.exists():
-        return fails
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError as e:
-        return [("stale-sweep-proof", str(path), f"not valid UTF-8: {e}")]
-    for entry in log_entries(text):
-        if entry["type"] != "ingest":
-            continue
-        try:
-            entry_date = date.fromisoformat(entry["date"])
-        except ValueError:
-            fails.append(("stale-sweep-proof", str(path),
-                          f"line {entry['line']}: ingest entry date "
-                          f"{entry['date']} is not a real calendar date"))
-            continue
-        if entry_date < STALE_SWEEP_PROOF_REQUIRED_FROM:
-            continue
-        proof_lines = [
-            (line_no, line) for line_no, line in entry["body"]
-            if line.startswith("Stale-text sweep:")
-        ]
-        if not proof_lines:
-            fails.append(("stale-sweep-proof", str(path),
-                          f"line {entry['line']}: ingest entry dated {entry['date']} "
-                          "is missing structured Stale-text sweep proof"))
-            continue
-        if len(proof_lines) > 1:
-            fails.append(("stale-sweep-proof", str(path),
-                          f"line {entry['line']}: ingest entry has multiple "
-                          "Stale-text sweep proof lines"))
-        for line_no, line in proof_lines:
-            err = validate_stale_sweep_proof(line)
-            if err:
-                fails.append(("stale-sweep-proof", str(path),
-                              f"line {line_no}: {err}"))
-    return fails
-
-
 def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
     """Parse and shape-validate the adjudication file.
 
@@ -667,9 +449,7 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
     # Underscore-prefixed keys are documentation metadata (e.g. _description),
     # never suppression lists.
     known_keys = {
-        "accepted_orphans", "hub_pages", "skipped_crossref_pairs",
-        "reviewed_confidence_low", "reviewed_near_duplicates",
-        "reviewed_quotes", "reviewed_recompile_candidates",
+        "accepted_orphans", "reviewed_quotes", "reviewed_recompile_candidates",
         "reviewed_authority_missing", "reviewed_glossary_volatile",
         "reviewed_unconsumed_sources",
     }
@@ -678,13 +458,12 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
         return {}, ("unknown top-level category key(s): " + ", ".join(unknown)
                     + "; suppression entries under an unrecognized key would "
                       "silently detach")
-    for key in ("accepted_orphans", "hub_pages", "reviewed_confidence_low",
-                "reviewed_authority_missing", "reviewed_unconsumed_sources"):
+    for key in ("accepted_orphans", "reviewed_authority_missing",
+                "reviewed_unconsumed_sources"):
         for e in raw.get(key, []):
             if not isinstance(e, dict) or not isinstance(e.get("page"), str):
                 return {}, f"every '{key}' entry needs a string 'page' field"
-    for key in ("skipped_crossref_pairs", "reviewed_near_duplicates",
-                "reviewed_recompile_candidates"):
+    for key in ("reviewed_recompile_candidates",):
         for e in raw.get(key, []):
             pair = e.get("pair") if isinstance(e, dict) else None
             if not (isinstance(pair, list) and len(pair) == 2
@@ -723,11 +502,8 @@ __all__ = [
     "check_meta_utf8",
     "check_no_tracked_raw_artifacts",
     "check_sourcing_queue_count_markers",
-    "check_stale_sweep_proof_entries",
     "check_stray_tool_tags",
-    "log_entries",
     "parse_sourcing_queue_count_markers",
     "read_adjudications",
     "read_raw_buckets_registry",
-    "validate_stale_sweep_proof",
 ]

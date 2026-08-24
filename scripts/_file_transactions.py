@@ -93,6 +93,8 @@ def _target_state(repo_root: Path, target: dict[str, object]) -> str:
     try:
         info = path.lstat()
     except FileNotFoundError:
+        if target.get("output_state", "regular") == "absent":
+            return "output"
         return "pre" if target["pre_state"] == "absent" else "other"
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         return "unsafe"
@@ -104,7 +106,11 @@ def _target_state(repo_root: Path, target: dict[str, object]) -> str:
         return "unsafe"
     digest = sha256_bytes(content or b"")
     mode = stat.S_IMODE(opened.st_mode)
-    matches_output = digest == target["output_sha256"] and mode == target["output_mode"]
+    matches_output = (
+        target.get("output_state", "regular") == "regular"
+        and digest == target["output_sha256"]
+        and mode == target["output_mode"]
+    )
     matches_pre = (
         target["pre_state"] == "regular"
         and digest == target["pre_sha256"]
@@ -283,7 +289,8 @@ def _remove_cleanup_tombstone(
             for target in journal["targets"]:
                 if target["pre_blob"] is not None:
                     expected[Path(target["pre_blob"]).name] = target["pre_sha256"]
-                expected[Path(target["output_blob"]).name] = target["output_sha256"]
+                if target["output_blob"] is not None:
+                    expected[Path(target["output_blob"]).name] = target["output_sha256"]
         for path in sorted(blobs.iterdir(), key=lambda item: item.name):
             TRANSACTION_EXECUTION_CONTRACT.strict_regular(path, mode=0o600)
             is_temp = _valid_blob_temp_name(path.name)
@@ -686,7 +693,7 @@ def recover_all(repo_root: Path) -> list[str]:
 
 def _prepare_targets(
     repo_root: Path,
-    outputs: dict[str, bytes],
+    outputs: dict[str, bytes | None],
     allowed_prefixes: Iterable[str],
     expected_preimages: dict[str, bytes | None] | None,
 ) -> list[dict[str, object]]:
@@ -698,8 +705,8 @@ def _prepare_targets(
     repo_device = repo_root.stat().st_dev
     for index, relative in enumerate(sorted(outputs)):
         output = outputs[relative]
-        if not isinstance(output, bytes):
-            raise TransactionError(f"output for {relative} must be bytes")
+        if output is not None and not isinstance(output, bytes):
+            raise TransactionError(f"output for {relative} must be bytes or None")
         path = validate_target_path(repo_root, relative, allowed_prefixes)
         if path.parent.stat().st_dev != repo_device:
             raise TransactionError(f"target is on a different device: {relative}")
@@ -709,6 +716,8 @@ def _prepare_targets(
             raise TransactionError(str(exc)) from exc
         if expected_preimages is not None and preimage != expected_preimages[relative]:
             raise TransactionConflict(f"target changed after consumer snapshot: {relative}")
+        if preimage is None and output is None:
+            continue
         pre_state = "regular" if preimage is not None else "absent"
         targets.append(
             {
@@ -717,9 +726,13 @@ def _prepare_targets(
                 "pre_sha256": sha256_bytes(preimage) if preimage is not None else None,
                 "pre_mode": stat.S_IMODE(info.st_mode) if info is not None else None,
                 "pre_blob": f"blobs/pre-{index:04d}.bin" if preimage is not None else None,
-                "output_sha256": sha256_bytes(output),
-                "output_mode": stat.S_IMODE(info.st_mode) if info is not None else 0o644,
-                "output_blob": f"blobs/output-{index:04d}.bin",
+                "output_state": "regular" if output is not None else "absent",
+                "output_sha256": sha256_bytes(output) if output is not None else None,
+                "output_mode": (
+                    stat.S_IMODE(info.st_mode) if output is not None and info is not None
+                    else 0o644 if output is not None else None
+                ),
+                "output_blob": f"blobs/output-{index:04d}.bin" if output is not None else None,
                 "installed": False,
                 "_preimage": preimage,
                 "_output": output,
@@ -767,7 +780,7 @@ def run_transaction(
     repo_root: Path,
     *,
     consumer: str,
-    outputs: dict[str, bytes],
+    outputs: dict[str, bytes | None],
     allowed_prefixes: Iterable[str],
     expected_preimages: dict[str, bytes | None] | None = None,
     guard_preimages: dict[str, bytes] | None = None,
@@ -810,7 +823,7 @@ def run_transaction(
             for target in targets_with_bytes
         ]
         journal = {
-            "schema_version": 1,
+            "schema_version": SCHEMA_VERSION,
             "transaction_id": tx_id,
             "consumer": consumer,
             "created_at": created,
@@ -843,15 +856,16 @@ def run_transaction(
                         fault=(lambda stage, idx=index: _fault(fault, f"blob:pre:{idx}:{stage}")),
                     )
                     _fault(fault, f"after_blob:pre:{index}")
-                _fault(fault, f"before_blob:output:{index}")
-                atomic_replace_bytes(
-                    preparing_dir / target["output_blob"],
-                    source["_output"],
-                    mode=0o600,
-                    expected_sha256=None,
-                    fault=(lambda stage, idx=index: _fault(fault, f"blob:output:{idx}:{stage}")),
-                )
-                _fault(fault, f"after_blob:output:{index}")
+                if source["_output"] is not None:
+                    _fault(fault, f"before_blob:output:{index}")
+                    atomic_replace_bytes(
+                        preparing_dir / target["output_blob"],
+                        source["_output"],
+                        mode=0o600,
+                        expected_sha256=None,
+                        fault=(lambda stage, idx=index: _fault(fault, f"blob:output:{idx}:{stage}")),
+                    )
+                    _fault(fault, f"after_blob:output:{index}")
             _transition(preparing_dir, journal, "PREPARED", fault)
             _fault(fault, "before_prepared_publish")
             os.replace(preparing_dir, tx_dir)
@@ -883,15 +897,19 @@ def run_transaction(
                     _mark_blocking(tx_dir, journal, "CONFLICTED")
                     raise TransactionConflict(f"target changed during commit: {target['path']}")
                 _fault(fault, f"before_target:{index}")
-                output = _blob_bytes(tx_dir, target["output_blob"], target["output_sha256"])
                 expected = target["pre_sha256"] if target["pre_state"] == "regular" else None
-                atomic_replace_bytes(
-                    repo_root / target["path"],
-                    output,
-                    mode=target["output_mode"],
-                    expected_sha256=expected,
-                    fault=(lambda stage, idx=index: _fault(fault, f"target:{idx}:{stage}")),
-                )
+                if target.get("output_state", "regular") == "absent":
+                    if expected is not None:
+                        durable_unlink(repo_root / target["path"], expected_sha256=expected)
+                else:
+                    output = _blob_bytes(tx_dir, target["output_blob"], target["output_sha256"])
+                    atomic_replace_bytes(
+                        repo_root / target["path"],
+                        output,
+                        mode=target["output_mode"],
+                        expected_sha256=expected,
+                        fault=(lambda stage, idx=index: _fault(fault, f"target:{idx}:{stage}")),
+                    )
                 _fault(fault, f"after_target:{index}")
                 target["installed"] = True
                 _rewrite_progress(tx_dir, journal, fault)

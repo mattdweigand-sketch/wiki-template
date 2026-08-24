@@ -6,21 +6,57 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
+import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
 from capture_approval_records import LEDGER_SCHEMA_DESCRIPTION
+from capture_ledger import (
+    validate_capture_application,
+    validate_capture_ledger_file,
+)
 from capture_gate import (
     CaptureProposalError,
     apply_capture_proposal,
     prepare_capture_proposal,
 )
 from eval_lib import Results
-from validate_capture_runs import validate_approval, validate_capture_ledger
 
 
 results = Results()
+CAPTURE_GATE = Path(__file__).resolve().parent / "capture_gate.py"
+
+
+missing_proposal = subprocess.run(
+    [sys.executable, str(CAPTURE_GATE)],
+    capture_output=True,
+    text=True,
+    check=False,
+)
+results.record(
+    "capture-cli-requires-exact-proposal",
+    missing_proposal.returncode == 2 and "--proposal" in missing_proposal.stderr,
+)
+
+legacy_cli = subprocess.run(
+    [
+        sys.executable,
+        str(CAPTURE_GATE),
+        "--proposal",
+        "tmp/none.json",
+        "--type",
+        "analysis",
+    ],
+    capture_output=True,
+    text=True,
+    check=False,
+)
+results.record(
+    "capture-cli-rejects-removed-flat-mode",
+    legacy_cli.returncode == 2 and "unrecognized arguments" in legacy_cli.stderr,
+)
 
 
 def canonical_json(value: object) -> bytes:
@@ -203,7 +239,7 @@ with tempfile.TemporaryDirectory() as temporary:
         outcome = apply_capture_proposal(
             root, "tmp/proposal.json", prepared["authorization_digest"]
         )
-        ledger_errors, count = validate_capture_ledger(root / "scripts/capture-runs.jsonl")
+        ledger_errors, count = validate_capture_ledger_file(root / "scripts/capture-runs.jsonl")
     first_target = (root / "wiki/concepts/exact.md").read_bytes()
     first_ledger = (root / "scripts/capture-runs.jsonl").read_bytes()
     with working_directory(root):
@@ -226,7 +262,7 @@ with tempfile.TemporaryDirectory() as temporary:
     application = next(record for record in records if record.get("record_type") == "capture_application")
     malformed_record = {**application, "capture_boundary": []}
     try:
-        malformed_record_errors = validate_approval(malformed_record)
+        malformed_record_errors = validate_capture_application(malformed_record)
     except Exception:
         malformed_record_errors = []
     results.record(
@@ -237,7 +273,7 @@ with tempfile.TemporaryDirectory() as temporary:
     duplicate_ledger = first_ledger + canonical_json(duplicate)
     (root / "scripts/capture-runs.jsonl").write_bytes(duplicate_ledger)
     with working_directory(root):
-        duplicate_errors, _ = validate_capture_ledger(root / "scripts/capture-runs.jsonl")
+        duplicate_errors, _ = validate_capture_ledger_file(root / "scripts/capture-runs.jsonl")
     results.record(
         "duplicate-application-authorization-digest-is-invalid",
         any("duplicate capture application authorization_digest" in error for error in duplicate_errors),
@@ -261,7 +297,7 @@ with tempfile.TemporaryDirectory() as temporary:
         else:
             interrupted = False
         recovered = apply_capture_proposal(root, "tmp/proposal.json", digest)
-        ledger_errors, count = validate_capture_ledger(root / "scripts/capture-runs.jsonl")
+        ledger_errors, count = validate_capture_ledger_file(root / "scripts/capture-runs.jsonl")
     results.record(
         "interrupted-apply-recovers-through-existing-transaction",
         interrupted
@@ -270,4 +306,4 @@ with tempfile.TemporaryDirectory() as temporary:
         and not ledger_errors and count == 1,
     )
 
-results.finish()
+raise SystemExit(results.finish())

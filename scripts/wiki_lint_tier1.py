@@ -26,7 +26,6 @@ from wiki_lint_repository_checks import (
     check_meta_utf8,
     check_no_tracked_raw_artifacts,
     check_sourcing_queue_count_markers,
-    check_stale_sweep_proof_entries,
     check_stray_tool_tags,
     read_adjudications,
 )
@@ -81,7 +80,6 @@ def run_tier1_lint(
     fails.extend(check_stray_tool_tags())
     fails.extend(check_sourcing_queue_count_markers())
     fails.extend(check_log_entry_headers())
-    fails.extend(check_stale_sweep_proof_entries())
     fails.extend(index_read_fails)
     try:
         domain_configuration = read_domain_configuration(Path.cwd().resolve())
@@ -182,13 +180,9 @@ def run_tier1_lint(
         fails.append(("adjudication-file", str(ADJUDICATIONS_PATH), adj_err))
     else:
         referenced = []
-        for key in ("accepted_orphans", "hub_pages", "reviewed_confidence_low",
-                    "reviewed_quotes", "reviewed_authority_missing",
+        for key in ("accepted_orphans", "reviewed_quotes", "reviewed_authority_missing",
                     "reviewed_unconsumed_sources"):
             referenced += [e["page"] for e in raw.get(key, [])]
-        for key in ("skipped_crossref_pairs", "reviewed_near_duplicates"):
-            for e in raw.get(key, []):
-                referenced += e["pair"]
         for page in sorted(set(referenced)):
             if page not in entity_relpaths:
                 fails.append(("adjudication-stale", str(ADJUDICATIONS_PATH),
