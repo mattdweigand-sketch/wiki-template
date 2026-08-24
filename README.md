@@ -1,4 +1,4 @@
-# <Organization> Wiki
+# Wiki
 
 A clonable, agent-readable wiki template for organization, project, or personal context, based on the [Karpathy LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
@@ -20,7 +20,7 @@ The deterministic tooling requires Python 3.9 or newer and `ripgrep` (`rg`). Bac
 
 1. Clone the repo.
 2. Point an agent at it. Claude Code can start at `CLAUDE.md`; other agents start at `AGENTS.md`.
-3. Replace the placeholders in [`wiki/domain.md`](wiki/domain.md) with the wiki's name, scope, and example questions.
+3. Replace the placeholders in [`wiki/domain.md`](wiki/domain.md) with the context name, scope, and example questions.
 4. Add source files under a bucket registered in [`scripts/raw-buckets.json`](scripts/raw-buckets.json), then ask the agent to ingest them.
 5. Ask questions in plain language.
 

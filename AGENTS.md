@@ -1,4 +1,4 @@
-# <Organization> Wiki
+# Wiki
 
 A clonable, agent-readable wiki template for an organization, project, or person's durable context layer. Grounded in sources. Structured for downstream agents. Designed to compound instead of re-deriving context from raw documents.
 

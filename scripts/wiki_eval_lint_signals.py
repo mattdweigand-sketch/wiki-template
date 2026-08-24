@@ -120,7 +120,7 @@ PERSON_RECOMPILE_BODY = (
 
 def seed_person_recompile_candidate(root):
     edit(root, "wiki/sources/gamma.md", "updated: 2026-06-01", "updated: 2026-06-10")
-    (root / "wiki" / "people").mkdir()
+    (root / "wiki" / "people").mkdir(exist_ok=True)
     (root / "wiki" / "people" / "fixture-person.md").write_text(
         '---\ntitle: "Fixture Person"\ntype: person\ncreated: 2026-06-01\n'
         'updated: 2026-06-01\nsources: ["experience: lint eval fixture"]\n'

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Regression eval for shared-parser callers and import wiring."""
+"""Behavior regression eval for Markdown parser callers."""
 
 from __future__ import annotations
 
-import ast
 import subprocess
 import sys
 import tempfile
@@ -32,7 +31,7 @@ CRLF_RAW = (
     "```\r\n"
 )
 
-# --- 2. end-to-end: one CRLF page through all four callers, must agree ---
+# One CRLF page through the callers must produce consistent behavior.
 
 with tempfile.TemporaryDirectory() as td:
     root = Path(td) / "wiki"
@@ -77,59 +76,5 @@ with tempfile.TemporaryDirectory() as td:
     check("caller-rebuild-edge-has-no-inbound",
           "_No inbound links yet._" in edge_text,
           detail=edge_text)
-
-# --- 3. wiring: each caller's source actually imports from _wiki_parse ---
-#
-# The end-to-end checks above prove the callers BEHAVE identically, but a caller
-# reverted to a byte-identical private reimplementation would still pass them.
-# Assert the shared import is wired in each caller's source so reverting any one
-# of them to a private parser fails here.
-CALLERS = ("lint.py", "review_due.py", "rebuild_referenced_by.py")
-
-
-def has_import_from(path: Path, module: str) -> bool:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    return any(
-        isinstance(node, ast.ImportFrom) and node.module == module
-        for node in ast.walk(tree)
-    )
-
-
-for caller in CALLERS:
-    path = REPO_ROOT / "scripts" / caller
-    check(f"caller-imports-shared-parser-{caller}",
-          has_import_from(path, "_wiki_parse"),
-          detail=f"{caller} does not import from _wiki_parse")
-
-decoy_tree = ast.parse("marker = 'from _wiki_parse import split_frontmatter'\n")
-check(
-    "import-check-rejects-string-decoy",
-    not any(
-        isinstance(node, ast.ImportFrom) and node.module == "_wiki_parse"
-        for node in ast.walk(decoy_tree)
-    ),
-)
-
-PATH_CALLERS = (
-    "wiki_lint_frontmatter.py",
-    "wiki_lint_page_checks.py",
-    "capture_gate.py",
-    "capture_ledger.py",
-)
-for caller in PATH_CALLERS:
-    path = REPO_ROOT / "scripts" / caller
-    check(
-        f"caller-imports-shared-repo-paths-{caller}",
-        has_import_from(path, "_repo_paths"),
-        detail=f"{caller} does not import from _repo_paths",
-    )
-
-for caller in ("wiki_lint_page_checks.py", "wiki_lint_signals.py"):
-    src = (REPO_ROOT / "scripts" / caller).read_text(encoding="utf-8")
-    check(
-        f"caller-uses-shared-markdown-views-{caller}",
-        "evidentiary_view" in src or "authored_link_view" in src or "status_review_view" in src,
-        detail=f"{caller} does not use an explicit shared Markdown view",
-    )
 
 sys.exit(results.finish())

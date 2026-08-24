@@ -7,7 +7,6 @@ cases exercise it in temporary repos so the live wiki is never touched.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,13 +16,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import rotate_log  # noqa: E402
+from eval_lint_fixture import copy_fixture  # noqa: E402
 from eval_lib import Results  # noqa: E402
 
 
 ROTATE = REPO_ROOT / "scripts" / "rotate_log.py"
 LINT = REPO_ROOT / "scripts" / "lint.py"
-LINT_FIXTURE = REPO_ROOT / "scripts" / "fixtures" / "wiki-lint"
-
 ROTATION_DATE = "2026-06-27"
 
 
@@ -417,8 +415,7 @@ with_temp_root(case_no_recognized_headers)
 
 
 def case_archive_ignored_by_lint(root: Path) -> None:
-    shutil.copytree(LINT_FIXTURE / "wiki", root / "wiki")
-    shutil.copytree(LINT_FIXTURE / "scripts", root / "scripts")
+    copy_fixture(root)
     entries = [plain_entry(i, f"entry {i}") for i in range(1, 8)]
     write_log(root, entries)
     proc = run_rotate(root, "--target-lines", "30")

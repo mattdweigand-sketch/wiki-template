@@ -84,6 +84,22 @@ def main() -> int:
             "governed entity folders missing: teams" in drift.errors,
             repr(drift),
         )
+        domain_path = root / "wiki/domain.md"
+        domain_path.write_text(
+            domain_path.read_text(encoding="utf-8").replace(
+                "status: configured", "status: unconfigured"
+            ),
+            encoding="utf-8",
+        )
+        unsupported_state = validate_configured_layout(root, catalog)
+        results.record(
+            "unconfigured-state-is-rejected",
+            any(
+                "status must be configured" in error
+                for error in unsupported_state.errors
+            ),
+            repr(unsupported_state),
+        )
 
     live_validation = validate_configured_layout(Path(__file__).resolve().parents[1], catalog)
     results.record(

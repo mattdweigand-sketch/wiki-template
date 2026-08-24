@@ -427,8 +427,7 @@ run_case(
 run_case(
     "source-page-current-state-authority-fires",
     lambda r: (
-        (r / "raw" / "notes").mkdir(parents=True),
-        (r / "raw" / "notes" / "source-authority.md").write_text("raw fixture"),
+        write_registered_raw_fixture(r, "raw/notes/source-authority.md"),
         add_authority(r, "wiki/sources/gamma.md",
                       "authority_kind: raw-source",
                       "authority_ref: raw/notes/source-authority.md",
@@ -457,8 +456,7 @@ run_case(
 run_case(
     "valid-source-page-authority-passes",
     lambda r: (
-        (r / "raw" / "notes").mkdir(parents=True),
-        (r / "raw" / "notes" / "source-authority.md").write_text("raw fixture"),
+        write_registered_raw_fixture(r, "raw/notes/source-authority.md"),
         add_authority(r, "wiki/sources/gamma.md",
                       "authority_kind: raw-source",
                       "authority_ref: raw/notes/source-authority.md"),
@@ -578,8 +576,7 @@ run_case(
 run_case(
     "resolving-raw-source-ref-passes",
     lambda r: (
-        (r / "raw" / "notes").mkdir(parents=True),
-        (r / "raw" / "notes" / "real.md").write_text("raw fixture"),
+        write_registered_raw_fixture(r, "raw/notes/real.md"),
         edit(r, "wiki/concepts/alpha.md",
              'sources: ["experience: lint eval fixture"]',
              'sources: [raw/notes/real.md]'),
@@ -611,8 +608,7 @@ run_case(
     # slug, and free-text provenance) pass without source-ref noise.
     "block-style-source-refs-resolve-passes",
     lambda r: (
-        (r / "raw" / "notes").mkdir(parents=True),
-        (r / "raw" / "notes" / "real.md").write_text("raw fixture"),
+        write_registered_raw_fixture(r, "raw/notes/real.md"),
         edit(r, "wiki/concepts/alpha.md",
              'sources: ["experience: lint eval fixture"]',
              'sources:\n  - raw/notes/real.md\n  - gamma\n'

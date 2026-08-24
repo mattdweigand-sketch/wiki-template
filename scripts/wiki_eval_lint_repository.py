@@ -5,7 +5,6 @@ import os
 
 from eval_lint_fixture import *
 from _wiki_parse import META_PAGES
-from wiki_entity_catalog import load_entity_catalog
 
 
 def write_sourcing_queue(root: Path, *markers: str) -> None:
@@ -131,10 +130,7 @@ run_case(
 
 
 def remove_governed_concepts_folder(root: Path) -> None:
-    for folder in load_entity_catalog().folder_types:
-        (root / "wiki" / folder).mkdir(exist_ok=True)
     shutil.rmtree(root / "wiki" / "concepts")
-    edit(root, "wiki/domain.md", "status: unconfigured", "status: configured")
 
 
 run_case(

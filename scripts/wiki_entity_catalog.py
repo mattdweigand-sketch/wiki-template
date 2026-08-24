@@ -161,8 +161,8 @@ def read_domain_configuration(repo_root: Path) -> DomainConfiguration:
         if len(status) < 2 or status[0] != status[-1] or status[0] not in "\"'":
             raise CatalogError("wiki/domain.md status has mismatched quotes")
         status = status[1:-1].strip()
-    if status not in {"configured", "unconfigured"}:
-        raise CatalogError("wiki/domain.md status must be configured or unconfigured")
+    if status != "configured":
+        raise CatalogError("wiki/domain.md status must be configured")
     return DomainConfiguration(status=status)
 
 
@@ -172,7 +172,7 @@ def validate_configured_layout(
 ) -> ConfiguredLayoutValidation:
     """Validate that a live wiki contains every governed entity folder."""
     try:
-        configuration = read_domain_configuration(repo_root)
+        read_domain_configuration(repo_root)
     except CatalogError as exc:
         return ConfiguredLayoutValidation((str(exc),))
     wiki_root = repo_root / "wiki"
@@ -187,10 +187,6 @@ def validate_configured_layout(
     errors: list[str] = []
     if unknown_folders:
         errors.append("unsupported entity folders: " + ", ".join(unknown_folders))
-    # Legacy fixture state remains readable so isolated tooling evals do not
-    # need a full Git-backed wiki. The shipped repository is always configured.
-    if configuration.status == "unconfigured":
-        return ConfiguredLayoutValidation(tuple(errors))
     expected_folders = set(catalog.folder_types)
     missing = sorted(expected_folders - actual_folders)
     if missing:

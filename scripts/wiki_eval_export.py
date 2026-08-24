@@ -141,6 +141,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         ".claude/worktrees/private.txt",
         ".git/config",
         "deliverables/output/file.txt",
+        "deliverables/wiki-export-2026-06-22.zip",
         "tmp/scratch.txt",
         "tmp/wiki-export-2026-06-23.zip",
         "tmp/wiki-export-2026-06-24.zip",
@@ -199,6 +200,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
     )
     current_output_absent = "tmp/wiki-export-2026-06-24.zip" not in names
     earlier_output_absent = "tmp/wiki-export-2026-06-23.zip" not in names
+    alternate_output_absent = "deliverables/wiki-export-2026-06-22.zip" not in names
     legitimate_zip_sources_present = all(
         rel in names
         for rel in (
@@ -214,6 +216,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         and recovery_state_present
         and current_output_absent
         and earlier_output_absent
+        and alternate_output_absent
         and legitimate_zip_sources_present,
         "stdout: " + build.stdout.replace("\n", " | ") + " names: " + repr(sorted(names)),
     )

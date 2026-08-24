@@ -1,4 +1,4 @@
-# <Organization> Wiki - Task Router
+# Wiki Task Router
 
 `AGENTS.md` is canonical: it holds the folder map, conventions, and hard rules. This file routes a task to the right workspace. Do not read everything; find the task family, open the workspace entry, and load only what it says to load.
 

@@ -22,7 +22,7 @@ description: Use this workflow when the user says "export the wiki" or wants a c
    python3 scripts/export_wiki.py --date YYYY-MM-DD
    ```
 
-   This includes every regular file under the repo root except `wiki-export-YYYY-MM-DD.zip` archives already present in the selected output folder. Wiki pages, local-only raw sources, workflows, scripts, wrappers, CI, Git history, local settings, other scratch files, deliverables, and any existing backup receipt remain included. `BACKUP-MANIFEST.json` binds the exact sorted member set, sizes, hashes, POSIX permission modes, creation time, and raw-artifact manifest hash; it does not list itself. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree and any nonclean `.wiki-transactions/` state.
+   This includes every regular file under the repo root except generated `wiki-export-YYYY-MM-DD.zip` archives outside `raw/`. Wiki pages, local-only raw sources, workflows, scripts, wrappers, CI, Git history, local settings, other scratch files, deliverables, and any existing backup receipt remain included. A source artifact under `raw/` remains included even when its filename matches the export pattern. `BACKUP-MANIFEST.json` binds the exact sorted member set, sizes, hashes, POSIX permission modes, creation time, and raw-artifact manifest hash; it does not list itself. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree and any nonclean `.wiki-transactions/` state.
 
 2. If you need to inspect before building, run:
 

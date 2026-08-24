@@ -11,7 +11,7 @@ Invoking `wiki-lint` through either agent wrapper authorizes the full lint workf
 
 Wrapper-surface maintenance is tooling eval work. If the task concerns `.claude/commands/`, `.agents/skills/`, or `scripts/check_wrapper_parity.py`, open [`eval.md`](eval.md).
 
-Artifact promotion uses the exact capture proposal flow in `AGENTS.md`. Preview every staged target, stop for approval of the displayed digest, and apply only that digest. Decision capture, experience capture, workflow updates, setup updates, and routine page updates skip this gate unless they are part of promotion or analysis capture. If the user directly says they made a decision or lived through something they want remembered, use `wiki-capture`; use `wiki-promote` only when evaluating a separate artifact.
+Artifact promotion uses the exact capture proposal flow in `AGENTS.md`. Preview every staged target, stop for approval of the displayed digest, and apply only that digest. Decision capture, experience capture, workflow updates, domain customization, and routine page updates skip this gate unless they are part of promotion or analysis capture. If the user directly says they made a decision or lived through something they want remembered, use `wiki-capture`; use `wiki-promote` only when evaluating a separate artifact.
 
 Synthesis promotion uses the same flow with `capture_boundary: synthesis-promotion` before updating `wiki/synthesis.md`, flipping draft confidence/status, or logging a synthesis promotion.
 

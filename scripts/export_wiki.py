@@ -96,9 +96,8 @@ def export_files(
     repo_root: Path,
     output: Path | None = None,
 ) -> list[Path]:
-    """Return every regular file except export archives in the output folder."""
+    """Return regular files while excluding generated wiki export archives."""
     resolved_output = output.resolve() if output is not None else None
-    output_parent = resolved_output.parent if resolved_output is not None else None
     files: list[Path] = []
     for path in sorted(repo_root.rglob("*")):
         if not path.is_file():
@@ -107,11 +106,12 @@ def export_files(
             resolved_path = path.resolve()
             if resolved_path == resolved_output:
                 continue
-            if (
-                resolved_path.parent == output_parent
-                and EXPORT_ARCHIVE_RE.fullmatch(resolved_path.name)
-            ):
-                continue
+        relative = path.relative_to(repo_root)
+        if (
+            relative.parts[0] != "raw"
+            and EXPORT_ARCHIVE_RE.fullmatch(path.name)
+        ):
+            continue
         files.append(path)
     return files
 

@@ -10,7 +10,7 @@ description: Use this workflow when the user says "refresh sourcing queue". Re-p
 
 ## Steps
 
-1. Read `wiki/sourcing-queue.md` if present; otherwise create it only if the active schema and setup decisions make a sourcing queue useful.
+1. Read `wiki/sourcing-queue.md` if present; otherwise create it only if the current wiki structure makes a sourcing queue useful.
 2. Re-prioritize based on what the latest ingests revealed
 3. For each priority gap, name the source artifact most likely to fill it, such as CRM export, win/loss note, call transcript, product spec, board deck, research memo, or support thread.
 4. Append to `wiki/log.md`:

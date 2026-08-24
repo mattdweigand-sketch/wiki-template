@@ -65,7 +65,7 @@ The main control mechanisms are:
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
 | Approval gate | `scripts/capture_gate.py` previews exact `analysis-capture`, `artifact-promotion`, and `synthesis-promotion` proposals, binds approval to their digest, and applies approved targets with the combined ledger postimage through one recoverable transaction. |
 | Synthesis ledger | `wiki/synthesis.md` orients future synthesis runs; cite source pages, not the ledger, when making claims. |
-| Export | `scripts/export_wiki.py` builds and verifies exact-manifest recovery snapshots while excluding dated wiki export archives already in the output folder. `scripts/restore_wiki.py` restores a verified archive only to an absent destination. |
+| Export | `scripts/export_wiki.py` builds and verifies exact-manifest recovery snapshots while excluding generated dated wiki export archives outside `raw/`. `scripts/restore_wiki.py` restores a verified archive only to an absent destination. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` owns the shortcut manifest; `scripts/render_wiki_wrappers.py` deterministically renders `.claude/commands/` and `.agents/skills/`, which never own canonical behavior. |
 
 ---

@@ -21,7 +21,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from wiki_lint_contract import ADJUDICATION_CATEGORY_FIELDS
+from wiki_lint_contract import ADJUDICATION_CATEGORY_FIELDS, FOLDER_TYPE
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LINT = REPO_ROOT / "scripts" / "lint.py"
@@ -30,10 +30,38 @@ FIXTURE = REPO_ROOT / "scripts" / "fixtures" / "wiki-lint"
 results = []
 
 
-def copy_fixture(root):
-    """Materialize the fixture mini-wiki (wiki/ + scripts/) under `root`."""
+def _build_lint_fixture_repository() -> tuple[tempfile.TemporaryDirectory[str], Path]:
+    """Build one configured Git baseline that individual lint cases can copy."""
+    temporary = tempfile.TemporaryDirectory(prefix="wiki-lint-baseline-")
+    root = Path(temporary.name) / "repo"
     shutil.copytree(FIXTURE / "wiki", root / "wiki")
     shutil.copytree(FIXTURE / "scripts", root / "scripts")
+    for folder in FOLDER_TYPE:
+        (root / "wiki" / folder).mkdir(exist_ok=True)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "lint-fixture@example.invalid"],
+        cwd=root,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Lint Fixture"],
+        cwd=root,
+        check=True,
+    )
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "lint fixture baseline"], cwd=root, check=True
+    )
+    return temporary, root
+
+
+_FIXTURE_REPOSITORY_TEMP, _FIXTURE_REPOSITORY = _build_lint_fixture_repository()
+
+
+def copy_fixture(root):
+    """Materialize the fixture mini-wiki (wiki/ + scripts/) under `root`."""
+    shutil.copytree(_FIXTURE_REPOSITORY, root, dirs_exist_ok=True)
 
 
 def run_case(name, mutate, args=("--tier1",), expect_code=0, expect=(), absent=()):
@@ -92,6 +120,44 @@ def write_adjudications(root: Path, **kwargs: object) -> None:
 
 def write_raw_buckets(root, value):
     (root / "scripts" / "raw-buckets.json").write_text(json.dumps(value))
+
+
+def write_registered_raw_fixture(
+    root: Path,
+    relative: str,
+    content: str = "raw fixture",
+) -> None:
+    """Write one raw file and bind it to the gamma source in the fixture manifest."""
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content_bytes = content.encode("utf-8")
+    path.write_bytes(content_bytes)
+    manifest = {
+        "artifacts": [
+            {
+                "captured_at": "2026-06-01",
+                "files": [
+                    {
+                        "path": relative,
+                        "sha256": hashlib.sha256(content_bytes).hexdigest(),
+                        "size": len(content_bytes),
+                    }
+                ],
+                "source_slug": "gamma",
+            }
+        ],
+        "schema_version": 1,
+    }
+    (root / "scripts/raw-artifacts.json").write_text(
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    edit(
+        root,
+        "wiki/sources/gamma.md",
+        'sources: ["experience: lint eval fixture"]',
+        f"sources: [{relative}]",
+    )
 
 
 def add_authority(root: Path, rel: str, *lines: str) -> None:
