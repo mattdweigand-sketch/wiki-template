@@ -20,11 +20,12 @@ The deterministic tooling requires Python 3.9 or newer and `ripgrep` (`rg`). Bac
 
 1. Clone the repo.
 2. Point an agent at it. Claude Code can start at `CLAUDE.md`; other agents start at `AGENTS.md`.
-3. Replace the placeholders in [`wiki/domain.md`](wiki/domain.md) with the context name, scope, and example questions.
-4. Add source files under a bucket registered in [`scripts/raw-buckets.json`](scripts/raw-buckets.json), then ask the agent to ingest them.
-5. Ask questions in plain language.
+3. Say `setup`, or invoke `/wiki-setup` in Claude Code or `$wiki-setup` in Codex. The workflow opens [`wiki/domain.md`](wiki/domain.md) and asks for the context name, scope, and example questions.
+4. Start using it. Ask questions in plain language, capture decisions, or add existing source files and ask the agent to ingest them.
 
-The clone is operational before customization. All supported entity folders and workflows are present, so changing the subject does not require a setup command or structural migration.
+To seed the wiki with existing material, place each source file under a bucket registered in [`scripts/raw-buckets.json`](scripts/raw-buckets.json), then ask the agent to ingest it. Add a bucket only when the existing taxonomy does not fit.
+
+The clone is operational before customization. `wiki-setup` changes only the domain values. All supported entity folders and workflows are already present, so it does not run a structural migration.
 
 ## Agent Clone Prompt
 
@@ -37,13 +38,14 @@ Ask me where to put it and what to name the folder. Then clone the repo, enter i
 
 Confirm that python3 is Python 3.9 or newer and that rg is available.
 
-Update only the placeholders in wiki/domain.md with my name, scope, and example questions. Report the changed file and validation results; do not create the commit.
+Run setup. Ask me for the context name, scope, and example questions, then update only those placeholders in wiki/domain.md. Report the changed file and validation results; do not create the commit.
 ```
 
-The repo has nine workflow shortcuts. Claude Code exposes them as slash commands. Codex exposes them as skills, invoked with `$wiki-*` or selected through `/skills`. Other agents use the same routes through `CONTEXT.md`.
+The repo has ten workflow shortcuts. Claude Code exposes them as slash commands. Codex exposes them as skills, invoked with `$wiki-*` or selected through `/skills`. Other agents use the same routes through `CONTEXT.md`.
 
 | Workflow | Claude Code | Codex | Use it to |
 |---|---|---|---|
+| `wiki-setup` | `/wiki-setup` | `$wiki-setup` | Ask the initial domain questions and configure `wiki/domain.md`. |
 | `wiki-ask` | `/wiki-ask` | `$wiki-ask` | Answer ordinary wiki questions from the smallest relevant page set. This is the default. |
 | `wiki-research` | `/wiki-research` | `$wiki-research` | Run manually invoked research with claim-level independent review. |
 | `wiki-ingest` | `/wiki-ingest` | `$wiki-ingest` | Turn a raw source into durable wiki pages. |
@@ -104,7 +106,7 @@ Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task inst
 |-- workflows/                 # Vendor-neutral workflow instructions
 |   |-- ingest/                # raw source -> wiki pages
 |   |-- research/              # question -> answer
-|   `-- maintenance/           # audit, lint, eval, capture, promote, sourcing, synthesize, review, rotate, export
+|   `-- maintenance/           # setup, audit, lint, eval, capture, promote, sourcing, synthesize, review, rotate, export
 |-- scripts/                   # Deterministic gates, lint, evals, export, link helpers
 |-- .github/workflows/         # CI for deterministic wiki checks
 |
@@ -131,9 +133,9 @@ Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task inst
 
 ## Customization
 
-A fresh clone is ready to use. Edit [`wiki/domain.md`](wiki/domain.md) to name the context, describe its scope, and list the questions it should answer. All 24 governed entity folders stay available; unused folders may remain empty.
+A fresh clone is ready to use. Run `wiki-setup`, or edit [`wiki/domain.md`](wiki/domain.md) directly, to name the context, describe its scope, and list the questions it should answer. All 24 governed entity folders stay available; unused folders may remain empty.
 
-If the raw taxonomy does not fit, update [`scripts/raw-buckets.json`](scripts/raw-buckets.json) and the tracked bucket placeholders together. No executable setup or reconfiguration workflow is required.
+If the raw taxonomy does not fit, update [`scripts/raw-buckets.json`](scripts/raw-buckets.json) and the tracked bucket placeholders together. The domain setup shortcut does not change the raw taxonomy or any other repository structure.
 
 The full schema, [`wiki/SCHEMA.md`](wiki/SCHEMA.md), defines the available page types and page rules.
 

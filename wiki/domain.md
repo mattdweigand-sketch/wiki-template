@@ -16,7 +16,7 @@ example_queries:
 
 Single source of truth for who this wiki is about and what it should help answer.
 
-The clone is ready to use. Replace the placeholder values through ordinary edits, then continue through [`CONTEXT.md`](../CONTEXT.md). All governed entity folders remain available; unused folders may stay empty. [`scripts/raw-buckets.json`](../scripts/raw-buckets.json) governs raw source buckets.
+The clone is ready to use. Say `setup` or invoke `wiki-setup` to answer the initial questions. You can also replace the placeholder values through ordinary edits, then continue through [`CONTEXT.md`](../CONTEXT.md). All governed entity folders remain available; unused folders may stay empty. [`scripts/raw-buckets.json`](../scripts/raw-buckets.json) governs raw source buckets.
 
 | Field | Meaning |
 |---|---|

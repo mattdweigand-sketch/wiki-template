@@ -1,11 +1,11 @@
 ---
 name: wiki-maintenance
-description: Router for wiki hygiene, tooling evals, artifact promotion, first-person capture, corpus synthesis, and export. Open the one task file you need.
+description: Router for initial domain setup, wiki hygiene, tooling evals, artifact promotion, first-person capture, corpus synthesis, and export. Open the one task file you need.
 ---
 
 # Maintenance Workspace
 
-Wiki hygiene, tooling evals, artifact promotion, capture, corpus synthesis, and export. Load this router, then open only the one task file the work calls for. Do not pull every task file into context. `wiki-capture` is a shortcut for the capture task, not a separate workflow.
+Initial domain setup, wiki hygiene, tooling evals, artifact promotion, capture, corpus synthesis, and export. Load this router, then open only the one task file the work calls for. Do not pull every task file into context. `wiki-setup` and `wiki-capture` are shortcuts for tasks in this workspace, not separate workflows.
 
 Invoking `wiki-lint` through either agent wrapper authorizes the full lint workflow, including its verifier-agent evidence check, unless the user asks for deterministic-only lint, no subagents, or skipping the evidence check.
 
@@ -19,6 +19,7 @@ Synthesis promotion uses the same flow with `capture_boundary: synthesis-promoti
 
 | Task | Open | Also load | Skip |
 |---|---|---|---|
+| Configure a fresh clone's domain | [`setup.md`](setup.md) | `wiki/domain.md` only | entity pages, raw sources, unrelated workflows |
 | Audit root documents or workflow routing for drift | [`audit-docs.md`](audit-docs.md) | named documents and only the live paths needed to verify them | wiki entity pages, raw sources, unrelated workflows |
 | Lint the wiki | [`lint.md`](lint.md) | all wiki pages, `wiki/contradictions.md`, `wiki/sourcing-queue.md` | `raw/`, the other task files |
 | Rotate `wiki/log.md` when `log_rotation_due` fires | [`rotate-log.md`](rotate-log.md) | `wiki/log.md`, `scripts/rotate_log.py`, `log_rotation_due` lint output | wiki entity pages, raw sources, backlink rebuilds |

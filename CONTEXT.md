@@ -14,6 +14,7 @@ Analysis capture, artifact promotion, and synthesis promotion share one executab
 
 | Task family | Workspace entry |
 |---|---|
+| Configure the context name, scope, and example questions in a fresh clone | [`workflows/maintenance/CONTEXT.md`](workflows/maintenance/CONTEXT.md) |
 | Ingest a source (`raw/` -> wiki page) | [`workflows/ingest/CONTEXT.md`](workflows/ingest/CONTEXT.md) |
 | Answer a wiki question or compare entities. Default to `wiki-ask`; use `wiki-research` only when explicitly invoked | [`workflows/research/CONTEXT.md`](workflows/research/CONTEXT.md) |
 | Audit or lint the wiki, verify tooling, capture context, promote artifacts, refresh sourcing, synthesize, review outcomes, rotate the log, or export | [`workflows/maintenance/CONTEXT.md`](workflows/maintenance/CONTEXT.md) |

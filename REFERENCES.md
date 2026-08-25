@@ -37,6 +37,7 @@ Detailed workflow ownership:
 
 | Workflow | Route | Owns |
 |---|---|---|
+| Domain setup | `workflows/maintenance/setup.md` | Initial interview for the context name, one-sentence scope, and three to five example questions in `wiki/domain.md`. |
 | Ingest | `workflows/ingest/CONTEXT.md` | Raw source handling, `wiki/sources/` summaries, affected entity-page updates, index rows, backlinks, Tier-1 lint, touched-page Tier-2 review, and ingest log entries. |
 | Ask | `workflows/research/ask.md` | Default bounded wiki answers with selective page loading and optional analysis capture. |
 | Research | `workflows/research/research.md` | Explicitly invoked research with exact-page evidence sampling and claim-level independent review. |
@@ -109,7 +110,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/wiki_backup_receipt.py`, `scripts/backup_state.py` | Destination-redacted verified-upload receipt and nonblocking freshness reporter; the local receipt is gitignored |
 | `scripts/export_wiki.py`, `scripts/restore_wiki.py` | Exact-manifest archive creation, portable offline verification, and macOS/Linux absent-destination restore |
 | `scripts/capture-runs.jsonl`, `scripts/capture_ledger.py` | Exact application ledger and its strict parser; proposal apply installs the ledger postimage with approved targets through the shared transaction |
-| `scripts/wiki-wrapper-contract.json` | Strict machine authority for the nine generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
+| `scripts/wiki-wrapper-contract.json` | Strict machine authority for the ten generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
 | `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
 | `scripts/check_document_reachability.py` | Follows Markdown links from declared roots and rejects missing routes or unreachable operational documents |
 | `.wiki-transactions/` | Gitignored recovery authority for exact approved capture; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
