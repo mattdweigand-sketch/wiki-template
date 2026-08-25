@@ -40,9 +40,9 @@ Use `scripts/capture_gate.py` before exactly three actions.
 
 All other routes skip this gate unless they become one of those actions.
 
-For a gated action, stage every exact postimage and one canonical proposal under `tmp/`. The proposal must name `capture_boundary`, `purpose`, `primary_destination`, sorted `editable_scope`, and sorted targets. Each target names `destination`, `expected_preimage`, `staged_path`, and `postimage_sha256`. Preview it with `python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --json`. Show the complete preview and `authorization_digest`, then stop. Plain-language approval authorizes only that digest.
+For a gated action, stage every exact postimage and one canonical proposal under `tmp/`. The proposal must name `capture_boundary`, `purpose`, `primary_destination`, sorted `editable_scope`, and sorted targets. Each target names `destination`, `expected_preimage`, `expected_preimage_mode`, `staged_path`, `postimage_sha256`, and `postimage_mode`. Use `null` mode for an absent preimage. Preview it with `python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --json`. Show the complete preview and `authorization_digest`, then stop. Plain-language approval authorizes only that digest.
 
-After approval, apply with `--approve-digest <authorization_digest>`. The gate rechecks the proposal, staged bytes, and destination preimages, then installs the exact targets and ledger postimage through one recoverable transaction. Do not copy staged bytes by hand. `ALREADY_APPLIED` is an exact byte no-op.
+After approval, apply with `--approve-digest <authorization_digest>`. The gate rechecks the proposal, staged bytes and modes, and destination preimage bytes and modes, then installs the exact targets and ledger postimage through one recoverable transaction. Do not copy staged bytes by hand. `ALREADY_APPLIED` is an exact byte-and-mode no-op.
 
 ## Content rules
 

@@ -5,14 +5,21 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
-import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
+from _durable_files import (
+    DurableFileError,
+    atomic_replace_bytes,
+    read_regular_bytes,
+    require_safe_parent,
+    require_single_link_regular,
+    sha256_bytes,
+    stable_lock,
+)
 from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 
 DEFAULT_BACKUP_RECEIPT_PATH = Path("scripts/backup-receipt.json")
@@ -66,11 +73,11 @@ def _parse_timestamp(value: object) -> datetime:
 
 
 def load_backup_receipt(path: Path) -> VerifiedBackupReceipt:
-    if not path.is_file() or path.is_symlink():
-        raise BackupReceiptError("receipt is missing or is not a regular file")
     try:
+        content, _ = read_regular_bytes(path)
+        assert content is not None
         raw = json.loads(
-            path.read_text(encoding="utf-8"),
+            content.decode("utf-8"),
             object_pairs_hook=reject_duplicate_json_keys,
         )
     except DuplicateJsonKeyError as exc:
@@ -115,22 +122,21 @@ def load_backup_receipt(path: Path) -> VerifiedBackupReceipt:
 
 
 def _write_backup_receipt(path: Path, receipt: VerifiedBackupReceipt) -> None:
-    """Atomically replace the local, gitignored receipt."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """Durably replace the local receipt under one stable writer lock."""
     payload = (json.dumps(asdict(receipt), indent=2, sort_keys=True) + "\n").encode("utf-8")
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    temporary = Path(temporary_name)
     try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    except OSError as exc:
-        try:
-            temporary.unlink()
-        except OSError:
-            pass
+        require_safe_parent(path)
+        lock_path = path.with_name(f".{path.name}.lock")
+        with stable_lock(lock_path):
+            require_single_link_regular(path, allow_missing=True)
+            current, _ = read_regular_bytes(path, allow_missing=True)
+            atomic_replace_bytes(
+                path,
+                payload,
+                mode=0o600,
+                expected_sha256=sha256_bytes(current) if current is not None else None,
+            )
+    except (OSError, DurableFileError) as exc:
         raise BackupReceiptError(f"could not write receipt: {exc}") from exc
 
 
@@ -139,16 +145,31 @@ def record_verified_backup(
     destination: str,
     receipt_path: Path = DEFAULT_BACKUP_RECEIPT_PATH,
     verified_at: datetime | None = None,
+    *,
+    verified_content_sha256: str,
+    verified_byte_count: int,
 ) -> VerifiedBackupReceipt:
-    """Stamp a receipt only after the caller has verified the remote copy."""
+    """Stamp only the exact local bytes bound by completed remote verification."""
     moment = verified_at or datetime.now(timezone.utc)
     if moment.tzinfo is None:
         raise BackupReceiptError("verified_at must be timezone-aware")
+    if not SHA256_RE.fullmatch(verified_content_sha256):
+        raise BackupReceiptError("verified_content_sha256 must be lowercase SHA-256")
+    if (
+        not isinstance(verified_byte_count, int)
+        or isinstance(verified_byte_count, bool)
+        or verified_byte_count < 0
+    ):
+        raise BackupReceiptError("verified_byte_count must be a nonnegative integer")
+    current_size = archive.stat().st_size
+    current_sha256 = _stream_backup_file_sha256(archive)
+    if current_size != verified_byte_count or current_sha256 != verified_content_sha256:
+        raise BackupReceiptError("local archive changed after remote verification")
     receipt = VerifiedBackupReceipt(
         schema_version=1,
         verified_at=moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        content_sha256=_stream_backup_file_sha256(archive),
-        byte_count=archive.stat().st_size,
+        content_sha256=verified_content_sha256,
+        byte_count=verified_byte_count,
         destination_id=_redacted_destination_id(destination),
     )
     _write_backup_receipt(receipt_path, receipt)

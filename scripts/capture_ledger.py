@@ -145,8 +145,9 @@ def validate_capture_application(record: dict[str, object]) -> list[str]:
             errors.append(f"capture application missing fields: {missing}")
         if unknown:
             errors.append(f"capture application has unknown fields: {unknown}")
-    if not is_strict_int(record.get("schema_version")) or record.get("schema_version") != 2:
-        errors.append("capture application must have schema_version 2")
+    schema_version = record.get("schema_version")
+    if not is_strict_int(schema_version) or schema_version not in {2, 3}:
+        errors.append("capture application must have schema_version 2 or 3")
     if record.get("application_status") != "applied":
         errors.append("application_status must be applied")
     timestamp_error = validate_capture_timestamp(
@@ -193,9 +194,10 @@ def validate_capture_application(record: dict[str, object]) -> list[str]:
         errors.append("targets must be a non-empty list")
     else:
         for index, target in enumerate(targets):
-            if not isinstance(target, dict) or set(target) != {
-                "path", "preimage_sha256", "postimage_sha256",
-            }:
+            target_fields = {"path", "preimage_sha256", "postimage_sha256"}
+            if schema_version == 3:
+                target_fields |= {"preimage_mode", "postimage_mode"}
+            if not isinstance(target, dict) or set(target) != target_fields:
                 errors.append(f"targets[{index}] has invalid fields")
                 continue
             path = target.get("path")
@@ -219,6 +221,22 @@ def validate_capture_application(record: dict[str, object]) -> list[str]:
                 errors.append(
                     f"targets[{index}].postimage_sha256 must be lowercase SHA-256"
                 )
+            if schema_version == 3:
+                preimage_mode = target.get("preimage_mode")
+                postimage_mode = target.get("postimage_mode")
+                if preimage is None:
+                    if preimage_mode is not None:
+                        errors.append(f"targets[{index}].preimage_mode must be null")
+                elif (
+                    not is_strict_int(preimage_mode)
+                    or not 0 <= preimage_mode <= 0o7777
+                ):
+                    errors.append(f"targets[{index}].preimage_mode is invalid")
+                if (
+                    not is_strict_int(postimage_mode)
+                    or not 0 <= postimage_mode <= 0o7777
+                ):
+                    errors.append(f"targets[{index}].postimage_mode is invalid")
     if target_paths != sorted(set(target_paths)):
         errors.append("target paths must be sorted and unique")
     if target_paths != scope:

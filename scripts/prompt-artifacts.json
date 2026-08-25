@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "description": "Review clock and removal evidence for template agent-facing prompt artifacts.",
+  "review_triggers": [
+    "harness-change",
+    "model-change"
+  ],
+  "collections": [
+    {
+      "artifact_id": "generated-wrapper-contract",
+      "paths": [
+        ".agents/skills/wiki-ask/SKILL.md",
+        ".agents/skills/wiki-capture/SKILL.md",
+        ".agents/skills/wiki-eval/SKILL.md",
+        ".agents/skills/wiki-export/SKILL.md",
+        ".agents/skills/wiki-ingest/SKILL.md",
+        ".agents/skills/wiki-lint/SKILL.md",
+        ".agents/skills/wiki-promote/SKILL.md",
+        ".agents/skills/wiki-research/SKILL.md",
+        ".agents/skills/wiki-setup/SKILL.md",
+        ".agents/skills/wiki-synthesize/SKILL.md",
+        ".claude/commands/wiki-ask.md",
+        ".claude/commands/wiki-capture.md",
+        ".claude/commands/wiki-eval.md",
+        ".claude/commands/wiki-export.md",
+        ".claude/commands/wiki-ingest.md",
+        ".claude/commands/wiki-lint.md",
+        ".claude/commands/wiki-promote.md",
+        ".claude/commands/wiki-research.md",
+        ".claude/commands/wiki-setup.md",
+        ".claude/commands/wiki-synthesize.md",
+        "scripts/wiki-wrapper-contract.json"
+      ],
+      "owner": "workflows/maintenance/eval.md",
+      "reason": "The contract and generated Claude and Codex routes keep shortcuts thin and preserve template setup behavior.",
+      "last_reviewed": "2026-08-25",
+      "last_useful": "2026-08-25",
+      "review_interval_days": 90,
+      "removal_test": "Remove only if every supported agent can discover the same template workflows without generated shortcut surfaces."
+    },
+    {
+      "artifact_id": "maintainer-maps",
+      "paths": [
+        "README.md",
+        "REFERENCES.md"
+      ],
+      "owner": "workflows/maintenance/audit-docs.md",
+      "reason": "These files explain the reusable template and stable detail when a routed maintenance task needs it.",
+      "last_reviewed": "2026-08-25",
+      "last_useful": "2026-08-25",
+      "review_interval_days": 180,
+      "removal_test": "Remove a map only if no routed workflow loads it and no unique template operating claim would be lost."
+    },
+    {
+      "artifact_id": "startup-routing",
+      "paths": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "CONTEXT.md",
+        "wiki/domain.md"
+      ],
+      "owner": "workflows/maintenance/audit-docs.md",
+      "reason": "These files define permanent boundaries, configure clone scope, and route each task into the smallest relevant workflow.",
+      "last_reviewed": "2026-08-25",
+      "last_useful": "2026-08-25",
+      "review_interval_days": 90,
+      "removal_test": "Remove text when its stable boundary or setup role is owned elsewhere and it no longer changes a required route or safety stop."
+    },
+    {
+      "artifact_id": "workflow-contracts",
+      "paths": [
+        "workflows/ingest/CONTEXT.md",
+        "workflows/ingest/transcript-evidence.md",
+        "workflows/maintenance/CONTEXT.md",
+        "workflows/maintenance/artifact-promotion.md",
+        "workflows/maintenance/audit-docs.md",
+        "workflows/maintenance/capture.md",
+        "workflows/maintenance/connect.md",
+        "workflows/maintenance/eval.md",
+        "workflows/maintenance/evidence-review.md",
+        "workflows/maintenance/export.md",
+        "workflows/maintenance/lint.md",
+        "workflows/maintenance/refresh-sourcing-queue.md",
+        "workflows/maintenance/review.md",
+        "workflows/maintenance/rotate-log.md",
+        "workflows/maintenance/setup.md",
+        "workflows/maintenance/synthesize.md",
+        "workflows/research/CONTEXT.md",
+        "workflows/research/ask.md",
+        "workflows/research/research.md"
+      ],
+      "owner": "workflows/maintenance/audit-docs.md",
+      "reason": "These files carry task-specific judgment, setup, and loading rules that deterministic tools cannot choose.",
+      "last_reviewed": "2026-08-25",
+      "last_useful": "2026-08-25",
+      "review_interval_days": 90,
+      "removal_test": "Remove a workflow when no active route or task depends on it and no unique template authority boundary would be lost."
+    }
+  ]
+}

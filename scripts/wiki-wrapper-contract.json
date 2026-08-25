@@ -104,8 +104,8 @@
         "workflows/maintenance/setup.md"
       ],
       "script_hint": null,
-      "claude_description": "Ask the initial domain questions and configure wiki/domain.md",
-      "codex_description": "Run the initial wiki domain setup interview. Use when the user says $wiki-setup, wiki-setup, or setup in a fresh clone and wants to configure the context name, scope, and example questions. Do not use for Git, remote, tool, or infrastructure setup.",
+      "claude_description": "Configure wiki/domain.md and offer optional GitHub and private-backup connection help",
+      "codex_description": "Run the initial wiki setup interview. Use when the user says $wiki-setup, wiki-setup, or setup in a fresh clone and wants to configure the context name, scope, and example questions, with optional GitHub and private-backup connection help after domain setup.",
       "authorization": "none",
       "claude_arguments": true
     },

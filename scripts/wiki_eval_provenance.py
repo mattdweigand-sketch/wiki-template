@@ -276,6 +276,28 @@ with tempfile.TemporaryDirectory(prefix="wiki-provenance-unrelated-") as directo
     )
 
 
+with tempfile.TemporaryDirectory(prefix="wiki-provenance-shallow-source-") as source_directory:
+    source = Path(source_directory)
+    _initialize_repository(source)
+    _install_artifact(source)
+    trusted_base = _commit_all(source, "accepted fixture")
+    (source / "README.md").write_text("next revision\n", encoding="utf-8")
+    _commit_all(source, "next revision")
+    with tempfile.TemporaryDirectory(prefix="wiki-provenance-shallow-clone-") as clone_directory:
+        clone = Path(clone_directory) / "repository"
+        subprocess.run(
+            ["git", "clone", "--quiet", "--depth", "1", source.as_uri(), str(clone)],
+            check=True,
+        )
+        shallow_issues = validate_ci_provenance(clone, trusted_base)
+        _git(clone, "fetch", "--quiet", "--unshallow")
+        full_history_issues = validate_ci_provenance(clone, trusted_base)
+    _record(
+        "ci-trusted-base-requires-fetched-history",
+        bool(shallow_issues) and full_history_issues == (),
+    )
+
+
 failed = [name for name, passed in results if not passed]
 print(f"\nSummary: {len(results) - len(failed)} passed, {len(failed)} failed")
 raise SystemExit(1 if failed else 0)

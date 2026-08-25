@@ -94,7 +94,7 @@ def make_repo(root: Path, *, existing: bool = False) -> tuple[Path, bytes | None
     postimage = b"new exact bytes\n"
     (root / "tmp/exact.md").write_bytes(postimage)
     descriptor = {
-        "schema_version": 1,
+        "schema_version": 2,
         "capture_boundary": "artifact-promotion",
         "purpose": "Promote exact fixture",
         "primary_destination": "wiki/concepts/exact.md",
@@ -102,8 +102,10 @@ def make_repo(root: Path, *, existing: bool = False) -> tuple[Path, bytes | None
         "targets": [{
             "destination": "wiki/concepts/exact.md",
             "expected_preimage": "ABSENT" if preimage is None else sha256(preimage),
+            "expected_preimage_mode": None if preimage is None else 0o644,
             "staged_path": "tmp/exact.md",
             "postimage_sha256": sha256(postimage),
+            "postimage_mode": 0o644,
         }],
     }
     (root / "tmp/proposal.json").write_bytes(canonical_json(descriptor))
@@ -136,6 +138,8 @@ with tempfile.TemporaryDirectory() as temporary:
         preview["targets"][0]["content_utf8"] == "new exact bytes\n"
         and "bytes_base64" not in preview["targets"][0]
         and preview["editable_scope"] == ["wiki/concepts/exact.md"]
+        and preview["targets"][0]["expected_preimage_mode"] is None
+        and preview["targets"][0]["postimage_mode"] == 0o644
         and preview["authorization_digest"] == prepared["authorization_digest"],
     )
 
@@ -162,7 +166,22 @@ with tempfile.TemporaryDirectory() as temporary:
         staged_rejected = "hash mismatch" in str(exc)
     else:
         staged_rejected = False
-    results.record("changed-staged-bytes-invalidates-approval", staged_rejected)
+results.record("changed-staged-bytes-invalidates-approval", staged_rejected)
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = Path(temporary)
+    proposal, _ = make_repo(root)
+    with working_directory(root):
+        digest = prepare_capture_proposal(root, "tmp/proposal.json")["authorization_digest"]
+    (root / "tmp/exact.md").chmod(0o600)
+    try:
+        with working_directory(root):
+            apply_capture_proposal(root, "tmp/proposal.json", digest)
+    except CaptureProposalError as exc:
+        staged_mode_rejected = "mode mismatch" in str(exc)
+    else:
+        staged_mode_rejected = False
+    results.record("changed-staged-mode-invalidates-approval", staged_mode_rejected)
 
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary)
@@ -253,6 +272,21 @@ with tempfile.TemporaryDirectory() as temporary:
 
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary)
+    proposal, _ = make_repo(root, existing=True)
+    with working_directory(root):
+        digest = prepare_capture_proposal(root, "tmp/proposal.json")["authorization_digest"]
+    (root / "wiki/concepts/exact.md").chmod(0o600)
+    try:
+        with working_directory(root):
+            apply_capture_proposal(root, "tmp/proposal.json", digest)
+    except CaptureProposalError as exc:
+        preimage_mode_rejected = "preimage mode changed" in str(exc)
+    else:
+        preimage_mode_rejected = False
+    results.record("changed-destination-mode-is-preserved", preimage_mode_rejected)
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = Path(temporary)
     proposal, _ = make_repo(root)
     with working_directory(root):
         prepared = prepare_capture_proposal(root, "tmp/proposal.json")
@@ -270,6 +304,7 @@ with tempfile.TemporaryDirectory() as temporary:
         "valid-apply-writes-target-and-one-ledger-postimage",
         outcome["result_code"] == "APPLIED"
         and first_target == b"new exact bytes\n"
+        and (root / "wiki/concepts/exact.md").stat().st_mode & 0o7777 == 0o644
         and not ledger_errors and count == 1,
     )
     results.record(
@@ -280,6 +315,30 @@ with tempfile.TemporaryDirectory() as temporary:
     )
     records = [json.loads(line) for line in first_ledger.decode().splitlines()]
     application = next(record for record in records if record.get("record_type") == "capture_application")
+    results.record(
+        "application-ledger-binds-file-modes",
+        application["schema_version"] == 3
+        and application["targets"][0]["preimage_mode"] is None
+        and application["targets"][0]["postimage_mode"] == 0o644,
+        repr(application),
+    )
+    legacy_application = {
+        **application,
+        "schema_version": 2,
+        "targets": [
+            {
+                key: value
+                for key, value in target.items()
+                if key not in {"preimage_mode", "postimage_mode"}
+            }
+            for target in application["targets"]
+        ],
+    }
+    results.record(
+        "valid-legacy-ledger-record-remains-readable",
+        not validate_capture_application(legacy_application),
+        repr(validate_capture_application(legacy_application)),
+    )
     malformed_record = {**application, "capture_boundary": []}
     try:
         malformed_record_errors = validate_capture_application(malformed_record)

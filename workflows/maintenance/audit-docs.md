@@ -16,11 +16,12 @@ Use this workflow to review the root operating documents, workflow routers, or a
    prove its claimed commit or clean-worktree state unless separately verified.
 2. Inventory the requested documents and every `CONTEXT.md` in scope with `rg --files`; do not assume the router list is complete.
 3. Check each operational claim against its live authority: file tree and tracked paths for structure, workspace routers for task ownership, script constants or docstrings for executable behavior, and routed workflow Load / Skip lists for context boundaries.
-4. Classify findings as incorrect, stale, dead, duplicative-but-aligned, ambiguous, or verified-current. Report file-and-line evidence and distinguish current defects from future drift risks.
-5. For an audit-only request, stop after the report. Do not edit files, run write workflows, append to `wiki/log.md`, or create a deliverable.
-6. When the user explicitly asks to apply the findings, write a bounded implementation spec, edit only the approved surfaces, and record changed operating rules in `wiki/log.md`. Workflow and documentation updates do not use `capture_gate.py` unless they also cross one of the three approval boundaries in `AGENTS.md`.
-7. Verify proportionately. Run `python3 scripts/check_document_reachability.py`, `python3 scripts/check_wrapper_parity.py`, `python3 scripts/lint.py --tier1`, and `git diff --check`. Run the full eval suite when scripts, wrappers, or enforced contracts changed.
-8. Re-check `git status --short` when Git metadata is available and report any
+4. Run `python3 scripts/wiki_prompt_artifacts.py status`. Treat a model or harness change as an immediate review trigger even when the date clock is not due. Check that each active prompt surface has one owner, a reason to exist, recent review and useful dates, a review interval, and a removal test.
+5. Classify findings as incorrect, stale, dead, duplicative-but-aligned, ambiguous, or verified-current. Report file-and-line evidence and distinguish current defects from future drift risks.
+6. For an audit-only request, stop after the report. Do not edit files, run write workflows, append to `wiki/log.md`, or create a deliverable.
+7. When the user explicitly asks to apply the findings, write a bounded implementation spec, edit only the approved surfaces, and record changed operating rules in `wiki/log.md`. Workflow and documentation updates do not use `capture_gate.py` unless they also cross one of the three approval boundaries in `AGENTS.md`.
+8. Verify proportionately. Run `python3 scripts/wiki_prompt_artifacts.py check`, `python3 scripts/check_document_reachability.py`, `python3 scripts/check_wrapper_parity.py`, `python3 scripts/lint.py --tier1`, and `git diff --check`. Run the full eval suite when scripts, wrappers, or enforced contracts changed.
+9. Re-check `git status --short` when Git metadata is available and report any
    unrelated or concurrent changes separately. For an extracted tree, repeat
    the archive identity and do not claim that a Git worktree remained clean.
 

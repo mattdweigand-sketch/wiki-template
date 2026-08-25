@@ -1,6 +1,6 @@
 ---
 name: wiki-setup
-description: Run the initial wiki domain setup interview. Use when the user says $wiki-setup, wiki-setup, or setup in a fresh clone and wants to configure the context name, scope, and example questions. Do not use for Git, remote, tool, or infrastructure setup.
+description: Run the initial wiki setup interview. Use when the user says $wiki-setup, wiki-setup, or setup in a fresh clone and wants to configure the context name, scope, and example questions, with optional GitHub and private-backup connection help after domain setup.
 ---
 
 # Wiki Setup

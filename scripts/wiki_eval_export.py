@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import shutil
@@ -25,6 +26,20 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPORT = REPO_ROOT / "scripts" / "export_wiki.py"
 
 results = Results()
+
+
+def parser() -> argparse.ArgumentParser:
+    command = argparse.ArgumentParser(description="Run wiki export regression checks.")
+    command.add_argument(
+        "--profile",
+        choices=("private-corpus", "portable"),
+        default="private-corpus",
+        help="Run live private closure proof or skip only that block for a portable checkout.",
+    )
+    return command
+
+
+ARGS = parser().parse_args()
 
 
 def write(path: Path, text: str = "x") -> None:
@@ -603,6 +618,31 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
         repr(commands),
     )
 
+    if ARGS.profile == "portable":
+        results.record("portable-profile-excludes-private-corpus-closure", True)
+    else:
+        raw_registry = json.loads(
+            (REPO_ROOT / "scripts/raw-artifacts.json").read_text(encoding="utf-8")
+        )
+        artifacts = raw_registry.get("artifacts", [])
+        live_closure_exact = isinstance(artifacts, list)
+        for artifact in artifacts if isinstance(artifacts, list) else []:
+            files = artifact.get("files", []) if isinstance(artifact, dict) else []
+            for member in files if isinstance(files, list) else []:
+                if not isinstance(member, dict) or not isinstance(member.get("path"), str):
+                    live_closure_exact = False
+                    continue
+                restored_bytes = (destination / member["path"]).read_bytes()
+                live_closure_exact = live_closure_exact and (
+                    len(restored_bytes) == member.get("size")
+                    and hashlib.sha256(restored_bytes).hexdigest() == member.get("sha256")
+                )
+        results.record(
+            "full-profile-checks-live-raw-manifest-closure",
+            live_closure_exact,
+            f"registered_artifacts={len(artifacts) if isinstance(artifacts, list) else 'invalid'}",
+        )
+
     legacy_archive = root / "legacy-v1.zip"
     rewrite_archive(archive, legacy_archive, "legacy-v1")
     legacy_manifest, legacy_errors = export_wiki.verify_backup_archive(legacy_archive)
@@ -658,6 +698,50 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
     else:
         race_preserved = False
     results.record("restore-never-overwrites-concurrent-destination", race_preserved)
+
+    durable_destination = root / "durable-restore"
+    durability_events: list[str] = []
+    with (
+        patch.object(
+            restore_wiki,
+            "_fsync_restored_regular_file",
+            wraps=restore_wiki._fsync_restored_regular_file,
+        ) as file_fsync,
+        patch.object(
+            restore_wiki,
+            "fsync_directory",
+            wraps=restore_wiki.fsync_directory,
+        ) as directory_fsync,
+    ):
+        restore_wiki.restore_backup_archive(
+            archive,
+            durable_destination,
+            fault=durability_events.append,
+        )
+    directory_fsync_paths = [Path(call.args[0]) for call in directory_fsync.call_args_list]
+    staged_root_fsyncs = [
+        path for path in directory_fsync_paths
+        if path.parent == root and path.name.startswith(".durable-restore.restore-")
+    ]
+    expected_staged_directory_fsyncs: set[Path] = set()
+    if len(staged_root_fsyncs) == 1:
+        staged_root = staged_root_fsyncs[0]
+        expected_staged_directory_fsyncs = {
+            staged_root
+            if directory["path"] == "."
+            else staged_root.joinpath(*directory["path"].split("/"))
+            for directory in manifest["directories"]
+        }
+    results.record(
+        "restore-fsyncs-files-directories-staged-root-and-parent-before-success",
+        durability_events == ["before_install", "after_install", "after_parent_fsync"]
+        and file_fsync.call_count == len(manifest["members"])
+        and len(staged_root_fsyncs) == 1
+        and expected_staged_directory_fsyncs <= set(directory_fsync_paths)
+        and root in directory_fsync_paths
+        and durable_destination.is_dir(),
+        repr((durability_events, file_fsync.call_count, directory_fsync_paths)),
+    )
 
     configured_source = root / "configured-source"
     shutil.copytree(destination, configured_source)

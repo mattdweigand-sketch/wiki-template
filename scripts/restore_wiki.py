@@ -15,7 +15,9 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Callable
 
+from _durable_files import fsync_directory
 from check_document_reachability import document_reachability_problems
 from export_wiki import verify_backup_archive
 from wiki_schema_vocabularies import SchemaVocabularyError, load_wiki_schema_vocabularies
@@ -149,7 +151,23 @@ def verify_restored_wiki_tree(root: Path, manifest: dict[str, object]) -> list[s
     return errors
 
 
-def restore_backup_archive(archive: Path, destination: Path) -> None:
+def _fsync_restored_regular_file(path: Path) -> None:
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def restore_backup_archive(
+    archive: Path,
+    destination: Path,
+    *,
+    fault: Callable[[str], None] | None = None,
+) -> None:
     """Verify, stage, reverify, and atomically install one absent restore tree."""
     archive = archive.resolve(strict=True)
     destination = destination.absolute()
@@ -183,6 +201,8 @@ def restore_backup_archive(archive: Path, destination: Path) -> None:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(relative, "r") as source, target.open("xb") as output:
                     shutil.copyfileobj(source, output, length=1024 * 1024)
+                    output.flush()
+                    os.fsync(output.fileno())
                 if manifest.get("schema_version") in {2, 3}:
                     permission_mode = member.get("mode")
                     assert isinstance(permission_mode, int)
@@ -192,6 +212,7 @@ def restore_backup_archive(archive: Path, destination: Path) -> None:
                         stat.S_IMODE(archived_mode) if archived_mode else 0o600
                     )
                 os.chmod(target, permission_mode)
+                _fsync_restored_regular_file(target)
             if manifest.get("schema_version") == 3:
                 for directory in sorted(
                     manifest["directories"],
@@ -202,10 +223,27 @@ def restore_backup_archive(archive: Path, destination: Path) -> None:
                         staged.joinpath(*directory["path"].split("/")),
                         directory["mode"],
                     )
+            staged_directories = [
+                path for path in staged.rglob("*")
+                if path.is_dir() and not path.is_symlink()
+            ]
+            for directory in sorted(
+                [*staged_directories, staged],
+                key=lambda path: len(path.relative_to(staged).parts),
+                reverse=True,
+            ):
+                fsync_directory(directory)
         restored_errors = verify_restored_wiki_tree(staged, manifest)
         if restored_errors:
             raise RestoreError("; ".join(restored_errors))
+        if fault is not None:
+            fault("before_install")
         _install_directory_exclusive(staged, destination)
+        if fault is not None:
+            fault("after_install")
+        fsync_directory(parent)
+        if fault is not None:
+            fault("after_parent_fsync")
     except Exception:
         if staged.exists():
             shutil.rmtree(staged)

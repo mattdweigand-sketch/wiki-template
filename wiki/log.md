@@ -2,12 +2,20 @@
 title: Activity Log
 type: log
 created: 2026-05-17
-updated: 2026-08-24
+updated: 2026-08-25
 ---
 
 # Activity Log
 
 Append-only history of work in this configured wiki. Newest entries go on top.
+
+## [2026-08-25] added optional clone connection setup
+
+Domain setup now offers separate, nonblocking handoffs for connecting a GitHub repository and an explicitly approved private rclone backup destination. Connection details and credentials stay out of tracked wiki context.
+
+## [2026-08-25] hardened approval, recovery, and eval governance
+
+Exact approval now binds file modes with bytes. Backup receipts and restores use durable filesystem checks. Full and portable eval profiles are explicit, and a strict registry owns prompt review and removal rules.
 
 ## [2026-08-24] closed audit verification gaps
 

@@ -38,6 +38,7 @@ Detailed workflow ownership:
 | Workflow | Route | Owns |
 |---|---|---|
 | Domain setup | `workflows/maintenance/setup.md` | Initial interview for the context name, one-sentence scope, and three to five example questions in `wiki/domain.md`. |
+| Clone connection | `workflows/maintenance/connect.md` | Optional, separately approved GitHub remote and private rclone backup connection without storing connection details in tracked context. |
 | Ingest | `workflows/ingest/CONTEXT.md` | Raw source handling, `wiki/sources/` summaries, affected entity-page updates, index rows, backlinks, Tier-1 lint, touched-page Tier-2 review, and ingest log entries. |
 | Ask | `workflows/research/ask.md` | Default bounded wiki answers with selective page loading and optional analysis capture. |
 | Research | `workflows/research/research.md` | Explicitly invoked research with exact-page evidence sampling and claim-level independent review. |
@@ -57,14 +58,15 @@ The main control mechanisms are:
 | Mechanism | Purpose |
 |---|---|
 | Route-first loading | Start with `AGENTS.md`, check `wiki/domain.md`, route through `CONTEXT.md`, then open only the selected workflow and its Load / Skip list. |
+| Optional connection | `workflows/maintenance/connect.md` inspects local Git state, requires exact approval before remote or upload changes, and verifies Git SHAs or backup receipts before reporting success. |
 | Schema and citations | `wiki/SCHEMA.md` defines page types, frontmatter, source types, confidence values, authority metadata, and citation rules. Specific facts cite `wiki/sources/` pages. |
 | Link graph | Authors maintain `## Related pages`; `scripts/rebuild_referenced_by.py` regenerates `## Referenced by` from one snapshot and applies the generation as a recoverable transaction. |
 | Deterministic lint | `scripts/lint.py --tier1` catches structural failures. Full lint also surfaces Tier-2 candidates for human or agent judgment. |
 | Durable writes | Exact approved capture uses recoverable transactions under `.wiki-transactions/`; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
-| Live evals | `wiki-eval` runs the `SUITES` registry in `scripts/wiki_eval.py`, including parsing, durable files, capture transactions, lint and evidence checks, backlinks, backup and restore, log rotation, schema data, document reachability, and Tier-1 lint. |
+| Live evals | `wiki-eval` defaults to the full local `SUITES` profile, including live Tier 1 and real local backup and restore. The explicit portable profile is for clean checkouts without private raw bytes and does not claim private restore proof. |
 | Outcome review | `scripts/review_due.py` surfaces due `review_by` checkpoints; `workflows/maintenance/review.md` records what happened and whether confidence changes. |
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
-| Approval gate | `scripts/capture_gate.py` previews exact `analysis-capture`, `artifact-promotion`, and `synthesis-promotion` proposals, binds approval to their digest, and applies approved targets with the combined ledger postimage through one recoverable transaction. |
+| Approval gate | `scripts/capture_gate.py` previews exact `analysis-capture`, `artifact-promotion`, and `synthesis-promotion` proposals, binds approval to target bytes and file modes through their digest, and applies approved targets with the combined ledger postimage through one recoverable transaction. |
 | Synthesis ledger | `wiki/synthesis.md` orients future synthesis runs; cite source pages, not the ledger, when making claims. |
 | Export | `scripts/export_wiki.py` builds and verifies exact-manifest recovery snapshots while excluding generated dated wiki export archives outside `raw/`. `scripts/restore_wiki.py` restores a verified archive only to an absent destination. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` owns the shortcut manifest; `scripts/render_wiki_wrappers.py` deterministically renders `.claude/commands/` and `.agents/skills/`, which never own canonical behavior. |

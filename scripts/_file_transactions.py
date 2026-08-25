@@ -693,11 +693,17 @@ def _prepare_targets(
     outputs: dict[str, bytes | None],
     allowed_prefixes: Iterable[str],
     expected_preimages: dict[str, bytes | None] | None,
+    expected_preimage_modes: dict[str, int | None] | None,
+    output_modes: dict[str, int] | None,
 ) -> list[dict[str, object]]:
     if not outputs:
         return []
     if expected_preimages is not None and set(expected_preimages) != set(outputs):
         raise TransactionError("expected_preimages keys must exactly match outputs")
+    if expected_preimage_modes is not None and set(expected_preimage_modes) != set(outputs):
+        raise TransactionError("expected_preimage_modes keys must exactly match outputs")
+    if output_modes is not None and set(output_modes) != set(outputs):
+        raise TransactionError("output_modes keys must exactly match outputs")
     targets: list[dict[str, object]] = []
     repo_device = repo_root.stat().st_dev
     for index, relative in enumerate(sorted(outputs)):
@@ -713,22 +719,33 @@ def _prepare_targets(
             raise TransactionError(str(exc)) from exc
         if expected_preimages is not None and preimage != expected_preimages[relative]:
             raise TransactionConflict(f"target changed after consumer snapshot: {relative}")
+        pre_mode = stat.S_IMODE(info.st_mode) if info is not None else None
+        if expected_preimage_modes is not None and pre_mode != expected_preimage_modes[relative]:
+            raise TransactionConflict(f"target mode changed after consumer snapshot: {relative}")
         if preimage is None and output is None:
             continue
         pre_state = "regular" if preimage is not None else "absent"
+        output_mode = (
+            output_modes[relative] if output_modes is not None
+            else pre_mode if output is not None and pre_mode is not None
+            else 0o644 if output is not None else None
+        )
+        if output_mode is not None and (
+            not isinstance(output_mode, int)
+            or isinstance(output_mode, bool)
+            or not 0 <= output_mode <= 0o7777
+        ):
+            raise TransactionError(f"output mode for {relative} is invalid")
         targets.append(
             {
                 "path": relative,
                 "pre_state": pre_state,
                 "pre_sha256": sha256_bytes(preimage) if preimage is not None else None,
-                "pre_mode": stat.S_IMODE(info.st_mode) if info is not None else None,
+                "pre_mode": pre_mode,
                 "pre_blob": f"blobs/pre-{index:04d}.bin" if preimage is not None else None,
                 "output_state": "regular" if output is not None else "absent",
                 "output_sha256": sha256_bytes(output) if output is not None else None,
-                "output_mode": (
-                    stat.S_IMODE(info.st_mode) if output is not None and info is not None
-                    else 0o644 if output is not None else None
-                ),
+                "output_mode": output_mode,
                 "output_blob": f"blobs/output-{index:04d}.bin" if output is not None else None,
                 "installed": False,
                 "_preimage": preimage,
@@ -780,6 +797,8 @@ def run_transaction(
     outputs: dict[str, bytes | None],
     allowed_prefixes: Iterable[str],
     expected_preimages: dict[str, bytes | None] | None = None,
+    expected_preimage_modes: dict[str, int | None] | None = None,
+    output_modes: dict[str, int] | None = None,
     guard_preimages: dict[str, bytes] | None = None,
     fault: FaultHook | None = None,
 ) -> list[str]:
@@ -797,7 +816,14 @@ def run_transaction(
             TRANSACTION_EXECUTION_CONTRACT.canonical_relative(prefix) for prefix in prefixes
         ):
             raise TransactionError("allowed_prefixes must be canonical repository-relative paths")
-        targets_with_bytes = _prepare_targets(repo_root, outputs, prefixes, expected_preimages)
+        targets_with_bytes = _prepare_targets(
+            repo_root,
+            outputs,
+            prefixes,
+            expected_preimages,
+            expected_preimage_modes,
+            output_modes,
+        )
         if not targets_with_bytes:
             return recovery_messages
         guards = _prepare_guards(

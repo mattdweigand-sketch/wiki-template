@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import zipfile
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -54,6 +55,12 @@ BACKUP_MEMBER_FIELDS_V1 = {"path", "size", "sha256"}
 BACKUP_MEMBER_FIELDS_V2 = {"path", "size", "sha256", "mode"}
 BACKUP_DIRECTORY_FIELDS_V3 = {"path", "mode"}
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+
+
+@dataclass(frozen=True)
+class VerifiedUpload:
+    byte_count: int
+    content_sha256: str
 
 
 def parser() -> argparse.ArgumentParser:
@@ -497,12 +504,14 @@ def parse_rclone_md5(stdout: str) -> tuple[str | None, list[str]]:
     return value, []
 
 
-def _stream_file_md5(path: Path) -> str:
-    digest = hashlib.md5()
+def _stream_file_hashes(path: Path) -> tuple[str, str]:
+    md5 = hashlib.md5()
+    sha256 = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+            md5.update(chunk)
+            sha256.update(chunk)
+    return md5.hexdigest(), sha256.hexdigest()
 
 
 def upload_rclone(
@@ -510,46 +519,54 @@ def upload_rclone(
     target: str,
     rclone_bin: str = "rclone",
     init_drive_remote: str | None = None,
-) -> tuple[bool, list[str]]:
+) -> tuple[VerifiedUpload | None, list[str]]:
     if not output.exists():
-        return False, [f"{output} was not created"]
+        return None, [f"{output} was not created"]
     remote = rclone_remote_name(target)
     if remote is None:
-        return False, ["--upload-target must be an rclone path like remote:path/file.zip"]
+        return None, ["--upload-target must be an rclone path like remote:path/file.zip"]
     if init_drive_remote and init_drive_remote != remote:
-        return False, [
+        return None, [
             f"--init-rclone-drive {init_drive_remote!r} does not match "
             f"--upload-target remote {remote!r}"
         ]
     if init_drive_remote:
         ok, errors = ensure_google_drive_remote(init_drive_remote, rclone_bin)
         if not ok:
-            return False, errors
+            return None, errors
 
     expected_size = output.stat().st_size
-    expected_md5 = _stream_file_md5(output)
+    expected_md5, expected_sha256 = _stream_file_hashes(output)
     ok, _, errors = run_rclone(rclone_bin, ["copyto", str(output), target])
     if not ok:
-        return False, errors
+        return None, errors
     ok, stdout, errors = run_rclone(rclone_bin, ["lsl", target])
     if not ok:
-        return False, errors
+        return None, errors
     remote_size, parse_errors = parse_rclone_lsl_size(stdout)
     if parse_errors:
-        return False, parse_errors
+        return None, parse_errors
     if remote_size != expected_size:
-        return False, [
+        return None, [
             f"remote size {remote_size} did not match local size {expected_size}"
         ]
     ok, stdout, errors = run_rclone(rclone_bin, ["md5sum", target])
     if not ok:
-        return False, errors
+        return None, errors
     remote_md5, parse_errors = parse_rclone_md5(stdout)
     if parse_errors:
-        return False, parse_errors
+        return None, parse_errors
     if remote_md5 != expected_md5:
-        return False, [f"remote md5 {remote_md5} did not match local md5 {expected_md5}"]
-    return True, []
+        return None, [f"remote md5 {remote_md5} did not match local md5 {expected_md5}"]
+    final_size = output.stat().st_size
+    final_md5, final_sha256 = _stream_file_hashes(output)
+    if (
+        final_size != expected_size
+        or final_md5 != expected_md5
+        or final_sha256 != expected_sha256
+    ):
+        return None, ["local archive changed during remote verification"]
+    return VerifiedUpload(expected_size, expected_sha256), []
 
 
 def main() -> int:
@@ -628,13 +645,13 @@ def main() -> int:
     print(f"Files included: {len(files)}")
     print(f"Size bytes: {output.stat().st_size}")
     if args.upload_target:
-        ok, errors = upload_rclone(
+        proof, errors = upload_rclone(
             output,
             args.upload_target,
             args.rclone_bin,
             args.init_rclone_drive,
         )
-        if not ok:
+        if proof is None:
             print("Private off-device backup copy failed:")
             for error in errors:
                 print(f"- {error}")
@@ -642,7 +659,13 @@ def main() -> int:
             return 1
         print(f"Private off-device backup verified: {args.upload_target}")
         try:
-            receipt = record_verified_backup(output, args.upload_target, receipt_path)
+            receipt = record_verified_backup(
+                output,
+                args.upload_target,
+                receipt_path,
+                verified_content_sha256=proof.content_sha256,
+                verified_byte_count=proof.byte_count,
+            )
         except (BackupReceiptError, OSError) as exc:
             print(f"Verified backup receipt failed: {exc}", file=sys.stderr)
             return 1

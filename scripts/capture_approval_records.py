@@ -30,7 +30,7 @@ def capture_application_record(
     """Build one combined record for an exact approved application."""
     return {
         "record_type": "capture_application",
-        "schema_version": 2,
+        "schema_version": 3,
         "application_status": "applied",
         "applied_at": (
             datetime.now(timezone.utc)

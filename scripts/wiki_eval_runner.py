@@ -85,6 +85,32 @@ def main() -> int:
         result_failure.stdout.strip(),
     )
 
+    complete_profiles = wiki_eval.suite_profile_errors(
+        wiki_eval.SUITES,
+        wiki_eval.SUITE_PROFILES,
+        wiki_eval.PORTABLE_COMMAND_OVERRIDES,
+    )
+    check("all-suites-declare-profiles", not complete_profiles, repr(complete_profiles))
+    missing_profile = dict(wiki_eval.SUITE_PROFILES)
+    missing_profile.pop(next(iter(missing_profile)))
+    check(
+        "new-suite-without-profile-fails",
+        bool(
+            wiki_eval.suite_profile_errors(
+                wiki_eval.SUITES,
+                missing_profile,
+                wiki_eval.PORTABLE_COMMAND_OVERRIDES,
+            )
+        ),
+    )
+    portable = wiki_eval.suite_commands_for_profile(wiki_eval.PORTABLE_PROFILE)
+    check("portable-excludes-live-tier1", "tier1" not in portable)
+    check(
+        "portable-export-uses-explicit-override",
+        portable["export"] == wiki_eval.PORTABLE_COMMAND_OVERRIDES["export"],
+        repr(portable["export"]),
+    )
+
     runtime_result = subprocess.run(
         [sys.executable, "scripts/wiki_eval.py", "--suite", "capture-runs"],
         cwd=Path(__file__).resolve().parents[1],

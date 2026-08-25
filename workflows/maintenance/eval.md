@@ -2,7 +2,15 @@
 
 Run this workflow when the task is to verify the wiki system itself. It covers scripts, durable writes, capture transactions, exact application, backlinks, backup and restore, evidence runs, wrapper parity, schema data, document routing, and Tier-1 lint. The `SUITES` registry in `scripts/wiki_eval.py` is the full list.
 
-The tooling supports Python 3.9 and newer. The eval runner prints the exact runtime version in its first line, and CI runs the full checks on Python 3.9 and 3.11 so the user-facing `python3` commands retain that compatibility contract.
+The tooling supports Python 3.9 and newer. The eval runner prints the exact runtime version in its first line. The full local profile is the default and source of truth. It includes live Tier 1 and the real local export and restore block, including any private raw bytes present in that clone.
+
+The explicit portable profile is for clean checkouts without private raw bytes:
+
+```bash
+python3 scripts/wiki_eval.py --profile portable
+```
+
+Every suite declares its allowed profiles. Portable uses an explicit export-suite override and skips only the real local private-corpus closure block. It still runs portable archive and restore safety checks, but it does not prove private raw closure or a restore of private bytes. Optional GitHub CI runs this governed portable profile on Python 3.9 and 3.11. GitHub is not required to use or verify the repository.
 
 This is different from `wiki-lint`: lint checks wiki content; eval checks the tools that check and protect the wiki.
 
@@ -58,9 +66,10 @@ Do not copy these repo-local skills into `~/.agents/skills/`. Identical personal
    python3 scripts/wiki_eval.py
    ```
 
-2. If it fails, inspect only the failing suite and make the narrowest fix.
-3. Re-run `python3 scripts/wiki_eval.py` until it passes or a blocker is clear.
-4. Run `git diff --check` before finishing when files changed.
+2. For a clean-checkout portability check, also run `python3 scripts/wiki_eval.py --profile portable`.
+3. If it fails, inspect only the failing suite and make the narrowest fix.
+4. Re-run the affected profile until it passes or a blocker is clear.
+5. Run `git diff --check` before finishing when files changed.
 
 ## Failure -> Eval Escalation
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import multiprocessing
+import os
 import subprocess
 import sys
 import tempfile
@@ -15,6 +17,7 @@ from pathlib import Path
 import export_wiki
 from eval_lib import Results
 from wiki_backup_receipt import (
+    BackupReceiptError,
     VerifiedBackupReceipt,
     backup_freshness,
     load_backup_receipt,
@@ -109,7 +112,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-backup-state-") as td:
     state = backup_freshness(path, now=NOW)
     results.record(
         "dangling-receipt-symlink-is-invalid-advisory",
-        state.kind == "invalid" and "not a regular file" in state.message,
+        state.kind == "invalid" and "symlink" in state.message,
         repr(state),
     )
     path.unlink()
@@ -132,16 +135,150 @@ with tempfile.TemporaryDirectory(prefix="wiki-backup-record-") as td:
     archive.write_bytes(b"archive")
     path = root / "receipt.json"
     target = "fixture-remote:private/path/archive.zip"
-    recorded = record_verified_backup(archive, target, path, NOW)
+    verified_sha256 = hashlib.sha256(b"archive").hexdigest()
+    recorded = record_verified_backup(
+        archive,
+        target,
+        path,
+        NOW,
+        verified_content_sha256=verified_sha256,
+        verified_byte_count=7,
+    )
     loaded = load_backup_receipt(path)
     results.record(
         "recorded-receipt-hashes-content-and-redacts-destination",
         loaded == recorded
         and loaded.content_sha256 == hashlib.sha256(b"archive").hexdigest()
         and loaded.byte_count == 7
+        and (path.stat().st_mode & 0o7777) == 0o600
         and target not in json.dumps(loaded.__dict__)
         and "fixture-remote" not in loaded.destination_id,
         repr(loaded),
+    )
+
+with tempfile.TemporaryDirectory(prefix="wiki-backup-unsafe-receipt-") as td:
+    root = Path(td)
+    archive = root / "archive.zip"
+    archive.write_bytes(b"archive")
+    verified_sha256 = hashlib.sha256(b"archive").hexdigest()
+    real_parent = root / "real"
+    real_parent.mkdir()
+    linked_parent = root / "linked"
+    linked_parent.symlink_to(real_parent, target_is_directory=True)
+    try:
+        record_verified_backup(
+            archive,
+            "fixture:private/archive.zip",
+            linked_parent / "receipt.json",
+            NOW,
+            verified_content_sha256=verified_sha256,
+            verified_byte_count=7,
+        )
+    except BackupReceiptError as exc:
+        symlink_parent_rejected = "parent is a symlink" in str(exc)
+    else:
+        symlink_parent_rejected = False
+    results.record("receipt-rejects-symlinked-parent", symlink_parent_rejected)
+
+    receipt_path = real_parent / "receipt.json"
+    receipt_path.write_text("old\n", encoding="utf-8")
+    os.link(receipt_path, real_parent / "receipt-hardlink.json")
+    try:
+        record_verified_backup(
+            archive,
+            "fixture:private/archive.zip",
+            receipt_path,
+            NOW,
+            verified_content_sha256=verified_sha256,
+            verified_byte_count=7,
+        )
+    except BackupReceiptError as exc:
+        hardlink_rejected = "link count" in str(exc)
+    else:
+        hardlink_rejected = False
+    results.record("receipt-rejects-multiple-hardlinks", hardlink_rejected)
+
+
+def concurrent_receipt_writer(
+    archive_text: str,
+    receipt_text: str,
+    destination: str,
+    verified_sha256: str,
+    queue: object,
+) -> None:
+    try:
+        record_verified_backup(
+            Path(archive_text),
+            destination,
+            Path(receipt_text),
+            NOW,
+            verified_content_sha256=verified_sha256,
+            verified_byte_count=7,
+        )
+    except Exception as exc:
+        queue.put(type(exc).__name__ + ":" + str(exc))
+    else:
+        queue.put("ok")
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-backup-concurrent-receipt-") as td:
+    root = Path(td)
+    archive = root / "archive.zip"
+    archive.write_bytes(b"archive")
+    receipt_path = root / "receipt.json"
+    verified_sha256 = hashlib.sha256(b"archive").hexdigest()
+    context = multiprocessing.get_context("fork")
+    queue = context.Queue()
+    processes = [
+        context.Process(
+            target=concurrent_receipt_writer,
+            args=(
+                str(archive),
+                str(receipt_path),
+                f"fixture:private/archive-{index}.zip",
+                verified_sha256,
+                queue,
+            ),
+        )
+        for index in range(2)
+    ]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(20)
+    outcomes = [queue.get(timeout=2), queue.get(timeout=2)]
+    loaded = load_backup_receipt(receipt_path)
+    results.record(
+        "concurrent-receipt-writers-produce-one-complete-record",
+        outcomes.count("ok") == 2
+        and loaded.content_sha256 == verified_sha256
+        and loaded.byte_count == 7,
+        repr(outcomes),
+    )
+
+with tempfile.TemporaryDirectory(prefix="wiki-backup-receipt-race-") as td:
+    root = Path(td)
+    archive = root / "archive.zip"
+    archive.write_bytes(b"verified")
+    verified_sha256 = hashlib.sha256(b"verified").hexdigest()
+    archive.write_bytes(b"changed!")
+    receipt_path = root / "receipt.json"
+    try:
+        record_verified_backup(
+            archive,
+            "fixture:private/archive.zip",
+            receipt_path,
+            NOW,
+            verified_content_sha256=verified_sha256,
+            verified_byte_count=8,
+        )
+    except BackupReceiptError as exc:
+        rejected = "changed after remote verification" in str(exc)
+    else:
+        rejected = False
+    results.record(
+        "receipt-rejects-local-drift-after-remote-verification",
+        rejected and not receipt_path.exists(),
     )
 
 with tempfile.TemporaryDirectory(prefix="wiki-backup-local-only-") as td:

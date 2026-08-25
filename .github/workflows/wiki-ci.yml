@@ -39,7 +39,4 @@ jobs:
           python3 scripts/wiki_provenance.py ci --trusted-base "$TRUSTED_BASE"
 
       - name: Run wiki eval suite
-        run: python3 scripts/wiki_eval.py
-
-      - name: Run Tier-1 lint
-        run: python3 scripts/lint.py --tier1 --git-view
+        run: python3 scripts/wiki_eval.py --profile portable

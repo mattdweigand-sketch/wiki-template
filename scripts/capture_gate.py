@@ -7,6 +7,7 @@ import argparse
 import base64
 import json
 import re
+import stat
 import sys
 from pathlib import Path
 from typing import Callable
@@ -34,7 +35,8 @@ PROPOSAL_FIELDS = {
     "editable_scope", "targets",
 }
 PROPOSAL_TARGET_FIELDS = {
-    "destination", "expected_preimage", "staged_path", "postimage_sha256",
+    "destination", "expected_preimage", "expected_preimage_mode",
+    "staged_path", "postimage_sha256", "postimage_mode",
 }
 CAPTURE_LEDGER_PATH = "scripts/capture-runs.jsonl"
 
@@ -93,8 +95,8 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
         raise CaptureProposalError("proposal descriptor has missing or unknown fields")
     if descriptor_bytes != _canonical_json_bytes(descriptor):
         raise CaptureProposalError("proposal descriptor must be canonical JSON with one trailing LF")
-    if descriptor.get("schema_version") != 1 or isinstance(descriptor.get("schema_version"), bool):
-        raise CaptureProposalError("schema_version must be integer 1")
+    if descriptor.get("schema_version") != 2 or isinstance(descriptor.get("schema_version"), bool):
+        raise CaptureProposalError("schema_version must be integer 2")
     capture_boundary = descriptor.get("capture_boundary")
     if (
         not isinstance(capture_boundary, str)
@@ -148,8 +150,8 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
         if not isinstance(staged_path, str):
             raise CaptureProposalError(f"targets[{index}].staged_path must be a string")
         staged_relative = _capture_proposal_path(root, staged_path, existing=True)
-        staged_bytes, _ = read_regular_bytes(root / staged_relative)
-        assert staged_bytes is not None
+        staged_bytes, staged_info = read_regular_bytes(root / staged_relative)
+        assert staged_bytes is not None and staged_info is not None
         postimage_sha = target.get("postimage_sha256")
         if not isinstance(postimage_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", postimage_sha):
             raise CaptureProposalError(f"targets[{index}].postimage_sha256 must be lowercase SHA-256")
@@ -160,11 +162,38 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
             not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected)
         ):
             raise CaptureProposalError(f"targets[{index}].expected_preimage must be ABSENT or lowercase SHA-256")
+        expected_mode = target.get("expected_preimage_mode")
+        if expected == "ABSENT":
+            if expected_mode is not None:
+                raise CaptureProposalError(
+                    f"targets[{index}].expected_preimage_mode must be null for ABSENT"
+                )
+        elif (
+            not isinstance(expected_mode, int)
+            or isinstance(expected_mode, bool)
+            or not 0 <= expected_mode <= 0o7777
+        ):
+            raise CaptureProposalError(
+                f"targets[{index}].expected_preimage_mode must be an integer file mode"
+            )
+        postimage_mode = target.get("postimage_mode")
+        if (
+            not isinstance(postimage_mode, int)
+            or isinstance(postimage_mode, bool)
+            or not 0 <= postimage_mode <= 0o7777
+        ):
+            raise CaptureProposalError(
+                f"targets[{index}].postimage_mode must be an integer file mode"
+            )
+        if stat.S_IMODE(staged_info.st_mode) != postimage_mode:
+            raise CaptureProposalError(f"staged postimage mode mismatch: {staged_relative}")
         prepared_targets.append({
             "destination": destination,
             "expected_preimage": expected,
+            "expected_preimage_mode": expected_mode,
             "staged_path": staged_relative,
             "postimage_sha256": postimage_sha,
+            "postimage_mode": postimage_mode,
             "postimage": staged_bytes,
         })
     destinations = [str(target["destination"]) for target in prepared_targets]
@@ -177,6 +206,7 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
             {
                 "destination": target["destination"],
                 "bytes_base64": base64.b64encode(target["postimage"]).decode("ascii"),
+                "mode": target["postimage_mode"],
             }
             for target in prepared_targets
         ],
@@ -199,7 +229,9 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
                 {
                     "destination": target["destination"],
                     "expected_preimage": target["expected_preimage"],
+                    "expected_preimage_mode": target["expected_preimage_mode"],
                     "postimage_sha256": target["postimage_sha256"],
+                    "postimage_mode": target["postimage_mode"],
                     **capture_preview_content(target["postimage"]),
                 }
                 for target in prepared_targets
@@ -229,18 +261,23 @@ def apply_capture_proposal(
     ledger_bytes, _ = read_regular_bytes(ledger_path)
     assert ledger_bytes is not None
     prior = capture_application_from_ledger(ledger_bytes, digest)
-    target_states: dict[str, bytes | None] = {}
+    target_states: dict[str, tuple[bytes | None, int | None]] = {}
     for target in targets:
         destination = str(target["destination"])
-        current, _ = read_regular_bytes(root / destination, allow_missing=True)
-        target_states[destination] = current
+        current, info = read_regular_bytes(root / destination, allow_missing=True)
+        target_states[destination] = (
+            current,
+            stat.S_IMODE(info.st_mode) if info is not None else None,
+        )
     record_targets = [
         {
             "path": target["destination"],
             "preimage_sha256": (
                 None if target["expected_preimage"] == "ABSENT" else target["expected_preimage"]
             ),
+            "preimage_mode": target["expected_preimage_mode"],
             "postimage_sha256": target["postimage_sha256"],
+            "postimage_mode": target["postimage_mode"],
         }
         for target in targets
     ]
@@ -255,7 +292,8 @@ def apply_capture_proposal(
     if prior is not None:
         comparable = {key: prior.get(key) for key in expected_record}
         outputs_match = all(
-            target_states[str(target["destination"])] == target["postimage"]
+            target_states[str(target["destination"])]
+            == (target["postimage"], target["postimage_mode"])
             for target in targets
         )
         if comparable == expected_record and outputs_match:
@@ -263,23 +301,32 @@ def apply_capture_proposal(
         raise CaptureProposalError("authorization ledger record exists but applied targets differ")
 
     expected_preimages: dict[str, bytes | None] = {}
+    expected_preimage_modes: dict[str, int | None] = {}
+    output_modes: dict[str, int] = {}
     outputs: dict[str, bytes] = {}
     for target in targets:
         destination = str(target["destination"])
-        current = target_states[destination]
+        current, current_mode = target_states[destination]
         expected = target["expected_preimage"]
         if expected == "ABSENT":
             if current is not None:
                 raise CaptureProposalError(f"destination preimage changed: {destination}")
         elif current is None or sha256_bytes(current) != expected:
             raise CaptureProposalError(f"destination preimage changed: {destination}")
+        if current_mode != target["expected_preimage_mode"]:
+            raise CaptureProposalError(f"destination preimage mode changed: {destination}")
         expected_preimages[destination] = current
+        expected_preimage_modes[destination] = current_mode
+        output_modes[destination] = int(target["postimage_mode"])
         outputs[destination] = target["postimage"]
 
     record = capture_application_record(**expected_record)
     projected_ledger = render_capture_application_ledger(ledger_bytes, record)
     outputs[CAPTURE_LEDGER_PATH] = projected_ledger
     expected_preimages[CAPTURE_LEDGER_PATH] = ledger_bytes
+    ledger_info = ledger_path.stat()
+    expected_preimage_modes[CAPTURE_LEDGER_PATH] = stat.S_IMODE(ledger_info.st_mode)
+    output_modes[CAPTURE_LEDGER_PATH] = stat.S_IMODE(ledger_info.st_mode)
     guard_preimages = {str(prepared["descriptor_path"]): prepared["descriptor_bytes"]}
     guard_preimages.update({
         str(target["staged_path"]): target["postimage"] for target in targets
@@ -290,6 +337,8 @@ def apply_capture_proposal(
         outputs=outputs,
         allowed_prefixes=tuple(sorted({*outputs, *guard_preimages})),
         expected_preimages=expected_preimages,
+        expected_preimage_modes=expected_preimage_modes,
+        output_modes=output_modes,
         guard_preimages=guard_preimages,
         fault=fault,
     )
