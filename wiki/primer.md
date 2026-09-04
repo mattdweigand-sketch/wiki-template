@@ -2,7 +2,7 @@
 title: Primer for Downstream Agents
 type: primer
 created: 2026-05-17
-updated: 2026-06-26
+updated: 2026-09-03
 ---
 
 # Primer
@@ -34,7 +34,7 @@ Add domain-specific routing rows below as the wiki grows.
 If you are a downstream agent reading this wiki:
 
 1. Read [`domain.md`](domain.md) first for the wiki's subject, scope, and example questions.
-2. Use [`index.md`](index.md) to find existing pages instead of scanning folders blindly.
+2. Use `python3 scripts/wiki_lookup.py index --query "<topic>"` for bounded matches from [`index.md`](index.md); paginate with `--offset`. With no query it returns section locations.
 3. Use [`glossary.md`](glossary.md) to resolve ambiguous terms before assuming meaning.
 4. Use `[[double-bracket]]` links inside authored page bodies and `## Related pages`.
 5. If a page's `confidence` is `low` or `contested`, check [`contradictions.md`](contradictions.md) and cited sources before relying on it.

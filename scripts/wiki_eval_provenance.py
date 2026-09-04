@@ -258,7 +258,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-provenance-ci-base-") as directory
     _install_artifact(repository)
     _commit_all(repository, "new accepted artifact")
     _record(
-        "ci-uses-only-trusted-base-and-proposal",
+        "ci-ignores-obsolete-history-before-trusted-base",
         validate_ci_provenance(repository, trusted_base) == (),
     )
 
@@ -290,12 +290,48 @@ with tempfile.TemporaryDirectory(prefix="wiki-provenance-shallow-source-") as so
             check=True,
         )
         shallow_issues = validate_ci_provenance(clone, trusted_base)
+        _record("ci-initial-push-rejects-shallow-history", bool(validate_ci_provenance(clone, "0" * 40)))
         _git(clone, "fetch", "--quiet", "--unshallow")
         full_history_issues = validate_ci_provenance(clone, trusted_base)
     _record(
         "ci-trusted-base-requires-fetched-history",
         bool(shallow_issues) and full_history_issues == (),
     )
+
+
+for defect in ("manifest-revert", "transient-raw", "merge-deletion", "merge-rebinding", "initial-push"):
+    with tempfile.TemporaryDirectory(prefix="wiki-provenance-history-") as directory:
+        root = Path(directory)
+        _initialize_repository(root)
+        base = _commit_all(root, "trusted empty base")
+        _install_artifact(root)
+        accepted = _commit_all(root, "accepted identity")
+        manifest = (root / "scripts/raw-artifacts.json").read_bytes()
+        if defect == "manifest-revert":
+            _install_artifact(root, b"rewritten identity\n")
+            _commit_all(root, "rewrite")
+            (root / "scripts/raw-artifacts.json").write_bytes(manifest)
+            _commit_all(root, "conceal rewrite")
+        elif defect == "transient-raw":
+            _git(root, "add", "-f", "raw/fixtures/source.txt")
+            _commit_all(root, "expose raw")
+            _git(root, "rm", "--cached", "raw/fixtures/source.txt")
+            _commit_all(root, "remove exposure")
+        elif defect.startswith("merge-"):
+            _git(root, "checkout", "-qb", "side", base)
+            (root / "README.md").write_text("side edit\n")
+            _commit_all(root, "side")
+            _git(root, "merge", "--no-commit", "--no-ff", accepted)
+            if defect == "merge-deletion":
+                _write_json(root / "scripts/raw-artifacts.json", {"artifacts": [], "schema_version": 1})
+                (root / "wiki/sources/fixture-source.md").unlink()
+            else:
+                _install_artifact(root, b"rebound in merge\n")
+            _commit_all(root, "invalid merge resolution")
+        (root / "raw/fixtures/source.txt").unlink(missing_ok=True)
+        issues = validate_ci_provenance(root, "0" * 40 if defect == "initial-push" else base)
+        fragment = "must not be tracked" if defect == "transient-raw" else "accepted raw artifact"
+        _record(defect, issues == () if defect == "initial-push" else any(fragment in issue for issue in issues))
 
 
 failed = [name for name, passed in results if not passed]

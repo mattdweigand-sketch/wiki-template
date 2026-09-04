@@ -46,8 +46,8 @@
       ],
       "owner": "workflows/maintenance/audit-docs.md",
       "reason": "These files explain the reusable template and stable detail when a routed maintenance task needs it.",
-      "last_reviewed": "2026-08-25",
-      "last_useful": "2026-08-25",
+      "last_reviewed": "2026-09-03",
+      "last_useful": "2026-09-03",
       "review_interval_days": 180,
       "removal_test": "Remove a map only if no routed workflow loads it and no unique template operating claim would be lost."
     },
@@ -61,8 +61,8 @@
       ],
       "owner": "workflows/maintenance/audit-docs.md",
       "reason": "These files define permanent boundaries, configure clone scope, and route each task into the smallest relevant workflow.",
-      "last_reviewed": "2026-08-25",
-      "last_useful": "2026-08-25",
+      "last_reviewed": "2026-09-03",
+      "last_useful": "2026-09-03",
       "review_interval_days": 90,
       "removal_test": "Remove text when its stable boundary or setup role is owned elsewhere and it no longer changes a required route or safety stop."
     },
@@ -91,8 +91,8 @@
       ],
       "owner": "workflows/maintenance/audit-docs.md",
       "reason": "These files carry task-specific judgment, setup, and loading rules that deterministic tools cannot choose.",
-      "last_reviewed": "2026-08-25",
-      "last_useful": "2026-08-25",
+      "last_reviewed": "2026-09-03",
+      "last_useful": "2026-09-03",
       "review_interval_days": 90,
       "removal_test": "Remove a workflow when no active route or task depends on it and no unique template authority boundary would be lost."
     }

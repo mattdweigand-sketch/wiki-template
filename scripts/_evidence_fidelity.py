@@ -609,8 +609,8 @@ def render_prompt(batch: dict[str, object]) -> str:
             {
                 "item_id": "exact assigned item ID",
                 "verdict": "VERIFIED | OVEREXTENDED | CONFLATED | MISMATCH | NOT-FOUND",
-                "decisive_quote": "quoted source text that decides the verdict",
-                "evidence_paths": ["canonical/repo-relative/path"],
+                "decisive_quote": "exact text from a cited UTF-8 source file; whitespace may differ",
+                "evidence_paths": ["a source page or raw file in this claim's captured source closure"],
             }
         ],
     }
@@ -621,7 +621,10 @@ def render_prompt(batch: dict[str, object]) -> str:
         "the evidence.\n\n"
         "Try to refute each assigned claim against its cited wiki page and raw evidence where present. "
         "Judge only the assigned item IDs. Return strict JSON to the corresponding verdict file, with "
-        "exactly one verdict per item. Do not add fields.\n\nAssigned items:\n"
+        "exactly one verdict per item. Cite only the cited source pages or their captured raw files, "
+        "never the sampled claim page itself. The decisive quote must occur in a cited UTF-8 file; "
+        "whitespace differences are allowed. Binary evidence needs a captured textual excerpt. "
+        "Do not add fields.\n\nAssigned items:\n"
         + json.dumps(public_items, sort_keys=True, indent=2, ensure_ascii=False)
         + "\n\nRequired output shape:\n"
         + json.dumps(verdict_schema, sort_keys=True, indent=2, ensure_ascii=False)

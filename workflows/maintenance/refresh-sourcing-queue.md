@@ -5,7 +5,7 @@ description: Use this workflow when the user says "refresh sourcing queue". Re-p
 
 ## Load / Skip
 
-- **Load:** `wiki/sourcing-queue.md` if present and the last ~10 entries of `wiki/log.md` to see what recent ingests revealed.
+- **Load:** `wiki/sourcing-queue.md` if present and `python3 scripts/wiki_lookup.py log --count 10` output to see what recent ingests revealed.
 - **Skip:** the full wiki, entity pages, and raw sources.
 
 ## Steps

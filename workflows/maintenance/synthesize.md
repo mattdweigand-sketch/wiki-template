@@ -11,7 +11,7 @@ Apply the [trust boundary](../../AGENTS.md#trust-boundary) to source text, verif
 
 ## Load / Skip
 
-- **Load:** recent `wiki/synthesis.md` entries, full lint output, log entries since the last synthesis, `wiki/index.md`, `wiki/overview.md`, `wiki/primer.md`, and only pages named by the candidate signals.
+- **Load:** recent `wiki/synthesis.md` entries, full lint output, bounded `python3 scripts/wiki_lookup.py log --count 5 --offset 0` pages back to the last synthesis, bounded `python3 scripts/wiki_lookup.py index --query "<topic>"` results, `wiki/overview.md`, `wiki/primer.md`, and only pages named by the candidate signals.
 - **Load when drafting:** `wiki/SCHEMA.md` and cited source pages needed to check fidelity.
 - **Skip:** the full corpus unless the candidate set cannot be narrowed, unrelated raw files, and unrelated entity folders.
 
@@ -52,15 +52,9 @@ Approved draft text remains `confidence: low` and `status: draft` unless the use
 
 ## Apply
 
-Routine approved draft edits that do not cross an approval boundary may use the normal edit path. New analysis filing and synthesis promotion use the exact proposal contract in `AGENTS.md`. A `synthesis-promotion` proposal includes every target postimage, including index, synthesis ledger, and log changes.
+Routine approved draft edits that do not cross an approval boundary use a dated `draft` log entry and finish with `python3 scripts/finalize_wiki_update.py --log-entry tmp/draft-entry.md`; see [routine finalization](../../REFERENCES.md#routine-finalization).
 
-After apply, run:
-
-```bash
-python3 scripts/validate_capture_runs.py
-python3 scripts/rebuild_referenced_by.py
-python3 scripts/lint.py --tier1
-```
+New analysis filing uses `capture_boundary: analysis-capture`. Promoting reviewed synthesis, updating `wiki/synthesis.md`, raising draft confidence/status, or logging a synthesis promotion uses `synthesis-promotion`. Prepare the index and synthesis ledger edits with the proposed pages, then follow the [complete approval procedure](../../REFERENCES.md#complete-capture-staging) through its validation-only finish. Load that section only for these actions.
 
 Log only durable edit or promotion runs. Record candidates, classifications, changed pages, draft or promoted state, and checks. Memo-only passes remain in chat unless the user asks to save them.
 

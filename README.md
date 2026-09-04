@@ -82,7 +82,9 @@ The main checks that protect the corpus:
 | Route-first workflows | Point agents from `AGENTS.md` through `wiki/domain.md`, then to `CONTEXT.md`. |
 | Evidence and conflicts | Sources, citations, the sourcing queue, contradiction tracking, and sampled evidence review keep claims tied to evidence. |
 | Lint and evals | Tier 1 blocks broken structure. Tier 2 surfaces focused review candidates. `wiki-eval` checks the tools and recovery paths. |
-| Exact approval | Analysis capture, artifact promotion, and synthesis promotion bind approval to exact target bytes and apply through one recoverable transaction. |
+| Exact approval | Complete postimages include backlinks and log bytes before digest approval; apply uses one recoverable transaction and finishes with validation only. |
+| Routine finish | `finalize_wiki_update.py` checks provenance, rebuilds backlinks, records one serialized log entry, and runs full lint once. |
+| Introduced history | Capture and provenance checks inspect each introduced commit and merge edge, catching invalid changes even after a revert. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` owns both agent shortcut surfaces. Render and parity checks block drift. |
 | Complete private backup | `wiki-export` includes raw sources, local state, deliverables, scratch files, and Git history. Version 3 binds file and directory modes before absent-destination restore. |
 

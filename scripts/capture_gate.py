@@ -45,7 +45,7 @@ class CaptureProposalError(ValueError):
     """An exact capture proposal failed deterministic validation."""
 
 
-def _canonical_json_bytes(value: object) -> bytes:
+def canonical_capture_proposal_bytes(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8") + b"\n"
 
 
@@ -93,7 +93,7 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
         raise CaptureProposalError(f"invalid proposal descriptor: {exc}") from exc
     if not isinstance(descriptor, dict) or set(descriptor) != PROPOSAL_FIELDS:
         raise CaptureProposalError("proposal descriptor has missing or unknown fields")
-    if descriptor_bytes != _canonical_json_bytes(descriptor):
+    if descriptor_bytes != canonical_capture_proposal_bytes(descriptor):
         raise CaptureProposalError("proposal descriptor must be canonical JSON with one trailing LF")
     if descriptor.get("schema_version") != 2 or isinstance(descriptor.get("schema_version"), bool):
         raise CaptureProposalError("schema_version must be integer 2")
@@ -211,7 +211,7 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
             for target in prepared_targets
         ],
     }
-    digest = sha256_bytes(_canonical_json_bytes(projection))
+    digest = sha256_bytes(canonical_capture_proposal_bytes(projection))
     return {
         "descriptor_path": descriptor_relative,
         "descriptor_bytes": descriptor_bytes,

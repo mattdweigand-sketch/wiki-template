@@ -41,7 +41,7 @@ python3 scripts/wiki_transactions.py diagnose <transaction-id>
 
 `status` is read-only and does not create the authority. `recover` applies only the deterministic recorded policy. `diagnose` reports paths, states, and hashes without dumping file contents. Never delete or empty `.wiki-transactions/` to make a guard pass. A clean interrupted transaction can be recovered; a conflict or corrupt record is preserved for diagnosis. Tier 1, pre-commit, and export fail closed while the authority is nonclean.
 
-The `durable-files` suite checks guarded atomic replacement. The `transactions` suite checks capture writes and recovery. Backlink and log rotation suites check interruption, concurrent edits, and safe reruns without transaction journals.
+The `durable-files` suite checks guarded atomic replacement. The `transactions` suite checks capture writes and recovery. Backlink, serialized log, and log rotation suites check interruption, concurrent edits, and safe reruns without transaction journals.
 
 Do not copy these repo-local skills into `~/.agents/skills/`. Identical personal installs can create duplicate skill entries; if duplicates appear, keep the tracked repo-local copy and remove the personal duplicate by hand.
 
@@ -57,6 +57,8 @@ Do not copy these repo-local skills into `~/.agents/skills/`. Identical personal
 
 - **Load:** `scripts/wiki_eval.py`; wrapper files when the task concerns wrappers; `scripts/wiki_transactions.py` when the task concerns recovery state; the entity catalog and schema vocabulary files when the task concerns schema; the document reachability files when the task concerns routing; and any failing suite output.
 - **Skip:** wiki entity pages, raw sources, unrelated workflow files, and Tier-2/Tier-3 content review.
+
+For tooling changes, start with the relevant [change-impact row](../../REFERENCES.md#tooling-change-impact), then inspect the named owner and affected callers. The table identifies focused checks; the full registered suite remains the final validation for tooling changes.
 
 ## Steps
 
@@ -78,3 +80,8 @@ When a real tool or workflow failure repeats, has high blast radius, or could si
 ## Report
 
 Report whether `wiki_eval.py` passed, which suite failed if any, what was fixed, and whether `git diff --check` passed when relevant.
+
+
+## Ported reliability checks
+
+The `evidence-fidelity`, `lookup`, `wiki-log`, `finalize`, `capture-diff`, and `provenance` suites use self-contained neutral fixtures and run in both profiles. They cover response binding, bounded navigation, concurrent logging, full staged postimages, routine/archive finishes, and introduced Git history. CI passes an explicit PR base or push-before SHA to provenance and capture-range checks; an all-zero initial-push base is empty prior state. These checks do not require private raw bytes in CI.

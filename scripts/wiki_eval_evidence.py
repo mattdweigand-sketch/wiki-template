@@ -24,6 +24,8 @@ from _evidence_fidelity import (
     validate_plant,
 )
 from eval_lib import Results
+from evidence_response import (EvidenceResponseError, build_reviewed_evidence_response,
+    create_reviewed_evidence_response, render_reviewed_evidence_response)
 from wiki_evidence import (
     create_evidence_sample,
     create_targeted_evidence_sample,
@@ -37,7 +39,7 @@ FIXTURES = REPO_ROOT / "scripts/fixtures/wiki-evidence"
 results = Results()
 
 
-def install_evidence_fixture(root: Path) -> None:
+def install_evidence_fixture(root: Path, authority: str = "") -> None:
     wiki = root / "wiki/concepts"
     wiki.mkdir(parents=True)
     (root / "wiki/sources").mkdir()
@@ -54,8 +56,9 @@ def install_evidence_fixture(root: Path) -> None:
         raw_path = f"raw/evidence/{slug}.txt"
         raw_bytes = f"Evidence for {slug}.\n".encode()
         (root / raw_path).write_bytes(raw_bytes)
+        authority_line = f"authority_ref: {authority}\n" if authority else ""
         (root / f"wiki/sources/{slug}.md").write_text(
-            f"---\ntitle: {slug}\ntype: source\nsources: [\"{raw_path}\"]\n---\n\n{slug}.\n",
+            f"---\ntitle: {slug}\ntype: source\n{authority_line}sources: [\"{raw_path}\"]\n---\n\n{slug}.\n",
             encoding="utf-8",
         )
         artifacts.append({
@@ -86,8 +89,8 @@ def install_evidence_fixture(root: Path) -> None:
     subprocess.run(["git", "commit", "-qm", "evidence fixture"], cwd=root, check=True)
 
 
-def make_repo(root: Path, run_id: str = "fixture-run") -> tuple[Path, dict, dict, list[dict]]:
-    install_evidence_fixture(root)
+def make_repo(root: Path, run_id: str = "fixture-run", *, authority: str = "") -> tuple[Path, dict, dict, list[dict]]:
+    install_evidence_fixture(root, authority)
     manifest = create_evidence_sample(root, run_id, 25)
     run_dir = manifest.run_dir
     sample = load_json(run_dir / "sample.json")
@@ -115,8 +118,8 @@ def make_repo(root: Path, run_id: str = "fixture-run") -> tuple[Path, dict, dict
                 {
                     "item_id": item["item_id"],
                     "verdict": "OVEREXTENDED" if item["kind"] == "plant" else "VERIFIED",
-                    "decisive_quote": "Fixture decisive quote.",
-                    "evidence_paths": [item["path"]],
+                    "decisive_quote": f"Evidence for {item['cited_slugs'][0]}.",
+                    "evidence_paths": [f"raw/evidence/{item['cited_slugs'][0]}.txt"],
                 }
             )
         atomic_json(
@@ -577,4 +580,105 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-flagged-") as td:
         and result.review == "FLAGGED",
         f"result={result}",
     )
+
+
+for defect in ("missing-file", "outside-closure", "self-citation", "invented-quote", "unsafe-path", "whitespace"):
+    def mutate(root, run_dir, sample, plant, batches):
+        path = run_dir / "verdicts/batch-01.json"
+        data = load_json(path)
+        verdict = data["verdicts"][0]
+        if defect == "missing-file":
+            verdict["evidence_paths"] = ["raw/evidence/missing.txt"]
+        elif defect == "outside-closure":
+            (root / "raw/evidence/unrelated.txt").write_text(verdict["decisive_quote"])
+            verdict["evidence_paths"] = ["raw/evidence/unrelated.txt"]
+        elif defect == "self-citation":
+            verdict["evidence_paths"] = [batches[0]["items"][0]["path"]]
+            verdict["decisive_quote"] = batches[0]["items"][0]["text"].strip()
+        elif defect == "invented-quote":
+            verdict["decisive_quote"] = "This quotation is not in any source."
+        elif defect == "unsafe-path":
+            verdict["evidence_paths"] = ["../outside.txt"]
+        else:
+            verdict["decisive_quote"] = " \n\t ".join(verdict["decisive_quote"].split())
+        atomic_json(path, data)
+    case("verdict-" + defect, mutate, status="PASSED" if defect == "whitespace" else "FAILED")
+
+for defect in ("none", "replacement", "duplicate", "unknown", "plant", "unverified",
+               "draft-drift", "review-drift", "packet-drift", "packet-byte-drift",
+               "stale-source", "stale-claim", "run-identity", "manifest-drift", "retry"):
+    with tempfile.TemporaryDirectory(prefix="wiki-response-") as td:
+        root = Path(td).resolve()
+        run_dir, sample, plant, batches = make_repo(root, "response")
+        claim = sample["claims"][0]
+        draft = {"schema_version": 1, "run_id": sample["run_id"],
+                 "manifest_sha256": sample["manifest_sha256"],
+                 "statements": [{"claim_id": claim["claim_id"]}]}
+        if defect == "replacement":
+            draft["statements"][0]["text"] = "Arbitrary replacement wording."
+        elif defect == "duplicate":
+            draft["statements"] *= 2
+        elif defect in {"unknown", "plant"}:
+            draft["statements"][0]["claim_id"] = plant["plant_id"] if defect == "plant" else "unknown"
+        elif defect == "run-identity":
+            draft["run_id"] = "another-run"
+        elif defect == "manifest-drift":
+            draft["manifest_sha256"] = "0" * 64
+        elif defect == "unverified":
+            for batch in batches:
+                ids = {item["item_id"] for item in batch["items"] if item["source_id"] == claim["claim_id"]}
+                path = run_dir / f"verdicts/{batch['batch_id']}.json"
+                data = load_json(path)
+                for verdict in data["verdicts"]:
+                    if verdict["item_id"] in ids:
+                        verdict["verdict"] = "OVEREXTENDED"
+                atomic_json(path, data)
+        atomic_json(run_dir / "response-draft.json", draft)
+        rejected = False
+        rendered = ""
+        try:
+            create_reviewed_evidence_response(root, run_dir.relative_to(root).as_posix())
+            if defect == "draft-drift":
+                with (run_dir / "response-draft.json").open("ab") as handle:
+                    handle.write(b" ")
+            elif defect == "review-drift":
+                with (run_dir / "verdicts/batch-01.json").open("ab") as handle:
+                    handle.write(b" ")
+            elif defect == "packet-drift":
+                packet = load_json(run_dir / "response.json")
+                packet["statements"][0]["text"] = "Changed."
+                atomic_json(run_dir / "response.json", packet)
+            elif defect == "packet-byte-drift":
+                with (run_dir / "response.json").open("ab") as handle:
+                    handle.write(b" ")
+            elif defect in {"stale-source", "stale-claim"}:
+                changed = claim["source_closure"][0]["source_path"] if defect == "stale-source" else claim["path"]
+                with (root / changed).open("ab") as handle:
+                    handle.write(b"changed\n")
+            elif defect == "retry":
+                create_reviewed_evidence_response(root, run_dir.relative_to(root).as_posix())
+            rendered = render_reviewed_evidence_response(root, run_dir.relative_to(root).as_posix())
+        except (EvidenceResponseError, EvidenceError, OSError):
+            rejected = True
+        results.record("response-" + defect, (not rejected and claim["line_text"].split("(source:")[0].strip() in rendered
+                       and str(root / "wiki/sources") in rendered) if defect == "none" else rejected, rendered)
+
+# Authority metadata is optional and never replaces the captured source link.
+for authority in ("https://example.invalid/source", "raw/evidence/alpha-source.txt",
+                  "Mixed notes from several source documents", "../outside.txt", "javascript:alert(1)"):
+    with tempfile.TemporaryDirectory(prefix="wiki-response-citation-") as td:
+        root = Path(td).resolve()
+        run_dir, sample, _plant, _batches = make_repo(root, authority=authority)
+        claim = sample["claims"][0]
+        atomic_json(run_dir / "response-draft.json", {
+            "schema_version": 1, "run_id": sample["run_id"],
+            "manifest_sha256": sample["manifest_sha256"],
+            "statements": [{"claim_id": claim["claim_id"]}],
+        })
+        create_reviewed_evidence_response(root, run_dir.relative_to(root).as_posix())
+        rendered = render_reviewed_evidence_response(root, run_dir.relative_to(root).as_posix())
+        results.record("authority-" + authority,
+                       ("[authority]" in rendered) == authority.startswith(("https://", "raw/"))
+                       and str(root / "wiki/sources") in rendered, rendered)
+
 sys.exit(results.finish())

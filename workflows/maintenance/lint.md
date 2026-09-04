@@ -22,7 +22,7 @@ Invoking `wiki-lint` authorizes the full workflow, including independent verifie
 4. Check contradictions, superseded claims, missing owner pages, and inconsistent terms that code cannot judge.
 5. Run the [claim evidence review](evidence-review.md) unless the user excluded it.
 6. Propose judgment-based fixes and get approval before editing.
-7. After edits, rebuild backlinks and rerun full lint.
+7. After routine fixes, write a dated `maintenance` entry to `tmp/lint-entry.md` naming fixes and checks. Run `python3 scripts/finalize_wiki_update.py --log-entry tmp/lint-entry.md` as the [routine finish](../../REFERENCES.md#routine-finalization). It rebuilds backlinks, records the entry, and runs full lint once. Approved promotions follow the validation-only finish instead.
 
 Tier 2 currently covers quote mismatch, orphan pages, uncited and thin pages, log rotation, sourcing-queue count drift, compiled pages with newer sources, volatile glossary status, missing authority metadata, unconsumed sources, missing or due outcome reviews, synthesis due, and dead adjudications.
 

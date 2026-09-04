@@ -17,7 +17,7 @@ This is the independent review step inside `wiki-lint`. The linting agent orches
      --run-dir tmp/evidence-check/YYYYMMDD-HHMMSS --batches 3
    ```
 
-4. Give each prompt to a separate verifier in a fresh context. Each verifier checks only assigned item IDs against cited pages and raw closure. Save strict JSON to `verdicts/<batch-id>.json`. Valid verdicts are `VERIFIED`, `OVEREXTENDED`, `CONFLATED`, `MISMATCH`, and `NOT-FOUND`. Every item needs a decisive quote and canonical evidence paths.
+4. Give each prompt to a separate verifier in a fresh context. Each verifier checks only assigned item IDs against cited pages and raw closure. Save strict JSON to `verdicts/<batch-id>.json`. Valid verdicts are `VERIFIED`, `OVEREXTENDED`, `CONFLATED`, `MISMATCH`, and `NOT-FOUND`. Every item needs a decisive quote and canonical evidence paths from its captured source closure: the cited source page or its recorded raw files, never the sampled claim page itself. The whitespace-normalized quote must occur in at least one cited UTF-8 file. Binary evidence needs a captured textual excerpt. Missing, unrelated, unsafe, or invented evidence fails validation; quotation identity alone does not prove support.
 
 5. Validate exact accounting and snapshot freshness.
 
@@ -26,6 +26,6 @@ This is the independent review step inside `wiki-lint`. The linting agent orches
      --run-dir tmp/evidence-check/YYYYMMDD-HHMMSS
    ```
 
-Treat structure, snapshot, and review as separate outcomes. A caught plant does not hide a flagged real claim. Missing verdicts, altered prompts, invalid structure, a verified plant, or stale source bytes require a fresh run.
+Treat structure, snapshot, and review as separate outcomes. A caught plant does not hide a flagged real claim. Missing verdicts, altered prompts, invalid structure, a verified plant, or stale source bytes require a fresh run. Runs with older generated prompts also need fresh IDs; never rewrite scratch history to make it appear current.
 
 Adjudicate real flags. Fix confirmed overreach by correcting the claim, confidence, or citation. Record durable false positives only when the same judgment should suppress a future lint candidate.

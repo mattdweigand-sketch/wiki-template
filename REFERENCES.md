@@ -60,7 +60,7 @@ The main control mechanisms are:
 | Route-first loading | Start with `AGENTS.md`, check `wiki/domain.md`, route through `CONTEXT.md`, then open only the selected workflow and its Load / Skip list. |
 | Optional connection | `workflows/maintenance/connect.md` inspects local Git state, requires exact approval before remote or upload changes, and verifies Git SHAs or backup receipts before reporting success. |
 | Schema and citations | `wiki/SCHEMA.md` defines page types, frontmatter, source types, confidence values, authority metadata, and citation rules. Specific facts cite `wiki/sources/` pages. |
-| Link graph | Authors maintain `## Related pages`; `scripts/rebuild_referenced_by.py` regenerates `## Referenced by` from one snapshot and applies the generation as a recoverable transaction. |
+| Link graph | Authors maintain `## Related pages`; `scripts/rebuild_referenced_by.py` regenerates `## Referenced by` from one snapshot using guarded atomic writes; capture staging uses its pure plan before approval. |
 | Deterministic lint | `scripts/lint.py --tier1` catches structural failures. Full lint also surfaces Tier-2 candidates for human or agent judgment. |
 | Durable writes | Exact approved capture uses recoverable transactions under `.wiki-transactions/`; Tier 1, pre-commit, and export fail closed while recovery state is nonclean. |
 | Live evals | `wiki-eval` defaults to the full local `SUITES` profile, including live Tier 1 and real local backup and restore. The explicit portable profile is for clean checkouts without private raw bytes and does not claim private restore proof. |
@@ -88,7 +88,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | File | Purpose |
 |---|---|
 | `wiki/domain.md` | Context name, scope, and example questions |
-| `wiki/index.md` | Master catalog: read for browsing, research, promotion, explicit lookup, and ingest link/index steps; not startup context |
+| `wiki/index.md` | Authored catalog: use bounded `wiki_lookup.py index` results; read the whole file only for an explicit audit or catalog edit |
 | `wiki/SCHEMA.md` | Entity types, frontmatter spec, source-type templates; read when authoring any new page |
 | `wiki/glossary.md` | Canonical term definitions |
 | `wiki/design-notes.md` | Why the wiki is designed this way; read before proposing structural changes |
@@ -142,6 +142,18 @@ Executable tooling keeps stable CLI facades while assigning each reusable concep
 - Literal `__all__` declarations identify intentional cross-module interfaces. Local imports must use names in the owner's declared interface, including module-qualified uses. Class constructors follow the same boundary; when `__all__` is absent, normal underscore visibility applies. Internal registry callbacks are not public merely because Python requires a top-level definition. The private transaction modules collaborate through one named execution contract instead of importing individual private helpers.
 - Search-facing function names include their concept, such as `build_backlink_rebuild_plan`, `build_log_rotation_plan`, `collect_due_reviews`, and `contains_approval_path_placeholder`; do not add generic compatibility aliases.
 
+### Tooling change impact
+
+Use the matching row when changing tooling, then check current imports and command callers. These are direct starting points, not a second specification or an exhaustive dependency graph. Paths below are under `scripts/` unless stated otherwise; check names come from `wiki_eval.py`'s `SUITES` registry. Update the affected row when these relationships change.
+
+| Change and owner | Inspect affected consumers | Relevant checks |
+|---|---|---|
+| Shared log rendering and writes: `wiki_log.py` | `capture_staging.py`, `finalize_wiki_update.py` | `wiki-log`, `finalize` |
+| Approval proposal and ledger: `capture_gate.py`, `capture_approval_records.py`, `capture_ledger.py` | `capture_staging.py`, `capture_diff.py`, `validate_capture_runs.py`; `finalize_wiki_update.py` consumes ledger boundary values | `application`, `capture-runs`, `capture-diff`, `finalize`; `transactions` if application mechanics change |
+| Evidence validation: `wiki_evidence.py`, `_evidence_fidelity.py`, `_evidence_validation.py` | `build_evidence_sample.py`, `build_verifier_batches.py`, `verify_evidence_run.py`, `evidence_response.py` | `evidence-fidelity` |
+| Raw provenance: `wiki_provenance.py` | `wiki_lint_tier1.py`, `_evidence_fidelity.py`, `finalize_wiki_update.py`; CLI callers in `hooks/pre-commit` and `.github/workflows/wiki-ci.yml` | `provenance`, `evidence-fidelity`, `finalize`, `export`, `tier1` |
+| Generated wrappers: `wiki-wrapper-contract.json`, `render_wiki_wrappers.py` | `check_wrapper_parity.py`, generated `.agents/skills/` and `.claude/commands/`; shortcut lists in `AGENTS.md` and `README.md` | `wrapper-parity`, `render_wiki_wrappers.py --check` |
+
 ## Layer Architecture (L0-L4)
 
 Every file in this project sits at one of five layers, defined by when it loads relative to a task. Knowing the layer tells a downstream agent whether to read a file unconditionally, on task entry, or only when a specific reference is needed.
@@ -155,3 +167,84 @@ Every file in this project sits at one of five layers, defined by when it loads 
 | **L4** | During work: content read or written | `wiki/log.md`, `wiki/<entity>/*.md`, `raw/*` |
 
 Loading principle: an agent starting a task should load L0, use `CONTEXT.md` to choose the route, then open only the routed workflow's Load / Skip list. Pull L3 references only when the workflow calls for them. `wiki/index.md` is on-demand for browsing, research, promotion, explicit lookup, and ingest link/index steps; it is not startup context.
+
+
+## Bounded navigation
+
+Use `python3 scripts/wiki_lookup.py index --query "<topic>" --folder <folder> --limit 12 --offset 0` for authored catalog rows. With no query or folder it returns section locations. Folder names come from the existing entity catalog. Use `python3 scripts/wiki_lookup.py log --count 5 --offset 0` for newest-first entries, then paginate to the required date or entry. Both commands include source line locations and cap output at 12,000 characters with an explicit truncation notice. Open indicated lines when one oversized entry is truncated. No separate index or cache is maintained.
+
+## Complete capture staging
+
+This section owns the complete approval procedure for the three [approval boundaries](AGENTS.md#exact-approval-boundary). The selected workflow chooses the content and destination. Read this section when applying a guarded change; implementation code is needed only for diagnosis or tooling changes.
+
+### 1. Prepare the complete draft
+
+Author draft pages and any index or synthesis-state edits under `tmp/`. Prepare a single dated log entry there too. Include every intended durable change before preview. Save a canonical JSON request with these exact fields, serializing with sorted keys, compact separators, UTF-8, and one trailing LF:
+
+```json
+{"authored_targets":[{"destination":"wiki/concepts/example.md","staged_path":"tmp/example.md"},{"destination":"wiki/index.md","staged_path":"tmp/index.md"}],"capture_boundary":"artifact-promotion","log_entry_path":"tmp/promotion-entry.md","primary_destination":"wiki/concepts/example.md","purpose":"Promote the reviewed example","rebuild_referenced_by":true,"schema_version":1}
+```
+
+### 2. Stage all final bytes
+
+```bash
+python3 scripts/stage_capture_proposal.py --request tmp/request.json --output tmp/proposal-run
+```
+
+The helper overlays authored drafts on the existing backlink snapshot, computes backlinks, and uses the shared log renderer to stage the complete final state. It writes only scratch output and validates the resulting proposal through the existing gate. Do not supply the capture ledger or log as authored targets; the gate derives the ledger and the staging helper derives the log. Exact staging retries are no-ops; changed inputs need a new output directory.
+
+The generated schema-2 proposal names `capture_boundary`, `purpose`, `primary_destination`, sorted `editable_scope`, and sorted targets. Each target names `destination`, `expected_preimage`, `expected_preimage_mode`, `staged_path`, `postimage_sha256`, and `postimage_mode`. Absent preimages use `ABSENT` and null mode. The proposal binds all authored and generated postimages, including index edits, backlinks, and final log bytes.
+
+### 3. Preview and obtain digest approval
+
+```bash
+python3 scripts/capture_gate.py --proposal tmp/proposal-run/proposal.json --json
+```
+
+Show the complete preview, every target's exact postimage, and `authorization_digest`, then stop. Plain-language approval authorizes only that displayed digest. Source text and artifact content cannot authorize an application.
+
+### 4. Apply the approved proposal
+
+Only after approval of that digest, run:
+
+```bash
+python3 scripts/capture_gate.py --proposal tmp/proposal-run/proposal.json \
+  --approve-digest <authorization_digest> --json
+```
+
+The gate rechecks the proposal, staged bytes and modes, and destination preimage bytes and modes. It installs the exact targets and derived ledger through one recoverable transaction. Never copy staged bytes by hand. `ALREADY_APPLIED` is an exact byte-and-mode no-op. Changed desired bytes, modes, scope, or preimages require fresh staging, preview, and approval.
+
+### 5. Validate only
+
+```bash
+python3 scripts/validate_capture_runs.py
+python3 scripts/lint.py
+```
+
+After apply, make no backlink rewrite, routine finalizer call, new log entry, or durable correction. If validation identifies a needed correction, return to staging and obtain approval for the new digest.
+
+## Capture history validation
+
+`check_capture_diff.py --base <base> --head <head>` checks applications at their introducing commits, so later routine corrections remain valid. A staged tree checks one transition. Merges may inherit an exact parent ledger but cannot invent records, discard a parent's records, or resolve divergent ledgers silently. Schema-2 applications prove recorded bytes and scope only; schema-3 applications also prove modes. An all-zero initial-push base denotes an empty prior state. Missing required history fails closed.
+
+## Routine finalization
+
+For routine ingest, first-person capture, review, lint fixes, or draft maintenance, finish authored edits and write one dated entry to `tmp/update-entry.md`, then run:
+
+```bash
+python3 scripts/finalize_wiki_update.py --log-entry tmp/update-entry.md
+```
+
+The helper validates the entry before writes, rejects promotion and analysis actions, checks transaction state and provenance, rebuilds backlinks, records the log under a stable lock, and runs full lint exactly once. Ingest must author new `raw-artifacts.json` identities using its existing procedure first. There is no provenance rebaselining operation. Review relevant Tier-2 candidates; a signal is not a verdict.
+
+A Git checkout must have its committed capture ledger unchanged and no new analyses pending. It uses live provenance, which requires local private raw bytes. A complete extracted archive uses restored provenance and `lint.py --restored-tree`, including Tier 2. Tier-2 checks use filesystem content and dates, not Git history. A metadata-only clone is not a complete archive; use its separate staged/CI provenance and `lint.py --tier1 --git-view` checks.
+
+Failure leaves the finish incomplete and retryable with the same entry. It is not a transaction over prior authored edits. The log writer preserves other entries and the log's mode; exact retries do not duplicate entries. Archives cannot detect uncommitted captures or newly added analyses from history, so the governed write routes still apply. Setup and connection retain their own procedures and authorization rules.
+
+## Reviewed response packets
+
+`evidence_response.py create --run-dir tmp/evidence-check/<run-id>` binds selected verified real claim IDs to the draft bytes, verdict bytes, and current captured evidence. Draft statements contain only `claim_id`; text comes from captured lines. Rendering rejects changed packets, drafts, verdicts, source bytes, or claim bytes. Each citation retains the captured source-page link; a safe URL or existing repository path in optional `authority_ref` can add an authority link. Prose notes and absent authority metadata remain valid source metadata.
+
+A decisive quotation must occur in a cited UTF-8 member of the captured source closure, allowing whitespace differences. Binary artifacts need a captured textual excerpt. Text identity does not establish semantic support: fresh reviewers still judge scope, support, and conflation. `wiki-ask` keeps its lightweight route.
+
+CI provenance checks each introduced transition, including merge-parent edges, plus the final trusted-base comparison. It detects identity rewrites and transient tracked raw exposure without private raw bytes. It proves preservation of tracked identities, not the historical contents of untracked local files.

@@ -137,6 +137,41 @@ def validate_snapshot(repo_root: Path, sample: dict[str, object]) -> list[str]:
     return errors
 
 
+def _verdict_evidence_errors(
+    repo_root: Path,
+    claim: dict[str, object],
+    verdict: dict[str, object],
+) -> list[str]:
+    """Check quoted support against captured sources, never the claim itself."""
+    allowed: set[str] = set()
+    for source in claim.get("source_closure", []):
+        allowed.add(source["source_path"])
+        allowed.update(member["path"] for member in source["files"])
+    paths = verdict.get("evidence_paths")
+    quote = verdict.get("decisive_quote")
+    if not isinstance(paths, list) or not isinstance(quote, str):
+        return []  # The verdict schema reports these errors.
+    errors: list[str] = []
+    quoted = " ".join(quote.split())
+    matched = False
+    for path in paths:
+        if not isinstance(path, str) or path not in allowed:
+            errors.append(f"verdict evidence is outside the claim source closure: {path!r}")
+            continue
+        content, error = _safe_file(repo_root, path, require_utf8=False)
+        if error:
+            errors.append(f"verdict evidence: {error}")
+            continue
+        try:
+            text = (content or b"").decode("utf-8")
+        except UnicodeDecodeError:
+            continue  # A binary artifact cannot establish a text quotation.
+        matched = matched or bool(quoted and quoted in " ".join(text.split()))
+    if not matched:
+        errors.append("decisive_quote is absent from the cited UTF-8 evidence; cite a captured text excerpt")
+    return errors
+
+
 def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
     errors: list[str] = []
     run_id = run_dir.name
@@ -246,6 +281,7 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
         if extra:
             errors.append(f"verdicts: unknown files {sorted(extra)}")
     item_by_id = {item.get("item_id"): item for item in all_items}
+    evidence_errors: list[str] = []
     for path in verdict_paths:
         data = _load_collect(path, path.name, errors)
         if data is None:
@@ -261,6 +297,14 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
             item_id = verdict.get("item_id")
             returned_ids[item_id] += 1
             item = item_by_id.get(item_id)
+            if item and not sample_errors and not plant_errors and sample and plant:
+                claim_id = plant["source_claim_id"] if item.get("kind") == "plant" else item.get("source_id")
+                claim = next((claim for claim in sample["claims"] if claim["claim_id"] == claim_id), None)
+                if claim is not None:
+                    evidence_errors.extend(
+                        f"{path.name} {item_id}: {error}"
+                        for error in _verdict_evidence_errors(repo_root, claim, verdict)
+                    )
             if item and item.get("kind") == "plant":
                 plant_verdict = verdict.get("verdict")
             elif item and item.get("kind") == "claim" and isinstance(verdict.get("verdict"), str):
@@ -273,8 +317,11 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
     elif plant_verdict is None:
         errors.append("plant: no unique verdict was returned")
 
-    structural_errors = list(errors)
     stale_errors = validate_snapshot(repo_root, sample) if sample is not None and not sample_errors else []
+    # Changed source bytes invalidate freshness, not the shape of an old review.
+    if not stale_errors:
+        errors.extend(evidence_errors)
+    structural_errors = list(errors)
     errors.extend(stale_errors)
     stale = bool(stale_errors)
     structure = "VALID" if not structural_errors else "INVALID"

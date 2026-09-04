@@ -55,8 +55,6 @@ def main() -> int:
         help="validate tracked manifest/source closure without local raw files",
     )
     args = ap.parse_args()
-    if args.restored_tree and not args.tier1:
-        ap.error("--restored-tree requires --tier1")
     if args.git_view and not args.tier1:
         ap.error("--git-view requires --tier1")
     if args.restored_tree and args.git_view:

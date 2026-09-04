@@ -130,7 +130,9 @@ def _validate_capture_ledger_schema(record: dict[str, object], line_no: int) -> 
     return errors
 
 
-def validate_capture_application(record: dict[str, object]) -> list[str]:
+def validate_capture_application(
+    record: dict[str, object], *, repo_root: Path | None = None,
+) -> list[str]:
     """Validate the only supported capture-ledger application record."""
     fields = {
         "record_type", "schema_version", "application_status", "applied_at",
@@ -184,7 +186,7 @@ def validate_capture_application(record: dict[str, object]) -> list[str]:
             validate_capture_paths(
                 scope,
                 primary_destination=record.get("primary_destination"),
-                repo_root=Path.cwd(),
+                repo_root=repo_root if repo_root is not None else Path.cwd(),
             )
         )
 

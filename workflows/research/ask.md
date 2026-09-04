@@ -9,7 +9,7 @@ Answer from the smallest relevant part of the wiki. This is the default research
 
 ## Load / Skip
 
-- **Load:** `wiki/index.md` to locate pages, `wiki/primer.md` for entry points by question type, then only the pages the question touches. When filing an analysis, also load the citation and provenance rules in `wiki/SCHEMA.md`.
+- **Load:** bounded `python3 scripts/wiki_lookup.py index --query "<topic>"` results to locate pages, `wiki/primer.md` for entry points by question type, then only the pages the question touches. When filing an analysis, also load the citation and provenance rules in `wiki/SCHEMA.md`.
 - **Skip:** unrelated entity folders, raw sources, evidence-run tooling, and the rest of `wiki/SCHEMA.md`.
 
 ## Steps
@@ -22,23 +22,14 @@ Answer from the smallest relevant part of the wiki. This is the default research
 
 ## Analysis Capture
 
-File the answer as a citable analysis only when all three hold. It synthesizes at least three wiki pages, runs over 300 words, and answers a durable question about the configured domain. Before filing, stage every exact postimage and an `analysis-capture` proposal under `tmp/`, then follow the exact preview and apply flow in `AGENTS.md`.
-
-```bash
-python3 scripts/capture_gate.py --proposal tmp/<proposal>.json --json
-# After approval of the displayed authorization_digest
-python3 scripts/capture_gate.py --proposal tmp/<proposal>.json \
-  --approve-digest <authorization_digest> --json
-```
-
-Show the full preview and stop for approval. Do not copy staged files by hand. After apply, run `python3 scripts/validate_capture_runs.py`, `python3 scripts/rebuild_referenced_by.py`, and `python3 scripts/lint.py --tier1`.
+File the answer as a citable analysis only when all three hold. It synthesizes at least three wiki pages, runs over 300 words, and answers a durable question about the configured domain. Use `capture_boundary: analysis-capture` and follow the [complete approval procedure](../../REFERENCES.md#complete-capture-staging) through its validation-only finish. Load that section only when filing.
 
 If the filing test fails, answer in chat only. Append to `wiki/log.md` only when an analysis was filed or the user asked for a durable query record.
 
 Name an analysis for the question, not its presumed answer. A filed analysis normally runs 300-800 words and uses `## Summary`, `## Question`, `## Key findings`, topic sections as needed, `## Open questions and gaps`, and `## Related pages`.
 
 ```text
-## [YYYY-MM-DD] query | <question summary>
+## [YYYY-MM-DD] analysis-capture | <question summary>
 Pages consulted: ...
 Output filed: yes/no — <filename if yes>
 ```

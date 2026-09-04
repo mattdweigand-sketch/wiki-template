@@ -11,9 +11,10 @@ Use audit mode when the user asks whether or where to save an artifact. Use appl
 
 ## Load / Skip
 
-- **Load:** the artifact, `wiki/SCHEMA.md`, `wiki/index.md`, and pages it may change.
+- **Load:** the artifact, relevant [page schema](../../wiki/SCHEMA.md) and [cross-reference rules](../../REFERENCES.md#cross-referencing-rules), bounded `python3 scripts/wiki_lookup.py index --query "<topic>"` results, and pages it may change.
+- **Load when applying:** the [complete approval procedure](../../REFERENCES.md#complete-capture-staging), not the rest of `REFERENCES.md`.
 - **Load for operating changes:** the owning instruction or script file.
-- **Skip:** unrelated pages and raw sources the artifact does not cite.
+- **Skip:** unrelated pages, uncited raw sources, and approval implementation code unless diagnosing a failure or changing that tooling.
 
 ## Route
 
@@ -47,16 +48,6 @@ Stop after the audit unless apply was requested.
 
 ## Apply
 
-For `artifact-promotion` and `analysis-capture`, compose every target postimage, including index and log changes. Stage the files and canonical proposal under `tmp/`. Follow the exact preview and digest-bound apply contract in `AGENTS.md`. Do not copy staged bytes by hand.
+Prepare the proposed content before staging. For a new page, follow `wiki/SCHEMA.md`, cite specific facts, add useful typed links, and prepare one `wiki/index.md` row. For an operating change, prepare edits to the single rule owner and record the reason and tradeoff in the staged log entry or decision page.
 
-After apply, run:
-
-```bash
-python3 scripts/validate_capture_runs.py
-python3 scripts/rebuild_referenced_by.py
-python3 scripts/lint.py --tier1
-```
-
-For a new page, follow `wiki/SCHEMA.md`, cite specific facts, add useful typed links, and add one `wiki/index.md` row. For an operating change, update the single rule owner and record the reason and tradeoff in `wiki/log.md` or a decision page.
-
-The staged log entry names the artifact, route, destination, reason, changed pages, and checks run.
+The staged log entry names the artifact, route, destination, reason, changed pages, and checks run. Use `capture_boundary: artifact-promotion`, or `analysis-capture` for an analysis filing, and follow the [complete approval procedure](../../REFERENCES.md#complete-capture-staging) through its validation-only finish.

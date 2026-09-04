@@ -35,3 +35,6 @@ raw/*/*
 
 # Recoverable multi-file transaction authority. Never delete it to clear a gate.
 /.wiki-transactions/
+
+# Stable lock for the serialized wiki log writer.
+scripts/.wiki-log.lock

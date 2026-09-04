@@ -459,20 +459,57 @@ def validate_staged_provenance(repo_root: Path) -> tuple[str, ...]:
 
 
 def validate_ci_provenance(repo_root: Path, trusted_base: str) -> tuple[str, ...]:
-    """Validate HEAD against one explicit trusted base without replaying history."""
+    """Check every introduced parent edge and the final trusted-base identity set."""
     root = repo_root.resolve()
-    ancestry = _git(root, ("merge-base", "--is-ancestor", trusted_base, "HEAD"))
-    if ancestry.returncode != 0:
-        return (f"trusted base {trusted_base!r} is not an ancestor of HEAD",)
     try:
-        return _validate_against_baseline(
-            _revision_view(root, "HEAD"),
-            _revision_view(root, trusted_base),
-            proposed_has_raw_bytes=False,
-            baseline_has_raw_bytes=False,
-            proposed_is_git_view=True,
-            baseline_is_git_view=True,
-        )
+        if not trusted_base or trusted_base.startswith("-"):
+            raise ValueError("an explicit trusted base is required")
+        initial_push = trusted_base == "0" * 40
+        if not initial_push:
+            ancestry = _git(root, ("merge-base", "--is-ancestor", trusted_base, "HEAD"))
+            if ancestry.returncode != 0:
+                raise ValueError(f"trusted base {trusted_base!r} is unavailable or not an ancestor of HEAD")
+        views: dict[str, _RepositoryView] = {}
+
+        def view(revision: str) -> _RepositoryView:
+            if revision not in views:
+                views[revision] = _revision_view(root, revision)
+            return views[revision]
+
+        def empty_prior(proposed: _RepositoryView) -> _RepositoryView:
+            return _RepositoryView(
+                {RAW_BUCKETS_PATH: proposed.files.get(RAW_BUCKETS_PATH, b"")},
+                {RAW_BUCKETS_PATH: "100644"},
+            )
+
+        def compare(proposed: _RepositoryView, baseline: _RepositoryView) -> tuple[str, ...]:
+            return _validate_against_baseline(
+                proposed, baseline,
+                proposed_has_raw_bytes=False, baseline_has_raw_bytes=False,
+                proposed_is_git_view=True, baseline_is_git_view=True,
+            )
+
+        head = view("HEAD")
+        baseline = empty_prior(head) if initial_push else view(trusted_base)
+        issues = list(compare(head, baseline))
+        revisions = _git(root, ("rev-list", "--reverse", "--topo-order",
+                                "HEAD" if initial_push else f"{trusted_base}..HEAD"))
+        if revisions.returncode:
+            raise ValueError("introduced Git history is unreadable")
+        for commit in revisions.stdout.decode().splitlines():
+            # Read actual parent headers: rev-list alone conceals shallow boundaries.
+            raw_commit = _git(root, ("cat-file", "-p", commit))
+            if raw_commit.returncode:
+                raise ValueError(f"Git commit {commit} is unreadable")
+            header = raw_commit.stdout.decode().split("\n\n", 1)[0]
+            parents = [line.split()[1] for line in header.splitlines() if line.startswith("parent ")]
+            proposed = view(commit)
+            if not parents and not initial_push:
+                raise ValueError("unexpected root commit inside an ancestral provenance range")
+            baselines = [view(parent) for parent in parents] or [empty_prior(proposed)]
+            for prior in baselines:
+                issues.extend(f"{commit[:12]}: {issue}" for issue in compare(proposed, prior))
+        return tuple(dict.fromkeys(issues))
     except (OSError, ValueError) as exc:
         return (f"provenance validation failed: {exc}",)
 
