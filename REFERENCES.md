@@ -68,7 +68,7 @@ The main control mechanisms are:
 | Sourcing queue | `wiki/sourcing-queue.md` tracks missing sources and evidence gaps that research, lint, or synthesis discovers. `workflows/maintenance/refresh-sourcing-queue.md` can reprioritize it when needed. |
 | Approval gate | `scripts/capture_gate.py` previews exact `analysis-capture`, `artifact-promotion`, and `synthesis-promotion` proposals, binds approval to target bytes and file modes through their digest, and applies approved targets with the combined ledger postimage through one recoverable transaction. |
 | Synthesis ledger | `wiki/synthesis.md` orients future synthesis runs; cite source pages, not the ledger, when making claims. |
-| Export | `scripts/export_wiki.py` builds and verifies exact-manifest recovery snapshots while excluding generated dated wiki export archives outside `raw/`. `scripts/restore_wiki.py` restores a verified archive only to an absent destination. |
+| Export | `scripts/export_wiki.py` checks archive integrity and the extracted tree before atomically publishing a recovery snapshot. It excludes generated dated wiki export archives outside `raw/`. `scripts/restore_wiki.py` restores a verified archive only to an absent destination. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` owns the shortcut manifest; `scripts/render_wiki_wrappers.py` deterministically renders `.claude/commands/` and `.agents/skills/`, which never own canonical behavior. |
 
 ---
@@ -110,7 +110,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/wiki_evidence.py` | Typed production seam for exact evidence samples, verifier batches, and run validation |
 | `scripts/build_evidence_sample.py`, `scripts/build_verifier_batches.py`, `scripts/verify_evidence_run.py` | Thin agent-neutral CLI adapters for sampled evidence checks |
 | `scripts/wiki_backup_receipt.py`, `scripts/backup_state.py` | Destination-redacted verified-upload receipt and nonblocking freshness reporter; the local receipt is gitignored |
-| `scripts/export_wiki.py`, `scripts/restore_wiki.py` | Exact-manifest archive creation, portable offline verification, and macOS/Linux absent-destination restore |
+| `scripts/export_wiki.py`, `scripts/restore_wiki.py` | Atomic archive publication after integrity and restore-readiness checks, portable offline archive verification, and macOS/Linux absent-destination restore |
 | `scripts/capture-runs.jsonl`, `scripts/capture_ledger.py` | Exact application ledger and its strict parser; proposal apply installs the ledger postimage with approved targets through the shared transaction |
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the ten generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
 | `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
@@ -137,9 +137,9 @@ The wiki separates deterministic capture approval from prose judgment:
 Executable tooling keeps stable CLI facades while assigning each reusable concept one owner:
 
 - `scripts/lint.py` only parses arguments and renders reports. `wiki_lint_contract.py` owns shared vocabulary and the typed `PageContext`; `wiki_lint_frontmatter.py` owns frontmatter/provenance parsing; `wiki_lint_repository_checks.py` owns repository-wide invariants; `wiki_lint_page_checks.py` owns the typed ordered page-rule registries; `wiki_lint_tier1.py` composes hard failures; and `wiki_lint_signals.py` owns `Tier2PageFacts`, `Tier2Context`, the typed signal registry, and review-candidate composition.
-- `scripts/wiki_evidence.py` is the stable evidence-fidelity interface. The build/verify scripts are CLI adapters; private modules own artifact schemas and exact validation, and verifier agents consume rendered prompts without model/provider coupling.
+- `scripts/wiki_evidence.py` owns the typed evidence interface. Sampling selects claims before resolving their sources from one validated provenance snapshot. Validation and response rendering are read-only. The validation CLI explicitly persists its result. Private modules own artifact schemas and exact validation, and verifier agents consume rendered prompts without model/provider coupling.
 - `scripts/wiki_backup_receipt.py` owns verified-backup receipt schema, redaction, hashing, atomic persistence, and freshness classification. `export_wiki.py` stamps only after remote size and checksum verification; `backup_state.py` only reports.
-- Literal `__all__` declarations identify intentional cross-module interfaces. Local imports must use names in the owner's declared interface, including module-qualified uses. Class constructors follow the same boundary; when `__all__` is absent, normal underscore visibility applies. Internal registry callbacks are not public merely because Python requires a top-level definition. The private transaction modules collaborate through one named execution contract instead of importing individual private helpers.
+- Literal `__all__` declarations identify intentional cross-module interfaces. Local imports must use names in the owner's declared interface, including module-qualified uses. Class constructors follow the same boundary; when `__all__` is absent, normal underscore visibility applies. Internal registry callbacks are not public merely because Python requires a top-level definition. The private transaction modules use named exports from `_transaction_contract.py`; execution calls them through the module name. New transactions accept byte outputs only. Older deletion journals remain readable and recoverable.
 - Search-facing function names include their concept, such as `build_backlink_rebuild_plan`, `build_log_rotation_plan`, `collect_due_reviews`, and `contains_approval_path_placeholder`; do not add generic compatibility aliases.
 
 ### Tooling change impact
@@ -148,11 +148,11 @@ Use the matching row when changing tooling, then check current imports and comma
 
 | Change and owner | Inspect affected consumers | Relevant checks |
 |---|---|---|
-| Shared log rendering and writes: `wiki_log.py` | `capture_staging.py`, `finalize_wiki_update.py` | `wiki-log`, `finalize` |
+| Shared log rendering and writes: `wiki_log.py` | `capture_staging.py`, `finalize_wiki_update.py`, `rotate_log.py`, `wiki_lint_signals.py` | `wiki-log`, `finalize`, `rotate-log`, `lint-signals` |
 | Approval proposal and ledger: `capture_gate.py`, `capture_approval_records.py`, `capture_ledger.py` | `capture_staging.py`, `capture_diff.py`, `validate_capture_runs.py`; `finalize_wiki_update.py` consumes ledger boundary values | `application`, `capture-runs`, `capture-diff`, `finalize`; `transactions` if application mechanics change |
 | Evidence validation: `wiki_evidence.py`, `_evidence_fidelity.py`, `_evidence_validation.py` | `build_evidence_sample.py`, `build_verifier_batches.py`, `verify_evidence_run.py`, `evidence_response.py` | `evidence-fidelity` |
 | Raw provenance: `wiki_provenance.py` | `wiki_lint_tier1.py`, `_evidence_fidelity.py`, `finalize_wiki_update.py`; CLI callers in `hooks/pre-commit` and `.github/workflows/wiki-ci.yml` | `provenance`, `evidence-fidelity`, `finalize`, `export`, `tier1` |
-| Generated wrappers: `wiki-wrapper-contract.json`, `render_wiki_wrappers.py` | `check_wrapper_parity.py`, generated `.agents/skills/` and `.claude/commands/`; shortcut lists in `AGENTS.md` and `README.md` | `wrapper-parity`, `render_wiki_wrappers.py --check` |
+| Generated wrappers: `wiki-wrapper-contract.json`, `render_wiki_wrappers.py` | `check_wrapper_parity.py`, generated `.agents/skills/` and `.claude/commands/`; the shortcut table in `README.md` | `wrapper-parity`, `render_wiki_wrappers.py --check` |
 
 ## Layer Architecture (L0-L4)
 
@@ -179,7 +179,7 @@ This section owns the complete approval procedure for the three [approval bounda
 
 ### 1. Prepare the complete draft
 
-Author draft pages and any index or synthesis-state edits under `tmp/`. Prepare a single dated log entry there too. Include every intended durable change before preview. Save a canonical JSON request with these exact fields, serializing with sorted keys, compact separators, UTF-8, and one trailing LF:
+Author draft pages and any index or synthesis-state edits under `tmp/`. Prepare a single dated log entry there too. Include every intended durable change before preview. Save a UTF-8 JSON request with these exact fields. Whitespace and key order do not matter. Duplicate keys and unknown fields are rejected. The staging helper canonicalizes the generated proposal:
 
 ```json
 {"authored_targets":[{"destination":"wiki/concepts/example.md","staged_path":"tmp/example.md"},{"destination":"wiki/index.md","staged_path":"tmp/index.md"}],"capture_boundary":"artifact-promotion","log_entry_path":"tmp/promotion-entry.md","primary_destination":"wiki/concepts/example.md","purpose":"Promote the reviewed example","rebuild_referenced_by":true,"schema_version":1}
@@ -225,7 +225,7 @@ After apply, make no backlink rewrite, routine finalizer call, new log entry, or
 
 ## Capture history validation
 
-`check_capture_diff.py --base <base> --head <head>` checks applications at their introducing commits, so later routine corrections remain valid. A staged tree checks one transition. Merges may inherit an exact parent ledger but cannot invent records, discard a parent's records, or resolve divergent ledgers silently. Schema-2 applications prove recorded bytes and scope only; schema-3 applications also prove modes. An all-zero initial-push base denotes an empty prior state. Missing required history fails closed.
+`check_capture_diff.py --base <base> --head <head>` checks applications at their introducing commits, so later routine corrections remain valid. A staged tree checks one transition. Merges may inherit an exact parent ledger but cannot invent records, discard a parent's records, or resolve divergent ledgers silently. Schema-2 applications prove recorded bytes and scope only. Schema-3 applications also prove modes. An all-zero initial-push base denotes an empty prior state. Missing required history fails closed.
 
 ## Routine finalization
 

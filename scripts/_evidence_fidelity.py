@@ -19,7 +19,7 @@ from typing import Sequence
 
 from _strict_json import reject_duplicate_json_keys
 from _wiki_parse import evidentiary_line_views, get_entity_pages
-from wiki_provenance import RawSourceClosure, resolve_live_source_closure
+from wiki_provenance import RawSourceClosure, resolve_live_source_closures
 
 
 SCHEMA_VERSION = 1
@@ -50,6 +50,7 @@ VERDICT_FILE_FIELDS = frozenset({"schema_version", "run_id", "batch_id", "verdic
 VERDICT_FIELDS = frozenset({"item_id", "verdict", "decisive_quote", "evidence_paths"})
 RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+GIT_OBJECT_ID_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 CITATION_RE = re.compile(
     r"\(source:\s*\[\[([a-z0-9]+(?:-[a-z0-9]+)*)\]\]\)"
 )
@@ -143,6 +144,10 @@ def _sha(value: object) -> bool:
     return isinstance(value, str) and bool(re.fullmatch(r"[0-9a-f]{64}", value))
 
 
+def _git_object_id(value: object) -> bool:
+    return isinstance(value, str) and bool(GIT_OBJECT_ID_RE.fullmatch(value))
+
+
 def _validate_source_closure(value: object, cited_slugs: object, label: str) -> list[str]:
     errors: list[str] = []
     if not isinstance(value, list) or not value:
@@ -217,7 +222,7 @@ def validate_sample(sample: object) -> list[str]:
     git = sample.get("git")
     if not isinstance(git, dict) or set(git) != {"head", "dirty"}:
         errors.append("sample: git must contain exactly head and dirty")
-    elif (git["head"] is not None and not _sha(git["head"])) or (
+    elif (git["head"] is not None and not _git_object_id(git["head"])) or (
         git["dirty"] is not None and not isinstance(git["dirty"], bool)
     ):
         errors.append("sample: invalid diagnostic git metadata")
@@ -415,7 +420,7 @@ def _git_metadata(repo_root: Path) -> dict[str, object]:
     except (OSError, subprocess.SubprocessError):
         return {"head": None, "dirty": None}
     return {
-        "head": head.stdout.strip() if head.returncode == 0 and _sha(head.stdout.strip()) else None,
+        "head": head.stdout.strip() if head.returncode == 0 and _git_object_id(head.stdout.strip()) else None,
         "dirty": bool(status_result.stdout) if status_result.returncode == 0 else None,
     }
 
@@ -445,7 +450,6 @@ def build_sample_data(
     wiki_root = repo_root / "wiki"
     candidates: list[dict[str, object]] = []
     visited_paths: set[str] = set()
-    closure_cache: dict[str, dict[str, object]] = {}
     for page in get_entity_pages(wiki_root):
         if page.parent.name == "sources":
             continue
@@ -468,16 +472,6 @@ def build_sample_data(
             slugs = list(dict.fromkeys(CITATION_RE.findall(visible_line)))
             if not slugs:
                 continue
-            for slug in slugs:
-                if slug not in closure_cache:
-                    try:
-                        closure_cache[slug] = _closure_payload(
-                            resolve_live_source_closure(repo_root, slug)
-                        )
-                    except ValueError as exc:
-                        raise EvidenceError(
-                            f"claim source closure failed for {relative}:{line_number}: {exc}"
-                        ) from exc
             line_bytes = line.encode("utf-8")
             identity = relative.encode() + b"\0" + str(line_number).encode() + b"\0" + line_bytes
             candidates.append(
@@ -489,7 +483,6 @@ def build_sample_data(
                     "line_sha256": evidence_sha256_bytes(line_bytes),
                     "file_sha256": evidence_sha256_bytes(content),
                     "cited_slugs": slugs,
-                    "source_closure": [closure_cache[slug] for slug in slugs],
                 }
             )
     candidates.sort(key=lambda claim: (claim["path"], claim["line_number"], claim["claim_id"]))
@@ -510,6 +503,14 @@ def build_sample_data(
         if selected_paths is not None
         else rng.sample(candidates, min(requested_count, len(candidates)))
     )
+    selected_slugs = sorted({slug for claim in selected for slug in claim["cited_slugs"]})
+    try:
+        snapshot = resolve_live_source_closures(repo_root, selected_slugs)
+    except ValueError as exc:
+        raise EvidenceError(f"claim source closure failed: {exc}") from exc
+    closures = {closure.source_slug: _closure_payload(closure) for closure in snapshot.closures}
+    for claim in selected:
+        claim["source_closure"] = [closures[slug] for slug in claim["cited_slugs"]]
     sample = {
         "schema_version": 1,
         "run_id": run_id,
@@ -520,9 +521,7 @@ def build_sample_data(
         "selected_count": len(selected),
         "git": _git_metadata(repo_root),
         "claims": selected,
-        "raw_manifest_sha256": evidence_sha256_bytes(
-            (repo_root / "scripts/raw-artifacts.json").read_bytes()
-        ),
+        "raw_manifest_sha256": snapshot.manifest_sha256,
         "manifest_sha256": "",
     }
     sample["manifest_sha256"] = manifest_hash(sample)
@@ -608,7 +607,7 @@ def render_prompt(batch: dict[str, object]) -> str:
         "verdicts": [
             {
                 "item_id": "exact assigned item ID",
-                "verdict": "VERIFIED | OVEREXTENDED | CONFLATED | MISMATCH | NOT-FOUND",
+                "verdict": " | ".join(VERDICTS),
                 "decisive_quote": "exact text from a cited UTF-8 source file; whitespace may differ",
                 "evidence_paths": ["a source page or raw file in this claim's captured source closure"],
             }

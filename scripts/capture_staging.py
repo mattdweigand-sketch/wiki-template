@@ -82,8 +82,6 @@ def _load_staging_request(root: Path, request_path: str) -> dict[str, object]:
         raise CaptureStagingError(f"invalid staging request: {exc}") from exc
     if not isinstance(request, dict) or set(request) != STAGING_REQUEST_FIELDS:
         raise CaptureStagingError("staging request has missing or unknown fields")
-    if content != canonical_capture_proposal_bytes(request):
-        raise CaptureStagingError("staging request must be canonical JSON with one trailing LF")
     if isinstance(request.get("schema_version"), bool) or request.get("schema_version") != 1:
         raise CaptureStagingError("staging request schema_version must be integer 1")
     if request.get("rebuild_referenced_by") is not True:
@@ -216,10 +214,10 @@ def _proposal_outputs(
     request: dict[str, object],
     postimages: dict[str, bytes],
     modes: dict[str, int],
-) -> dict[str, bytes]:
+) -> dict[str, tuple[bytes, int]]:
     target_paths = sorted(postimages)
     targets: list[dict[str, object]] = []
-    files: dict[str, bytes] = {}
+    files: dict[str, tuple[bytes, int]] = {}
     target_summaries: list[dict[str, object]] = []
     for index, destination in enumerate(target_paths):
         content = postimages[destination]
@@ -228,7 +226,7 @@ def _proposal_outputs(
             f"{output_relative}/postimages/{index:04d}-"
             + destination.replace("/", "--")
         )
-        files[staged_relative] = content
+        files[staged_relative] = (content, modes[destination])
         targets.append(
             {
                 "destination": destination,
@@ -256,13 +254,14 @@ def _proposal_outputs(
         "editable_scope": target_paths,
         "targets": targets,
     }
-    files[f"{output_relative}/proposal.json"] = canonical_capture_proposal_bytes(proposal)
-    files[f"{output_relative}/staging-result.json"] = canonical_capture_proposal_bytes(
-        {
+    files[f"{output_relative}/proposal.json"] = (canonical_capture_proposal_bytes(proposal), 0o644)
+    files[f"{output_relative}/staging-result.json"] = (
+        canonical_capture_proposal_bytes({
             "schema_version": 1,
             "proposal_path": f"{output_relative}/proposal.json",
             "targets": target_summaries,
-        }
+        }),
+        0o644,
     )
     return files
 
@@ -270,7 +269,7 @@ def _proposal_outputs(
 def _install_or_match_staging_files(
     root: Path,
     output_relative: str,
-    files: dict[str, bytes],
+    files: dict[str, tuple[bytes, int]],
 ) -> str:
     output = root / output_relative
     if output.exists() and (output.is_symlink() or not output.is_dir()):
@@ -294,15 +293,16 @@ def _install_or_match_staging_files(
             raise CaptureStagingError("existing staging output has a different file set")
         for relative, path in existing_files.items():
             content, info = read_regular_bytes(path)
-            if content != files[relative] or info is None or stat.S_IMODE(info.st_mode) != 0o644:
+            expected_content, expected_mode = files[relative]
+            if content != expected_content or info is None or stat.S_IMODE(info.st_mode) != expected_mode:
                 raise CaptureStagingError(f"existing staging output differs: {relative}")
         return "ALREADY_STAGED"
     output.mkdir(parents=True, exist_ok=True)
-    for relative, content in sorted(files.items()):
+    for relative, (content, mode) in sorted(files.items()):
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
-        path.chmod(0o644)
+        path.chmod(mode)
     return "STAGED"
 
 

@@ -16,8 +16,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import rotate_log  # noqa: E402
-from eval_lint_fixture import copy_fixture  # noqa: E402
+from eval_lint_fixture import copy_lint_fixture  # noqa: E402
 from eval_lib import Results  # noqa: E402
+from wiki_log import record_wiki_log_entry, render_wiki_log_postimage
 
 
 ROTATE = REPO_ROOT / "scripts" / "rotate_log.py"
@@ -29,14 +30,17 @@ def write_log(root: Path, entries: list[str], header: str | None = None) -> None
     header = header or (
         "# Wiki Log\n"
         "\n"
-        "Append-only, oldest first.\n"
+        "Append-only, newest first.\n"
         "\n"
         "---\n"
         "\n"
     )
     path = root / "wiki" / "log.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(header + "".join(entries), encoding="utf-8")
+    content = header.encode()
+    for entry in entries:
+        content = render_wiki_log_postimage(content, entry.encode())
+    path.write_bytes(content)
 
 
 def plain_entry(day: int, title: str, extra: str = "") -> str:
@@ -142,8 +146,14 @@ def case_rotates_losslessly(root: Path) -> None:
            "maintenance | Log rotation" in (root / "wiki" / "log.md").read_text(encoding="utf-8"),
            "rotation entry missing")
     record("payload-conserved",
-           original_entries == archive_entries + kept_entries,
+           original_entries == kept_entries + archive_entries,
            "original entries were not exactly partitioned across archive and live log")
+    record("rotation-keeps-newest-entry",
+           kept_entries and kept_entries[0] == original_entries[0]
+           and archive_entries and archive_entries[-1] == original_entries[-1])
+    live_entries = parse_entries_from_text((root / "wiki/log.md").read_text())
+    record("rotation-record-is-newest",
+           "maintenance | Log rotation" in live_entries[0])
 
     before_second = {
         str(p.relative_to(root)): p.read_text(encoding="utf-8")
@@ -157,6 +167,14 @@ def case_rotates_losslessly(root: Path) -> None:
     record("second-run-noop",
            second.returncode == 0 and before_second == after_second and "No rotation needed" in second.stdout,
            f"stdout={second.stdout!r} stderr={second.stderr!r}")
+    next_entry = b"## [2026-06-28] ingest | After rotation\n\nNew source.\n"
+    (root / "scripts").mkdir(exist_ok=True)
+    record_wiki_log_entry(root, next_entry)
+    after_record = parse_entries_from_text((root / "wiki/log.md").read_text())
+    record("writer-and-rotation-share-newest-first-order",
+           "After rotation" in after_record[0]
+           and "maintenance | Log rotation" in after_record[1]
+           and after_record[2:] == kept_entries)
 
 
 with_temp_root(case_rotates_losslessly)
@@ -207,7 +225,7 @@ def case_newest_entry_floor(root: Path) -> None:
     huge_body = "".join(f"Newest line {i}.\n" for i in range(40))
     write_log(root, [plain_entry(1, "old"), bracket_entry(2, "huge newest", huge_body)])
     before = (root / "wiki" / "log.md").read_text(encoding="utf-8")
-    proc = run_rotate(root, "--target-lines", "20")
+    proc = run_rotate(root, "--target-lines", "30")
     after = (root / "wiki" / "log.md").read_text(encoding="utf-8")
     record("newest-entry-floor-refuses-impossible-cut",
            proc.returncode != 0 and before == after and not (root / "archive").exists(),
@@ -400,7 +418,8 @@ with_temp_root(case_minus_3_selected_after_occupied_minus_2)
 
 
 def case_no_recognized_headers(root: Path) -> None:
-    write_log(root, ["Free prose with no entry headers at all.\n" for _ in range(40)])
+    (root / "wiki").mkdir()
+    (root / "wiki/log.md").write_text("# Log\n\n" + "Free prose with no entry headers at all.\n" * 40)
     before = (root / "wiki" / "log.md").read_text(encoding="utf-8")
     proc = run_rotate(root, "--target-lines", "30")
     after = (root / "wiki" / "log.md").read_text(encoding="utf-8")
@@ -415,7 +434,7 @@ with_temp_root(case_no_recognized_headers)
 
 
 def case_archive_ignored_by_lint(root: Path) -> None:
-    copy_fixture(root)
+    copy_lint_fixture(root)
     entries = [plain_entry(i, f"entry {i}") for i in range(1, 8)]
     write_log(root, entries)
     proc = run_rotate(root, "--target-lines", "30")

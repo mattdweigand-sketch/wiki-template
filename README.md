@@ -86,7 +86,7 @@ The main checks that protect the corpus:
 | Routine finish | `finalize_wiki_update.py` checks provenance, rebuilds backlinks, records one serialized log entry, and runs full lint once. |
 | Introduced history | Capture and provenance checks inspect each introduced commit and merge edge, catching invalid changes even after a revert. |
 | Generated wrappers | `scripts/wiki-wrapper-contract.json` owns both agent shortcut surfaces. Render and parity checks block drift. |
-| Complete private backup | `wiki-export` includes raw sources, local state, deliverables, scratch files, and Git history. Version 3 binds file and directory modes before absent-destination restore. |
+| Complete private backup | `wiki-export` includes raw sources, local state, deliverables, scratch files, and Git history. It checks the extracted snapshot before replacing an earlier archive. Version 3 binds file and directory modes before absent-destination restore. |
 
 Detailed workflow ownership lives in [`REFERENCES.md`](REFERENCES.md); task instructions live under [`workflows/`](workflows/).
 

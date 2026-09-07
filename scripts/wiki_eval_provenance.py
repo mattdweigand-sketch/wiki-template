@@ -8,8 +8,13 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
+import wiki_provenance
 from wiki_provenance import (
+    resolve_live_source_closure,
+    resolve_live_source_closures,
+    resolve_restored_source_closure,
     validate_ci_provenance,
     validate_live_provenance,
     validate_staged_provenance,
@@ -109,6 +114,47 @@ with tempfile.TemporaryDirectory(prefix="wiki-provenance-mutation-") as director
     _commit_all(repository, "accepted fixture")
     (repository / "raw/fixtures/source.txt").write_bytes(b"changed bytes\n")
     _record("raw-byte-mutation-fails", bool(validate_live_provenance(repository)))
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-provenance-closure-snapshot-") as directory:
+    repository = Path(directory)
+    _initialize_repository(repository)
+    _install_artifact(repository)
+    _commit_all(repository, "accepted fixture")
+    expected_manifest_sha = hashlib.sha256(
+        (repository / "scripts/raw-artifacts.json").read_bytes()
+    ).hexdigest()
+    expected_source_sha = hashlib.sha256(
+        (repository / "wiki/sources/fixture-source.md").read_bytes()
+    ).hexdigest()
+    for resolver in (resolve_live_source_closure, resolve_restored_source_closure):
+        with patch.object(wiki_provenance, "_live_view", wraps=wiki_provenance._live_view) as reads:
+            closure = resolver(repository, "fixture-source")
+        _record(f"{resolver.__name__}-uses-one-validated-view",
+                reads.call_count == 1 and closure.source_sha256 == expected_source_sha)
+    with patch.object(wiki_provenance, "_live_view", wraps=wiki_provenance._live_view) as reads:
+        snapshot = resolve_live_source_closures(repository, ("fixture-source", "fixture-source"))
+    _record("bulk-closures-share-one-manifest-snapshot",
+            reads.call_count == 1 and len(snapshot.closures) == 1
+            and snapshot.manifest_sha256 == expected_manifest_sha)
+    empty = resolve_live_source_closures(repository, ())
+    _record("empty-closure-selection-retains-manifest-identity",
+            empty.closures == () and empty.manifest_sha256 == expected_manifest_sha)
+    try:
+        resolve_live_source_closures(repository, ("unknown-source",))
+    except ValueError as exc:
+        missing_rejected = "no raw artifact record" in str(exc)
+    else:
+        missing_rejected = False
+    _record("bulk-closure-rejects-unregistered-source", missing_rejected)
+    (repository / "raw/fixtures/source.txt").write_bytes(b"unselected invalid raw bytes\n")
+    try:
+        resolve_live_source_closures(repository, ())
+    except ValueError as exc:
+        unselected_rejected = "does not match" in str(exc)
+    else:
+        unselected_rejected = False
+    _record("bulk-closure-validates-unselected-raw-bytes", unselected_rejected)
 
 
 with tempfile.TemporaryDirectory(prefix="wiki-provenance-coordinated-") as directory:

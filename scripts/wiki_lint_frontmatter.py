@@ -7,8 +7,8 @@ import re
 from pathlib import Path
 
 from _repo_paths import HTTP_URL_RE, EXISTING_FILE, RepoPathError, is_http_url, resolve_repo_path
-from _wiki_parse import FrontmatterError, LINK_RE, frontmatter_block, split_frontmatter, split_quoted_csv, strip_body_sections
-from wiki_lint_contract import RAW_REPO_TOKEN_RE, STOPWORDS, WIKI_REPO_TOKEN_RE
+from _wiki_parse import FrontmatterError, frontmatter_block, split_frontmatter, split_quoted_csv, strip_body_sections
+from wiki_lint_contract import RAW_REPO_TOKEN_RE, WIKI_REPO_TOKEN_RE
 
 
 RepositoryReference = tuple[str, str]
@@ -56,16 +56,6 @@ def nonblocking_frontmatter_block(text: str) -> str:
         return frontmatter_block(text)
     except FrontmatterError:
         return ""
-
-
-def tokens(text: str) -> set[str]:
-    text = LINK_RE.sub(" ", text)
-    text = re.sub(r"[`*#|>_\-\[\]()]", " ", text)
-    out = set()
-    for w in re.findall(r"[a-z][a-z0-9']+", text.lower()):
-        if len(w) >= 4 and w not in STOPWORDS:
-            out.add(w)
-    return out
 
 
 # Tokens in a sources: value that are not provenance slugs to existence-check:
@@ -217,5 +207,4 @@ __all__ = [
     "nonblocking_frontmatter_block",
     "source_items",
     "source_repo_references",
-    "tokens",
 ]

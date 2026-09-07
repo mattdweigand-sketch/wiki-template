@@ -9,12 +9,12 @@ Answer from the smallest relevant part of the wiki. This is the default research
 
 ## Load / Skip
 
-- **Load:** bounded `python3 scripts/wiki_lookup.py index --query "<topic>"` results to locate pages, `wiki/primer.md` for entry points by question type, then only the pages the question touches. When filing an analysis, also load the citation and provenance rules in `wiki/SCHEMA.md`.
+- **Load:** the named owner page or pages the question touches. When the entry point is unknown, use bounded `python3 scripts/wiki_lookup.py index --query "<topic>"` results or `wiki/primer.md` to locate it. When filing an analysis, also load the citation and provenance rules in `wiki/SCHEMA.md`.
 - **Skip:** unrelated entity folders, raw sources, evidence-run tooling, and the rest of `wiki/SCHEMA.md`.
 
 ## Steps
 
-1. Start with the 3-8 pages most likely to answer the question.
+1. Read a known owner page directly. Load more pages only when a link, conflict, or missing fact requires them.
 2. If those pages are not enough, name the corpus gap. Do not expand into an unbounded scan or silently reconstruct the answer from `raw/`.
 3. Answer clearly with `[[page-name]]` citations. Separate sourced facts from inference and open questions.
 4. Do not call the answer independently verified. Use `wiki-research` only when the user explicitly invokes it.

@@ -75,7 +75,8 @@ def run_tier1_lint(
     """Compose repository and page checks while preserving failure order."""
     fails = []  # (check, page_relpath, detail)
     fails.extend(check_folder_structure())
-    fails.extend(check_no_tracked_raw_artifacts())
+    if provenance_view != "restored":
+        fails.extend(check_no_tracked_raw_artifacts())
     fails.extend(check_configured_entity_layout())
     fails.extend(check_meta_utf8())
     fails.extend(check_stray_tool_tags())

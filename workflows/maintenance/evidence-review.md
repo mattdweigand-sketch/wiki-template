@@ -17,7 +17,7 @@ This is the independent review step inside `wiki-lint`. The linting agent orches
      --run-dir tmp/evidence-check/YYYYMMDD-HHMMSS --batches 3
    ```
 
-4. Give each prompt to a separate verifier in a fresh context. Each verifier checks only assigned item IDs against cited pages and raw closure. Save strict JSON to `verdicts/<batch-id>.json`. Valid verdicts are `VERIFIED`, `OVEREXTENDED`, `CONFLATED`, `MISMATCH`, and `NOT-FOUND`. Every item needs a decisive quote and canonical evidence paths from its captured source closure: the cited source page or its recorded raw files, never the sampled claim page itself. The whitespace-normalized quote must occur in at least one cited UTF-8 file. Binary evidence needs a captured textual excerpt. Missing, unrelated, unsafe, or invented evidence fails validation; quotation identity alone does not prove support.
+4. Give each prompt to a separate verifier in a fresh context. Each verifier checks only assigned item IDs against cited pages and raw closure. Save strict JSON to `verdicts/<batch-id>.json`. Use the verdict values listed in the generated prompt, rendered from the code-owned `VERDICTS` vocabulary. Every item needs a decisive quote and canonical evidence paths from its captured source closure: the cited source page or its recorded raw files, never the sampled claim page itself. The whitespace-normalized quote must occur in at least one cited UTF-8 file. Binary evidence needs a captured textual excerpt. Missing, unrelated, unsafe, or invented evidence fails validation; quotation identity alone does not prove support.
 
 5. Validate exact accounting and snapshot freshness.
 

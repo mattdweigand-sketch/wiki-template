@@ -11,7 +11,9 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
+import _evidence_fidelity as evidence_fidelity
 import wiki_evidence
 from _evidence_fidelity import (
     EvidenceError,
@@ -22,6 +24,7 @@ from _evidence_fidelity import (
     render_prompt,
     safe_run_dir,
     validate_plant,
+    validate_sample,
 )
 from eval_lib import Results
 from evidence_response import (EvidenceResponseError, build_reviewed_evidence_response,
@@ -220,6 +223,13 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-missing-count-") as td:
         and "missing=1" in cli.stdout,
         f"result={result} cli={cli.stdout + cli.stderr}",
     )
+    receipt = load_json(run_dir / "validation.json")
+    results.record("explicit-validation-cli-persists-matching-result",
+                   receipt["schema_version"] == 1
+                   and receipt["status"] == result.status
+                   and receipt["errors"] == list(result.errors)
+                   and receipt["metrics"]["missing"] == 1,
+                   repr(receipt))
 
 
 def extra_verdict(_root: Path, run_dir: Path, *_args: object) -> None:
@@ -231,6 +241,20 @@ def extra_verdict(_root: Path, run_dir: Path, *_args: object) -> None:
 
 
 case("duplicate-verdict-fails", extra_verdict, fragment="duplicated or excess")
+
+
+def swap_batch_verdicts(_root: Path, run_dir: Path, *_args: object) -> None:
+    first_path = run_dir / "verdicts/batch-01.json"
+    second_path = run_dir / "verdicts/batch-02.json"
+    first = load_json(first_path)
+    second = load_json(second_path)
+    first["verdicts"][0], second["verdicts"][0] = second["verdicts"][0], first["verdicts"][0]
+    atomic_json(first_path, first)
+    atomic_json(second_path, second)
+
+
+case("verdicts-must-belong-to-their-assigned-batch", swap_batch_verdicts,
+     fragment="assigned batch")
 
 
 def plant_verified(_root, run_dir, _sample, _plant, batches):
@@ -356,6 +380,54 @@ with tempfile.TemporaryDirectory(prefix="wiki-evidence-determinism-") as td:
     locations = {(claim["path"], claim["line_number"]) for claim in first["claims"]}
     duplicate_locations = [loc for loc in locations if "alpha.md" in loc[0] or "beta.md" in loc[0]]
     results.record("duplicate-text-locations-remain-distinct", len(locations) == len(first["claims"]) and len(duplicate_locations) >= 2, f"locations={locations}")
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    results.record("evidence-sample-retains-git-head", first["git"]["head"] == head,
+                   repr(first["git"]))
+    for length in (40, 64):
+        sample_with_git_id = copy.deepcopy(first)
+        sample_with_git_id["git"]["head"] = "a" * length
+        sample_with_git_id["manifest_sha256"] = manifest_hash(sample_with_git_id)
+        errors = validate_sample(sample_with_git_id)
+        results.record(f"evidence-accepts-{length}-character-git-id", not errors, repr(errors))
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-evidence-read-count-") as td:
+    root = Path(td).resolve()
+    install_evidence_fixture(root)
+    raw_reads: dict[str, int] = {}
+    original_read_bytes = Path.read_bytes
+
+    def count_raw_reads(path: Path) -> bytes:
+        relative = path.relative_to(root).as_posix()
+        if relative.startswith("raw/"):
+            raw_reads[relative] = raw_reads.get(relative, 0) + 1
+        return original_read_bytes(path)
+
+    with patch.object(Path, "read_bytes", count_raw_reads), patch.object(
+        evidence_fidelity, "resolve_live_source_closures",
+        wraps=evidence_fidelity.resolve_live_source_closures,
+    ) as resolve_closures:
+        one_claim = build_sample_data(root, "one-claim", 1, injected_seed=3)
+    results.record(
+        "evidence-sampling-validates-raw-bytes-once",
+        one_claim["selected_count"] == 1
+        and len(raw_reads) == 3 and set(raw_reads.values()) == {1},
+        repr(raw_reads),
+    )
+    selected_slugs = sorted({slug for claim in one_claim["claims"] for slug in claim["cited_slugs"]})
+    results.record("evidence-resolves-only-selected-source-closures",
+                   resolve_closures.call_count == 1
+                   and resolve_closures.call_args.args[1] == selected_slugs,
+                   repr(resolve_closures.call_args))
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-evidence-verdict-vocabulary-") as td:
+    root = Path(td).resolve()
+    _run_dir, _sample, _plant, batches = make_repo(root, "vocabulary")
+    with patch.object(evidence_fidelity, "VERDICTS", ("VERIFIED", "NEW-VERDICT")):
+        prompt = render_prompt(batches[0])
+    results.record("verifier-prompt-uses-owned-verdict-vocabulary",
+                   "VERIFIED | NEW-VERDICT" in prompt)
 
 
 with tempfile.TemporaryDirectory(prefix="wiki-evidence-targeted-") as td:
@@ -662,6 +734,28 @@ for defect in ("none", "replacement", "duplicate", "unknown", "plant", "unverifi
             rejected = True
         results.record("response-" + defect, (not rejected and claim["line_text"].split("(source:")[0].strip() in rendered
                        and str(root / "wiki/sources") in rendered) if defect == "none" else rejected, rendered)
+
+with tempfile.TemporaryDirectory(prefix="wiki-response-read-only-") as td:
+    root = Path(td).resolve()
+    run_dir, sample, _plant, _batches = make_repo(root, "read-only")
+    atomic_json(run_dir / "response-draft.json", {
+        "schema_version": 1, "run_id": sample["run_id"],
+        "manifest_sha256": sample["manifest_sha256"],
+        "statements": [{"claim_id": sample["claims"][0]["claim_id"]}],
+    })
+    validation_path = run_dir / "validation.json"
+    build_reviewed_evidence_response(root, run_dir.relative_to(root).as_posix())
+    results.record("response-builder-does-not-create-validation-file",
+                   not validation_path.exists())
+    create_reviewed_evidence_response(root, run_dir.relative_to(root).as_posix())
+    validation_path.write_bytes(b"retained validation receipt\n")
+    before = validation_path.stat()
+    render_reviewed_evidence_response(root, run_dir.relative_to(root).as_posix())
+    after = validation_path.stat()
+    results.record("response-render-does-not-overwrite-validation-file",
+                   validation_path.read_bytes() == b"retained validation receipt\n"
+                   and (before.st_ino, before.st_mtime_ns) == (after.st_ino, after.st_mtime_ns))
+
 
 # Authority metadata is optional and never replaces the captured source link.
 for authority in ("https://example.invalid/source", "raw/evidence/alpha-source.txt",

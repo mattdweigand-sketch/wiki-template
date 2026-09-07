@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from _file_transactions import transaction_status
+from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 from _wiki_parse import META_PAGES, get_entity_pages, parse_log_entry_date
 from wiki_lint_contract import (
     ADJUDICATION_CATEGORY_FIELDS,
@@ -452,8 +453,11 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
     if not ADJUDICATIONS_PATH.exists():
         return {}, None
     try:
-        raw = json.loads(ADJUDICATIONS_PATH.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raw = json.loads(
+            ADJUDICATIONS_PATH.read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_json_keys,
+        )
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, DuplicateJsonKeyError) as e:
         return {}, f"unreadable JSON: {e}"
     if not isinstance(raw, dict):
         return {}, "top level must be a JSON object"
@@ -467,6 +471,9 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
         return {}, ("unknown top-level category key(s): " + ", ".join(unknown)
                     + "; suppression entries under an unrecognized key would "
                       "silently detach")
+    for key in sorted(known_keys):
+        if key in raw and not isinstance(raw[key], list):
+            return {}, f"'{key}' must be a list"
     for key in (
         ADJUDICATION_CATEGORY_FIELDS["orphans"],
         ADJUDICATION_CATEGORY_FIELDS["authority_missing"],
@@ -493,20 +500,6 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
             return {}, (f"every '{glossary_key}' entry needs string 'term' "
                         "and 'phrase' fields")
     return raw, None
-
-
-# --------------------------- Tier 1: per-page check registry ---------------------------
-#
-# Each per-page check below is a small, self-contained function a maintainer can
-# read in isolation. It receives one PageContext and returns a list of fail
-# tuples (check, page_relpath, detail), the same shape the loop appends. Two
-# registries list them in evaluation order: TIER1_PATH_CHECKS (path-only, run
-# before frontmatter parsing) and TIER1_PAGE_CHECKS (frontmatter-dependent);
-# run_tier1_lint() iterates the entity pages and, for each, runs every check in order.
-# This preserves the exact emit order of the previous inlined loop (page-outer,
-# check-inner), so the grouped/sorted report is byte-for-byte identical.
-
-
 
 
 __all__ = [

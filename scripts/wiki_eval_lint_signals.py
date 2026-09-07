@@ -1,8 +1,24 @@
 #!/usr/bin/env python3
 """Seeded evals for Tier-2 review signals and meta maintenance."""
 
-from eval_lint_fixture import *
+
+from pathlib import Path
+
+from eval_lint_fixture import (
+    FIXTURE,
+    add_index_row,
+    append,
+    edit,
+    finish_lint_eval,
+    run_lint_fixture_case,
+    write_adjudications,
+    write_peer_source,
+    setup_lint_fixture_repository,
+)
 from _wiki_parse import get_entity_pages
+from wiki_log import render_wiki_log_postimage
+
+setup_lint_fixture_repository()
 
 # ---- Tier 2: quote mismatches (evidence check, deterministic half) ----
 FIXTURE_QUOTE = "The gamma fixture contains this exact sentence for verbatim quoting."
@@ -15,12 +31,12 @@ def seed_quote(root):
          f'"{FIXTURE_QUOTE}" (source: [[gamma]])')
 
 
-run_case(
+run_lint_fixture_case(
     "quote-mismatch-fires",
     seed_quote,
     args=(), expect=("quote mismatch", "not found in cited source"),
 )
-run_case(
+run_lint_fixture_case(
     "quote-verbatim-passes",
     lambda r: (
         edit(r, "wiki/sources/gamma.md",
@@ -30,7 +46,7 @@ run_case(
     ),
     args=(), absent=("not found in cited source",),
 )
-run_case(
+run_lint_fixture_case(
     "unsafe-raw-symlink-cannot-satisfy-quote",
     lambda r: (
         (r / "raw" / "notes").mkdir(parents=True, exist_ok=True),
@@ -50,7 +66,7 @@ run_case(
     expect_code=1,
     expect=("source-ref", "quote mismatch", "not found in cited source"),
 )
-run_case(
+run_lint_fixture_case(
     "quote-mismatch-suppressed",
     lambda r: (
         seed_quote(r),
@@ -90,12 +106,12 @@ def seed_split_quote(root, *, coherent=False):
     )
 
 
-run_case(
+run_lint_fixture_case(
     "quote-fragments-split-across-sources-fires",
     lambda r: seed_split_quote(r),
     args=(), expect=("not found in cited source",),
 )
-run_case(
+run_lint_fixture_case(
     "quote-fragments-one-source-passes",
     lambda r: seed_split_quote(r, coherent=True),
     args=(), absent=("not found in cited source",),
@@ -135,23 +151,23 @@ def seed_person_recompile_candidate(root):
     append(root, "wiki/concepts/alpha.md", "\n- Related: [[fixture-person]]\n")
 
 
-run_case(
+run_lint_fixture_case(
     "recompile-candidate-direct-source-link-fires",
     seed_recompile_candidate,
     args=(), expect=("compiled pages with newer source inputs",
                      "concepts/alpha.md (page 2026-06-01): newer sources: sources/gamma.md 2026-06-10"),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-candidate-tier2-only",
     seed_recompile_candidate,
     absent=("compiled pages with newer source inputs", "newer sources: sources/gamma.md"),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-candidate-person-page-fires",
     seed_person_recompile_candidate,
     args=(), expect=("people/fixture-person.md (page 2026-06-01): newer sources: sources/gamma.md 2026-06-10",),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-candidate-generated-backlink-ignored",
     lambda r: (
         edit(r, "wiki/sources/gamma.md", "updated: 2026-06-01", "updated: 2026-06-10"),
@@ -159,12 +175,12 @@ run_case(
     ),
     args=(), absent=("newer sources: sources/gamma.md",),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-candidate-same-date-not-flagged",
     lambda r: append(r, "wiki/concepts/alpha.md", "\n- Derived from: [[gamma]]\n"),
     args=(), absent=("newer sources: sources/gamma.md",),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-candidate-status-note-freshness-suppresses",
     lambda r: (
         seed_recompile_candidate(r),
@@ -173,7 +189,7 @@ run_case(
     ),
     args=(), absent=("newer sources: sources/gamma.md",),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-candidate-not-flagged-when-page-fresh",
     lambda r: (
         seed_recompile_candidate(r),
@@ -181,7 +197,7 @@ run_case(
     ),
     args=(), absent=("newer sources: sources/gamma.md",),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-candidate-suppressed-by-adjudication",
     lambda r: (
         seed_recompile_candidate(r),
@@ -191,7 +207,7 @@ run_case(
     ),
     args=(), expect=("suppressed",), absent=("newer sources: sources/gamma.md",),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-candidate-skips-source-stale-side",
     lambda r: (
         (r / "wiki/sources/epsilon.md").write_text(
@@ -216,16 +232,16 @@ UNCONSUMED_GAMMA = ("sources/gamma.md: no authored link from any non-source "
                     "entity page")
 
 
-run_case(
+run_lint_fixture_case(
     "unconsumed-source-fires",
     None, args=(), expect=(UNCONSUMED_GAMMA,),
 )
-run_case(
+run_lint_fixture_case(
     "unconsumed-source-entity-link-passes",
     lambda r: append(r, "wiki/concepts/alpha.md", "\n- Related: [[gamma]]\n"),
     args=(), expect=(UNCONSUMED_LABEL + ": 0",),
 )
-run_case(
+run_lint_fixture_case(
     # A sibling source's link is filing, not consumption: gamma stops being an
     # orphan but must still fire here.
     "unconsumed-source-peer-link-still-fires",
@@ -233,14 +249,14 @@ run_case(
     args=(), expect=(UNCONSUMED_GAMMA,),
     absent=("      sources/gamma.md\n",),
 )
-run_case(
+run_lint_fixture_case(
     # A generated Referenced-by echo on an entity page is not consumption.
     "unconsumed-source-generated-backlink-ignored",
     lambda r: append(r, "wiki/concepts/alpha.md",
                      "\n## Referenced by\n\n**sources/**  [[gamma]]\n"),
     args=(), expect=(UNCONSUMED_GAMMA,),
 )
-run_case(
+run_lint_fixture_case(
     "unconsumed-source-suppressed-by-adjudication",
     lambda r: write_adjudications(r, reviewed_unconsumed_sources=[
         {"page": "sources/gamma.md", "reason": "fixture standalone record",
@@ -249,7 +265,7 @@ run_case(
     absent=(UNCONSUMED_GAMMA,
             "reviewed_unconsumed_sources: sources/gamma.md"),
 )
-run_case(
+run_lint_fixture_case(
     # An accepted orphan is a fortiori an accepted standalone: one adjudication
     # suppresses both signals, no duplicate entry required.
     "unconsumed-source-accepted-orphan-suppresses",
@@ -257,7 +273,7 @@ run_case(
         {"page": "sources/gamma.md", "reason": "fixture", "date": "2026-06-11"}]),
     args=(), absent=(UNCONSUMED_GAMMA,),
 )
-run_case(
+run_lint_fixture_case(
     # An adjudicated source that later gains a real consumer is no longer a
     # candidate, so its entry must surface as DEAD, not as "used".
     "unconsumed-adjudication-dead-when-consumed",
@@ -271,7 +287,7 @@ run_case(
     expect=("reviewed_unconsumed_sources: sources/gamma.md",),
     absent=(UNCONSUMED_GAMMA,),
 )
-run_case(
+run_lint_fixture_case(
     "unconsumed-adjudication-stale-fires",
     lambda r: write_adjudications(r, reviewed_unconsumed_sources=[
         {"page": "sources/renamed-unconsumed.md", "reason": "x",
@@ -290,7 +306,7 @@ def seed_glossary(root, body):
     (root / "wiki" / "glossary.md").write_text("# Glossary\n\n" + body)
 
 
-run_case(
+run_lint_fixture_case(
     "glossary-volatile-fires",
     lambda r: seed_glossary(
         r,
@@ -300,7 +316,7 @@ run_case(
     expect=("glossary.md 'Alpha Term': \"remains open\" (rewrite to a dated "
             "fact or delegate to the owner page)",),
 )
-run_case(
+run_lint_fixture_case(
     "glossary-volatile-bullet-entry-fires",
     lambda r: seed_glossary(
         r,
@@ -311,7 +327,7 @@ run_case(
     expect=("glossary.md 'Alpha Term': \"still pending\" (rewrite to a dated "
             "fact or delegate to the owner page)",),
 )
-run_case(
+run_lint_fixture_case(
     "glossary-volatile-boundary-fence-preamble-pass",
     lambda r: seed_glossary(
         r,
@@ -323,7 +339,7 @@ run_case(
     args=(),
     expect=(GLOSSARY_VOLATILE_LABEL + ": 0",),
 )
-run_case(
+run_lint_fixture_case(
     "glossary-volatile-suppressed-by-adjudication",
     lambda r: (
         seed_glossary(
@@ -338,7 +354,7 @@ run_case(
     expect=(GLOSSARY_VOLATILE_LABEL + ": 0", "suppressed"),
     absent=("glossary.md 'Alpha Term'",),
 )
-run_case(
+run_lint_fixture_case(
     "glossary-volatile-adjudication-missing-term-fires",
     lambda r: (
         seed_glossary(r, "### Alpha Term\n**Definition:** Fixture.\n"),
@@ -349,7 +365,7 @@ run_case(
     expect_code=1,
     expect=("adjudication-stale", "missing glossary term"),
 )
-run_case(
+run_lint_fixture_case(
     "glossary-volatile-adjudication-bad-phrase-fires",
     lambda r: (
         seed_glossary(r, "### Alpha Term\n**Definition:** Fixture.\n"),
@@ -360,7 +376,7 @@ run_case(
     expect_code=1,
     expect=("not in the volatile-language vocabulary",),
 )
-run_case(
+run_lint_fixture_case(
     "glossary-volatile-dead-adjudication-reported",
     lambda r: (
         seed_glossary(
@@ -376,21 +392,21 @@ run_case(
 )
 
 # ---- Tier 2: authority metadata adoption ----
-run_case(
+run_lint_fixture_case(
     "authority-missing-status-note-fires",
     lambda r: append(r, "wiki/concepts/alpha.md",
                      "\n**Status (2026-06-15):** Alpha is currently active.\n"),
     args=(), expect=("pages likely needing authority metadata",
                      "concepts/alpha.md: has dated Status note"),
 )
-run_case(
+run_lint_fixture_case(
     "authority-missing-review-by-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md", "confidence: medium",
                    "confidence: medium\nreview_by: 2026-12-31"),
     args=(), expect=("pages likely needing authority metadata",
                      "concepts/alpha.md: has review_by"),
 )
-run_case(
+run_lint_fixture_case(
     "authority-missing-suppressed-by-adjudication",
     lambda r: (
         append(r, "wiki/concepts/alpha.md",
@@ -405,8 +421,8 @@ run_case(
 )
 
 # ---- Tier 2: candidates and suppression ----
-run_case("orphan-surfaces", None, args=(), expect=("sources/gamma.md",))
-run_case(
+run_lint_fixture_case("orphan-surfaces", None, args=(), expect=("sources/gamma.md",))
+run_lint_fixture_case(
     "orphan-suppressed-by-adjudication",
     lambda r: write_adjudications(r, accepted_orphans=[
         {"page": "sources/gamma.md", "reason": "fixture", "date": "2026-06-11"}]),
@@ -415,13 +431,13 @@ run_case(
     args=(), expect=("suppressed",),
     absent=("      sources/gamma.md\n", "accepted_orphans: sources/gamma.md"),
 )
-run_case(
+run_lint_fixture_case(
     "missing-adjudication-file-degrades-gracefully",
     lambda r: (r / "scripts" / "lint-adjudications.json").unlink(),
     args=(), expect=("sources/gamma.md",),
 )
 # ---- Tier 2: positive cases ----
-run_case(
+run_lint_fixture_case(
     # The Open questions / gaps mandate is Tier-1 (SCHEMA requires it on every
     # non-source page): removing the heading fails the gate.
     "missing-open-questions-fails-tier1",
@@ -429,20 +445,20 @@ run_case(
                    "## Open questions / gaps", "## Notes"),
     expect_code=1, expect=("open-questions", "missing Open questions / gaps section"),
 )
-run_case(
+run_lint_fixture_case(
     # Sources are exempt from the Open-questions mandate (gamma has none).
     "sources-exempt-from-open-questions",
     None,
     absent=("sources/gamma.md: missing Open questions",),
 )
-run_case(
+run_lint_fixture_case(
     # signal_thin had no case: every fixture page is under 80 words, so the
     # "(Nw)" listing must name them. Deleting the signal removes the marker.
     "thin-page-surfaces",
     None,
     args=(), expect=("thin pages (<80 words):", "concepts/alpha.md ("),
 )
-run_case(
+run_lint_fixture_case(
     # signal_uncited had no case: a page with empty sources and no authored
     # body links must surface. The clean fixture has zero uncited pages.
     "uncited-surfaces",
@@ -459,7 +475,7 @@ run_case(
     args=(), expect=("uncited (no sources, no body links): 1",
                      "concepts/uncited-fixture.md"),
 )
-run_case(
+run_lint_fixture_case(
     # A block-style sources: list is flattened to '' by the key parser, but the
     # page is cited: it must NOT surface as uncited.
     "block-sourced-page-not-uncited",
@@ -476,7 +492,7 @@ run_case(
     ),
     args=(), expect=("uncited (no sources, no body links): 0",),
 )
-run_case(
+run_lint_fixture_case(
     # A [[link]] inside a code fence is a syntax example, not a graph edge:
     # gamma must STAY an orphan when the only "link" to it is fenced. Before the
     # shared strip_code_spans rule reached the outbound scan, this fenced link
@@ -486,7 +502,7 @@ run_case(
                      "\n```\nSyntax example: [[gamma]] inside a fence.\n```\n"),
     args=(), expect=("      sources/gamma.md\n",),
 )
-run_case(
+run_lint_fixture_case(
     # review_due Tier-2 surface: a page whose review_by has passed is listed.
     "review-due-surfaces",
     lambda r: edit(r, "wiki/concepts/alpha.md", "updated: 2026-06-01",
@@ -494,7 +510,7 @@ run_case(
     args=(), expect=("outcome reviews due (review_by has passed; run the review workflow): 1",
                      "concepts/alpha.md (review_by 2020-01-01"),
 )
-run_case(
+run_lint_fixture_case(
     # adjudication_dead: an entry that suppresses nothing (alpha has inbound
     # links, so it is not an orphan) is reported as inert residue.
     "adjudication-dead-surfaces",
@@ -504,34 +520,42 @@ run_case(
                      "accepted_orphans: concepts/alpha.md"),
 )
 def write_burst_log(root, ingests, then_synthesis=False, trailing_ingests=0):
-    lines = ["# Log\n\n"]
+    entries = []
     day = 1
     for _ in range(ingests):
-        lines.append(f"## [2026-03-{day:02d}] ingest | fixture source {day}\nBody.\n\n")
+        entries.append(f"## [2026-03-{day:02d}] ingest | fixture source {day}\nBody.\n\n")
         day += 1
     if then_synthesis:
-        lines.append(f"## [2026-03-{day:02d}] synthesis | fixture pass\nBody.\n\n")
+        entries.append(f"## [2026-03-{day:02d}] synthesis | fixture pass\nBody.\n\n")
         day += 1
     for _ in range(trailing_ingests):
-        lines.append(f"## [2026-03-{day:02d}] ingest | fixture source {day}\nBody.\n\n")
+        entries.append(f"## [2026-03-{day:02d}] ingest | fixture source {day}\nBody.\n\n")
         day += 1
-    (root / "wiki" / "log.md").write_text("".join(lines))
+    content = b"# Log\n\n"
+    for entry in entries:
+        content = render_wiki_log_postimage(content, entry.encode())
+    (root / "wiki" / "log.md").write_bytes(content)
 
 
-run_case(
+run_lint_fixture_case(
+    "synthesis-due-new-burst-after-synthesis-fires",
+    lambda r: write_burst_log(r, ingests=0, then_synthesis=True, trailing_ingests=8),
+    args=(), expect=("8 ingest entries since the last synthesis pass",),
+)
+run_lint_fixture_case(
     # synthesis_due: an ingest burst with no synthesis pass following fires.
     "synthesis-due-burst-fires",
     lambda r: write_burst_log(r, ingests=8),
     args=(), expect=("ingest burst with no synthesis pass following", "8 ingest entries"),
 )
-run_case(
+run_lint_fixture_case(
     # A synthesis entry resets the count: burst then synthesis then a few
     # ingests stays quiet.
     "synthesis-due-reset-by-synthesis-entry",
     lambda r: write_burst_log(r, ingests=8, then_synthesis=True, trailing_ingests=3),
     args=(), absent=("ingest entries since the last synthesis pass",),
 )
-run_case(
+run_lint_fixture_case(
     # The plain-pipe header form ("## date | type | ...") is a recognized live
     # form and must count toward the burst exactly like the bracketed form.
     "synthesis-due-plain-pipe-headers-fire",
@@ -542,7 +566,7 @@ run_case(
     args=(), expect=("ingest burst with no synthesis pass following",
                      "8 ingest entries"),
 )
-run_case(
+run_lint_fixture_case(
     # One below the burst threshold stays quiet.
     "synthesis-due-below-threshold-quiet",
     lambda r: write_burst_log(r, ingests=7),
@@ -570,25 +594,25 @@ CONCEPT_FIXTURE_COUNT = fixture_entity_count(FIXTURE, "concepts")
 SOURCE_FIXTURE_COUNT = fixture_entity_count(FIXTURE, "sources")
 
 
-run_case(
+run_lint_fixture_case(
     "log-rotation-due-fires",
     lambda r: write_log(r, 2501),
     args=(), expect=("log rotation due: 1",
                      "wiki/log.md has 2501 lines; threshold is 2500"),
 )
-run_case(
+run_lint_fixture_case(
     "log-rotation-below-threshold-clean",
     lambda r: write_log(r, 2500),
     args=(), expect=("log rotation due: 0",),
     absent=("wiki/log.md has",),
 )
-run_case(
+run_lint_fixture_case(
     "log-absent-clean-fixture-passes",
     None,
     args=(), expect=("log rotation due: 0",),
     absent=("wiki/log.md has",),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-queue-count-drift-fires",
     lambda r: write_sourcing_queue(
         r, "<!-- lint:entity-count folder=concepts count=99 -->"
@@ -596,7 +620,7 @@ run_case(
     args=(), expect=("sourcing queue entity count drift: 1",
                      f"folder concepts declares 99 but actual count is {CONCEPT_FIXTURE_COUNT}"),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-queue-count-drift-clean",
     lambda r: write_sourcing_queue(
         r,
@@ -606,7 +630,7 @@ run_case(
     args=(), expect=("sourcing queue entity count drift: 0",),
     absent=("folder concepts declares",),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-queue-count-drift-multiple-markers-only-stale-fires",
     lambda r: write_sourcing_queue(
         r,
@@ -617,28 +641,28 @@ run_case(
                      f"folder concepts declares 99 but actual count is {CONCEPT_FIXTURE_COUNT}"),
     absent=("folder sources declares",),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-queue-count-bad-folder-fails-tier1",
     lambda r: write_sourcing_queue(
         r, "<!-- lint:entity-count folder=unknown count=0 -->"
     ),
     expect_code=1, expect=("sourcing-queue-count-marker", "unknown folder"),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-queue-count-missing-folder-fails-tier1",
     lambda r: write_sourcing_queue(
         r, "<!-- lint:entity-count count=0 -->"
     ),
     expect_code=1, expect=("sourcing-queue-count-marker", "missing folder"),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-queue-count-bad-count-fails-tier1",
     lambda r: write_sourcing_queue(
         r, "<!-- lint:entity-count folder=concepts count=many -->"
     ),
     expect_code=1, expect=("sourcing-queue-count-marker", "not an integer"),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-queue-count-negative-count-fails-tier1",
     lambda r: write_sourcing_queue(
         r, "<!-- lint:entity-count folder=concepts count=-3 -->"
@@ -648,14 +672,14 @@ run_case(
             "sourcing queue entity count drift: 0"),
     absent=("folder concepts declares",),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-queue-count-missing-count-fails-tier1",
     lambda r: write_sourcing_queue(
         r, "<!-- lint:entity-count folder=concepts -->"
     ),
     expect_code=1, expect=("sourcing-queue-count-marker", "missing count"),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-queue-count-duplicate-folder-fails-tier1",
     lambda r: write_sourcing_queue(
         r,

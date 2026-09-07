@@ -162,7 +162,7 @@ class Tier2PageFacts(TypedDict):
     source_items: list[str]
 
 
-Tier2Item = Union[str, tuple[float, str, str], tuple[float, int, str, str]]
+Tier2Item = str
 Tier2SignalResult = tuple[list[Tier2Item], int]
 Tier2Report = dict[str, Union[list[Tier2Item], int]]
 
@@ -240,8 +240,8 @@ class Tier2Context:
         # empty template when the file is absent, so no fallback is needed here.
         self.adj = adjudicated
         # Which adjudication entries actually suppressed a candidate this run.
-        # Signals record usage as they suppress; signal_adjudication_dead (kept
-        # last in TIER2_SIGNALS) reports the entries that suppressed nothing.
+        # Signals record usage as they suppress; signal_adjudication_dead runs
+        # after them and reports the entries that suppressed nothing.
         self.adj_used = {key: set() for key in adjudicated}
 
 
@@ -509,7 +509,7 @@ def signal_synthesis_due(ctx: Tier2Context) -> Tier2SignalResult:
         # _wiki_parse), so both live header forms are recognized identically.
         entry_type = parse_log_entry_type(line) or ""
         if entry_type.startswith("synthesis"):
-            ingests_since = 0
+            break  # The log is newest-first; older history is already covered.
         elif entry_type == "ingest":
             ingests_since += 1
     if ingests_since < SYNTHESIS_BURST_THRESHOLD:
@@ -533,9 +533,7 @@ def _adjudication_entry_labels(category, entries):
     """Human-readable labels for dead adjudication entries of one category."""
     out = []
     for e in sorted(entries, key=repr):
-        if isinstance(e, frozenset):
-            out.append(f"{category}: " + " ~ ".join(sorted(e)))
-        elif isinstance(e, tuple):
+        if isinstance(e, tuple):
             out.append(f"{category}: " + " -> ".join(str(x) for x in e))
         else:
             out.append(f"{category}: {e}")

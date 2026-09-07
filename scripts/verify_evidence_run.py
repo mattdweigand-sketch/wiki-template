@@ -7,7 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from wiki_evidence import EvidenceRunError, validate_evidence_run
+from wiki_evidence import EvidenceRunError, persist_evidence_validation
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +23,7 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = parser().parse_args()
     try:
-        validation = validate_evidence_run(args.repo_root, args.run_dir)
+        validation = persist_evidence_validation(args.repo_root, args.run_dir)
     except EvidenceRunError as exc:
         print(f"verify_evidence_run.py: {exc}", file=sys.stderr)
         return 1

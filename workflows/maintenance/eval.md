@@ -10,13 +10,13 @@ The explicit portable profile is for clean checkouts without private raw bytes:
 python3 scripts/wiki_eval.py --profile portable
 ```
 
-Every suite declares its allowed profiles. Portable uses an explicit export-suite override and skips only the real local private-corpus closure block. It still runs portable archive and restore safety checks, but it does not prove private raw closure or a restore of private bytes. Optional GitHub CI runs this governed portable profile on Python 3.9 and 3.11. GitHub is not required to use or verify the repository.
+Every suite declares its allowed profiles. Portable uses an explicit export-suite override with a complete neutral backup fixture instead of exporting the local corpus. It still runs portable archive and restore safety checks, but it does not prove private raw closure or a restore of private bytes. Optional GitHub CI runs this governed portable profile on Python 3.9 and 3.11. GitHub is not required to use or verify the repository.
 
 This is different from `wiki-lint`: lint checks wiki content; eval checks the tools that check and protect the wiki.
 
 ## Wrapper Surface Contract
 
-The live convenience surfaces are `.claude/commands/wiki-*.md` and `.agents/skills/wiki-*/SKILL.md`. `scripts/wiki-wrapper-contract.json` is the sole wrapper-name, description, route, and command-hint authority. The human-facing name lists in `AGENTS.md` and the README command table must match it.
+The live convenience surfaces are `.claude/commands/wiki-*.md` and `.agents/skills/wiki-*/SKILL.md`. `scripts/wiki-wrapper-contract.json` is the sole wrapper-name, description, route, and command-hint authority. The README command table must match it. `AGENTS.md` points to the contract without repeating the shortcut set.
 
 Canonical procedure belongs in `workflows/`. A wrapper is a deterministic render: canonical routing paths plus at most one `scripts/*.py` command hint. Deleting wrapper folders does not remove the underlying wiki workflow; it only removes that agent surface's shortcut.
 
@@ -25,7 +25,7 @@ Use `python3 scripts/render_wiki_wrappers.py --render` after changing the manife
 - both wrapper surfaces cover exactly the manifest names
 - every tracked wrapper is byte-for-byte equal to the current manifest render
 - every manifest workflow path exists and every optional command hint names a real `scripts/*.py` file
-- `AGENTS.md` and the README command table expose exactly the same shortcut set
+- the README command table exposes exactly the manifest shortcut set
 
 Do not hand-edit generated wrappers. Change canonical procedure in `workflows/`; change wrapper metadata or routing in the manifest; change output structure in the renderer.
 

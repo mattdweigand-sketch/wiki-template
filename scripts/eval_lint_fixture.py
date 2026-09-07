@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Shared fixture helpers for the split lint eval suites.
 
-Guards lint's checks against going vacuous: every check in lint.py's
-registries — TIER1_PATH_CHECKS, TIER1_PAGE_CHECKS, the repo/meta-level checks
-inside tier1(), and TIER2_SIGNALS (those registries are authoritative; this
-docstring deliberately does not enumerate them) — gets a seeded violation that
+The split suites exercise the page-check registries, repository checks in
+run_tier1_lint(), and TIER2_SIGNALS. Each rule gets a seeded violation that
 must fire, and the adjudication/suppression machinery gets positive and
 negative cases. A check that cannot fail is indistinguishable from no check;
 this suite exists so a future lint edit cannot silently disarm one.
@@ -13,12 +11,16 @@ Runs against the fixture mini-wiki in scripts/fixtures/wiki-lint/, copied to
 a system temp directory per case. Writes nothing inside the repo.
 """
 
+from __future__ import annotations
+
+import atexit
 import hashlib
 import json
 import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from wiki_lint_contract import ADJUDICATION_CATEGORY_FIELDS, FOLDER_TYPE
@@ -27,7 +29,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LINT = REPO_ROOT / "scripts" / "lint.py"
 FIXTURE = REPO_ROOT / "scripts" / "fixtures" / "wiki-lint"
 
-results = []
+results: list[tuple[str, bool]] = []
+_FIXTURE_REPOSITORY_TEMP: tempfile.TemporaryDirectory[str] | None = None
+_FIXTURE_REPOSITORY: Path | None = None
 
 
 def _build_lint_fixture_repository() -> tuple[tempfile.TemporaryDirectory[str], Path]:
@@ -61,19 +65,42 @@ def _build_lint_fixture_repository() -> tuple[tempfile.TemporaryDirectory[str], 
     return temporary, root
 
 
-_FIXTURE_REPOSITORY_TEMP, _FIXTURE_REPOSITORY = _build_lint_fixture_repository()
+def setup_lint_fixture_repository() -> None:
+    """Create the shared disposable baseline only when a suite requests it."""
+    global _FIXTURE_REPOSITORY_TEMP, _FIXTURE_REPOSITORY
+    if _FIXTURE_REPOSITORY is None:
+        _FIXTURE_REPOSITORY_TEMP, _FIXTURE_REPOSITORY = _build_lint_fixture_repository()
+        atexit.register(cleanup_lint_fixture_repository)
 
 
-def copy_fixture(root):
+def cleanup_lint_fixture_repository() -> None:
+    """Release the suite's baseline while keeping helper imports read-only."""
+    global _FIXTURE_REPOSITORY_TEMP, _FIXTURE_REPOSITORY
+    if _FIXTURE_REPOSITORY_TEMP is not None:
+        _FIXTURE_REPOSITORY_TEMP.cleanup()
+        _FIXTURE_REPOSITORY_TEMP = None
+        _FIXTURE_REPOSITORY = None
+
+
+def copy_lint_fixture(root: Path) -> None:
     """Materialize the fixture mini-wiki (wiki/ + scripts/) under `root`."""
+    setup_lint_fixture_repository()
+    assert _FIXTURE_REPOSITORY is not None
     shutil.copytree(_FIXTURE_REPOSITORY, root, dirs_exist_ok=True)
 
 
-def run_case(name, mutate, args=("--tier1",), expect_code=0, expect=(), absent=()):
+def run_lint_fixture_case(
+    name: str,
+    mutate: Callable[[Path], object] | None,
+    args: Sequence[str] = ("--tier1",),
+    expect_code: int = 0,
+    expect: Sequence[str] = (),
+    absent: Sequence[str] = (),
+) -> None:
     """Copy the fixture, apply `mutate(root)`, run lint, assert on output."""
     with tempfile.TemporaryDirectory(prefix="wiki-lint-eval-") as td:
         root = Path(td)
-        copy_fixture(root)
+        copy_lint_fixture(root)
         if mutate:
             mutate(root)
         proc = subprocess.run(
@@ -101,19 +128,19 @@ def run_case(name, mutate, args=("--tier1",), expect_code=0, expect=(), absent=(
             print(f"PASS {name}")
 
 
-def append(root, rel, text):
+def append(root: Path, rel: str, text: str) -> None:
     p = root / rel
     p.write_text(p.read_text() + text)
 
 
-def edit(root, rel, old, new):
+def edit(root: Path, rel: str, old: str, new: str) -> None:
     p = root / rel
     t = p.read_text()
     assert old in t, f"fixture drift: {old!r} not in {rel}"
     p.write_text(t.replace(old, new, 1))
 
 
-def add_index_row(root, rel, summary):
+def add_index_row(root: Path, rel: str, summary: str) -> None:
     append(root, "wiki/index.md", f"| [{Path(rel).name}]({rel}) | {summary} |\n")
 
 
@@ -123,7 +150,7 @@ def write_adjudications(root: Path, **kwargs: object) -> None:
     (root / "scripts" / "lint-adjudications.json").write_text(json.dumps(base))
 
 
-def write_raw_buckets(root, value):
+def write_raw_buckets(root: Path, value: object) -> None:
     (root / "scripts" / "raw-buckets.json").write_text(json.dumps(value))
 
 
@@ -173,7 +200,7 @@ def add_authority(root: Path, rel: str, *lines: str) -> None:
     p.write_text(t.replace(marker, marker + "\n".join(lines) + "\n", 1))
 
 
-def write_peer_source(root, source_name="gamma"):
+def write_peer_source(root: Path, source_name: str = "gamma") -> None:
     (root / "wiki" / "sources" / "peer-source.md").write_text(
         '---\ntitle: "Peer Source"\ntype: source\ncreated: 2026-06-01\n'
         'updated: 2026-06-01\nsources: ["experience: lint eval fixture"]\n'
@@ -188,7 +215,13 @@ def write_peer_source(root, source_name="gamma"):
 
 
 
-def fail_prerequisite(name, detail, *, sink=None, emit=True):
+def fail_prerequisite(
+    name: str,
+    detail: str,
+    *,
+    sink: list[tuple[str, bool]] | None = None,
+    emit: bool = True,
+) -> None:
     """Record an unavailable eval prerequisite as a real failed case."""
     target = results if sink is None else sink
     target.append((name, False))
@@ -201,4 +234,5 @@ def finish_lint_eval() -> int:
     print()
     failed = [name for name, ok in results if not ok]
     print(f"Summary: {len(results) - len(failed)} passed, {len(failed)} failed")
+    cleanup_lint_fixture_repository()
     return 1 if failed else 0
