@@ -42,7 +42,8 @@
       "artifact_id": "maintainer-maps",
       "paths": [
         "README.md",
-        "REFERENCES.md"
+        "REFERENCES.md",
+        "scripts/CONTEXT.md"
       ],
       "owner": "workflows/maintenance/audit-docs.md",
       "reason": "These files explain the reusable template and stable detail when a routed maintenance task needs it.",

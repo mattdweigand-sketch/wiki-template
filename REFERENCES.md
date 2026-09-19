@@ -116,6 +116,7 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
 | `scripts/check_document_reachability.py` | Follows Markdown links from declared roots and rejects missing routes or unreachable operational documents |
 | `.wiki-transactions/` | Gitignored recovery authority for exact approved capture; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
+| [`scripts/CONTEXT.md`](scripts/CONTEXT.md) | Tooling entry points and links to canonical maintenance contracts |
 | `scripts/fixtures/` | Fixture data for live tooling evals |
 
 ## Durable File And Transaction Boundary
@@ -148,6 +149,7 @@ Use the matching row when changing tooling, then check current imports and comma
 
 | Change and owner | Inspect affected consumers | Relevant checks |
 |---|---|---|
+| Bounded navigation: `wiki_lookup.py` | `wiki_eval_lookup.py`, `workflows/research/ask.md`; shared `_wiki_parse.py` and `wiki_entity_catalog.py` interfaces | `lookup`, `parse-callers`, `document-reachability`, `prompt-artifacts` |
 | Shared log rendering and writes: `wiki_log.py` | `capture_staging.py`, `finalize_wiki_update.py` | `wiki-log`, `finalize` |
 | Approval proposal and ledger: `capture_gate.py`, `capture_approval_records.py`, `capture_ledger.py` | `capture_staging.py`, `capture_diff.py`, `validate_capture_runs.py`; `finalize_wiki_update.py` consumes ledger boundary values | `application`, `capture-runs`, `capture-diff`, `finalize`; `transactions` if application mechanics change |
 | Evidence validation: `wiki_evidence.py`, `_evidence_fidelity.py`, `_evidence_validation.py` | `build_evidence_sample.py`, `build_verifier_batches.py`, `verify_evidence_run.py`, `evidence_response.py` | `evidence-fidelity` |
@@ -171,7 +173,7 @@ Loading principle: an agent starting a task should load L0, use `CONTEXT.md` to 
 
 ## Bounded navigation
 
-Use `python3 scripts/wiki_lookup.py index --query "<topic>" --folder <folder> --limit 12 --offset 0` for authored catalog rows. With no query or folder it returns section locations. Folder names come from the existing entity catalog. Use `python3 scripts/wiki_lookup.py log --count 5 --offset 0` for newest-first entries, then paginate to the required date or entry. Both commands include source line locations and cap output at 12,000 characters with an explicit truncation notice. Open indicated lines when one oversized entry is truncated. No separate index or cache is maintained.
+Use `python3 scripts/wiki_lookup.py index --query "<topic>" --folder <folder> --limit 12 --offset 0` for authored catalog rows. With no query or folder it returns section locations. Folder names come from the existing entity catalog. Use `python3 scripts/wiki_lookup.py log --count 5 --offset 0` for newest-first entries, then paginate to the required date or entry. The read-only `content --query "<key terms>" [--folder <folder>]` fallback searches cataloged entity-page bodies in catalog order, requiring every case-folded query term on the same source line. It excludes root infrastructure, frontmatter, and Referenced by / Related pages sections. Its required query must be nonempty; `--limit` defaults to 12 and accepts 1–12, and `--offset` must be nonnegative. Each page returns a title, section, original path and line number, and one exact source window of at most 500 characters centered on the closest group of matches when they fit. Ellipses mark omitted edges; truncation and omitted-query-term notices sit outside source text. All three commands cap output at 12,000 characters with an explicit truncation notice. Open indicated source lines when output is truncated. Results are navigation aids, not relevance-ranked or verified answers. No separate index, cache, external service, or dependency is maintained. The [ask workflow](workflows/research/ask.md) owns fallback, reformulation, and evidence-reading procedure.
 
 ## Complete capture staging
 

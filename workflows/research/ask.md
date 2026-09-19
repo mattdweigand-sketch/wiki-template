@@ -9,14 +9,14 @@ Answer from the smallest relevant part of the wiki. This is the default research
 
 ## Load / Skip
 
-- **Load:** bounded `python3 scripts/wiki_lookup.py index --query "<topic>"` results to locate pages, `wiki/primer.md` for entry points by question type, then only the pages the question touches. When filing an analysis, also load the citation and provenance rules in `wiki/SCHEMA.md`.
+- **Load:** `wiki/primer.md` for entry points by question type, bounded `python3 scripts/wiki_lookup.py index --query "<topic>"` results to locate pages, then only the pages the question touches. When filing an analysis, also load the citation and provenance rules in `wiki/SCHEMA.md`.
 - **Skip:** unrelated entity folders, raw sources, evidence-run tooling, and the rest of `wiki/SCHEMA.md`.
 
 ## Steps
 
-1. Start with the 3-8 pages most likely to answer the question.
-2. If those pages are not enough, name the corpus gap. Do not expand into an unbounded scan or silently reconstruct the answer from `raw/`.
-3. Answer clearly with `[[page-name]]` citations. Separate sourced facts from inference and open questions.
+1. Use the primer to select the likely entity folder. For unknown slugs, extract a few distinctive keywords from the question, preserving exact IDs and names, and search the catalog with `--folder` when the route is clear. Start with the 3 to 8 pages most likely to answer the question, or fewer when sufficient.
+2. If catalog results are empty or the selected pages lack the evidence, use `python3 scripts/wiki_lookup.py content --query "<key terms>" --folder <entity-folder>`. If the results do not supply the evidence, try at most one alternate keyword query using terminology from the primer or retrieved pages. Preserve the question’s entities, constraints, and requested detail. If the folder scope is insufficient, broaden once by omitting `--folder`. These limits apply across the question, not afresh to each result; read at most one additional result page across these lookups rather than loading all results. This read-only command searches cataloged entity bodies internally and returns at most 12 page excerpts within the 12,000-character output cap. Matches require all terms on one line and retain catalog order. A broader topic match does not establish that the requested detail is supported. A match is not evidence verification; a miss is not proof of corpus absence. Describe the searched scope and any unresolved gap. Do not reconstruct the answer from `raw/`.
+3. Open selected pages and read their authority, confidence, qualifications, and relevant evidence before answering. Answer clearly with `[[page-name]]` citations. Separate sourced facts from inference and open questions.
 4. Do not call the answer independently verified. Use `wiki-research` only when the user explicitly invokes it.
 5. Use Analysis Capture below only when the answer should become a durable wiki page.
 

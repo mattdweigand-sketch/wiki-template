@@ -15,7 +15,7 @@ from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 PROMPT_ARTIFACT_REGISTRY = Path("scripts/prompt-artifacts.json")
 ROOT_PROMPT_PATHS = {
     "AGENTS.md", "CLAUDE.md", "CONTEXT.md", "README.md", "REFERENCES.md",
-    "wiki/domain.md",
+    "wiki/domain.md", "scripts/CONTEXT.md",
 }
 GENERATED_PROMPT_ROOTS = (Path(".agents/skills"), Path(".claude/commands"))
 REVIEW_TRIGGERS = ["harness-change", "model-change"]

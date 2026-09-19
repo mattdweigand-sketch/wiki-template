@@ -9,6 +9,12 @@ updated: 2026-08-25
 
 Append-only history of work in this configured wiki. Newest entries go on top.
 
+## [2026-09-19] maintenance | Port bounded content retrieval
+
+Adapted retrieval mechanisms from wiki-pplx commits 03c796047222850089ea64a709daf2af86253342 and d0f92669d73565fbda0755884525760590f2df9a: read-only cataloged entity-body lookup, match-centered exact excerpts, and bounded query reformulation. Preserved template citation and capture rules, existing index/log behavior, configurable setup, and all provenance, approval, transaction, and recovery controls. Added neutral lookup fixtures and a short scripts entry point governed by existing documentation and prompt registries. No source corpus or private evaluation artifacts were imported.
+
+Adaptations preserve excerpt whitespace and explicitly bound workflow pagination to one additional result page per question. Focused checks establish discovery, source-location, excerpt, and safety behavior; they do not establish definitive end-to-end answer-quality improvement. Full/portable tooling evals and routine finalization are required; final outcomes are reported in the task handoff.
+
 ## [2026-09-03] maintenance | Tighten promotion context and approval navigation
 
 Applied the approved ICM audit recommendations. Ordinary promotion now loads the relevant schema and reference sections instead of approval implementation code. REFERENCES.md owns the complete staging, preview, digest approval, application, and validation procedure; root and workflow instructions retain essential boundaries and link to it. Added direct change-impact guidance for shared logging, approval, evidence validation, provenance, and wrappers, reachable from maintenance routing and eval.
