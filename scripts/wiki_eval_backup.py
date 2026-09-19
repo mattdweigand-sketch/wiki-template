@@ -16,6 +16,7 @@ from pathlib import Path
 
 import export_wiki
 from eval_lib import Results
+from eval_export_fixture import build_export_fixture
 from wiki_backup_receipt import (
     BackupReceiptError,
     VerifiedBackupReceipt,
@@ -30,19 +31,9 @@ EXPORT = REPO_ROOT / "scripts" / "export_wiki.py"
 results = Results()
 
 
-def build_export_fixture(root: Path) -> None:
-    for rel in export_wiki.REQUIRED_FILES:
-        path = root / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("fixture\n", encoding="utf-8")
-    for prefix in export_wiki.REQUIRED_PREFIXES:
-        path = root / prefix / "fixture.txt"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("fixture\n", encoding="utf-8")
-
-
 def fake_rclone(root: Path, *, size_delta: int = 0) -> Path:
-    path = root / "fake-rclone"
+    path = root / "tmp" / "fake-rclone"
+    path.parent.mkdir(exist_ok=True)
     path.write_text(
         f"""#!{sys.executable}
 import hashlib
@@ -283,7 +274,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-backup-receipt-race-") as td:
 
 with tempfile.TemporaryDirectory(prefix="wiki-backup-local-only-") as td:
     root = Path(td)
-    build_export_fixture(root)
+    build_export_fixture(root, REPO_ROOT)
     receipt_path = root / "scripts" / "backup-receipt.json"
     proc = subprocess.run(
         [
@@ -322,7 +313,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-backup-path-collision-") as td:
 
 with tempfile.TemporaryDirectory(prefix="wiki-backup-verified-") as td:
     root = Path(td)
-    build_export_fixture(root)
+    build_export_fixture(root, REPO_ROOT)
     rclone = fake_rclone(root)
     receipt_path = root / "scripts" / "backup-receipt.json"
     proc = subprocess.run(
@@ -344,7 +335,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-backup-verified-") as td:
 
 with tempfile.TemporaryDirectory(prefix="wiki-backup-unverified-") as td:
     root = Path(td)
-    build_export_fixture(root)
+    build_export_fixture(root, REPO_ROOT)
     rclone = fake_rclone(root, size_delta=1)
     receipt_path = root / "scripts" / "backup-receipt.json"
     proc = subprocess.run(

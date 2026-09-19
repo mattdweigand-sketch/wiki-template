@@ -14,7 +14,7 @@ from capture_gate import (apply_capture_proposal, canonical_capture_proposal_byt
                           prepare_capture_proposal)
 from capture_staging import CaptureStagingError, stage_capture_proposal
 from eval_lib import Results
-from eval_lint_fixture import copy_fixture, write_registered_raw_fixture
+from eval_lint_fixture import copy_lint_fixture, write_registered_raw_fixture
 
 SCRIPTS = Path(__file__).resolve().parent
 ENTRY = "## [2026-09-03] workflow | Routine fixture\n\nVerification: final full lint.\n"
@@ -35,7 +35,7 @@ def snapshot(root: Path) -> dict[str, tuple[bytes, int]]:
 
 
 def fixture(root: Path) -> None:
-    copy_fixture(root)
+    copy_lint_fixture(root)
     (root / "scripts/capture-runs.jsonl").write_bytes(LEDGER)
     (root / "wiki/log.md").write_text("# Activity Log\n\n")
     (root / ".gitignore").write_text("raw/\ntmp/\n.wiki-transactions/\nscripts/.wiki-log.lock\n")
@@ -132,6 +132,17 @@ def main() -> int:
         root = Path(directory)
         fixture(root)
         alpha = root / "wiki/concepts/alpha.md"
+        preserved_modes = {
+            "wiki/concepts/alpha.md": 0o600,
+            "wiki/concepts/beta.md": 0o640,
+            "wiki/index.md": 0o600,
+            "wiki/log.md": 0o640,
+            "scripts/capture-mode-fixture.py": 0o755,
+        }
+        (root / "scripts/capture-mode-fixture.py").write_text("print('before')\n")
+        (root / "tmp/capture-mode-fixture.py").write_text("print('after')\n")
+        for relative, mode in preserved_modes.items():
+            (root / relative).chmod(mode)
         (root / "tmp/alpha.md").write_text(alpha.read_text() + "\n- [[beta]]\n")
         (root / "tmp/index.md").write_text((root / "wiki/index.md").read_text().replace("Test concept alpha", "Updated concept alpha"))
         (root / "tmp/entry.md").write_text("## [2026-09-03] promotion | Complete fixture\n\nVerification: exact apply and full lint.\n")
@@ -139,11 +150,29 @@ def main() -> int:
             "schema_version": 1, "capture_boundary": "artifact-promotion",
             "purpose": "Promote a neutral fixture", "primary_destination": "wiki/concepts/alpha.md",
             "authored_targets": [{"destination": "wiki/concepts/alpha.md", "staged_path": "tmp/alpha.md"},
-                                 {"destination": "wiki/index.md", "staged_path": "tmp/index.md"}],
+                                 {"destination": "wiki/index.md", "staged_path": "tmp/index.md"},
+                                 {"destination": "scripts/capture-mode-fixture.py", "staged_path": "tmp/capture-mode-fixture.py"}],
             "log_entry_path": "tmp/entry.md", "rebuild_referenced_by": True,
         }
         (root / "tmp/request.json").write_bytes(canonical_capture_proposal_bytes(request))
         before = snapshot(root)
+        canonical_request = canonical_capture_proposal_bytes(request).decode()
+        invalid_requests = {
+            "duplicate-top-level-key": '{"schema_version":1,' + canonical_request[1:],
+            "duplicate-nested-key": canonical_request.replace('"destination":', '"destination":"wiki/index.md","destination":', 1),
+            "unknown-field": json.dumps({**request, "unknown": True}),
+            "boolean-schema": json.dumps({**request, "schema_version": True}),
+        }
+        for label, invalid_request in invalid_requests.items():
+            (root / "tmp/invalid-request.json").write_text(invalid_request)
+            try:
+                stage_capture_proposal(root, "tmp/invalid-request.json", "tmp/invalid-output")
+            except CaptureStagingError:
+                rejected = True
+            else:
+                rejected = False
+            results.record("staging-rejects-" + label, rejected and snapshot(root) == before
+                           and not (root / "tmp/invalid-output").exists())
         (root / "tmp/unsafe").mkdir()
         (root / "tmp/unsafe/postimages").symlink_to(root / "wiki", target_is_directory=True)
         try:
@@ -161,11 +190,50 @@ def main() -> int:
                        and retry.result_code == "ALREADY_STAGED", str(staged))
         proposal = json.loads((root / staged.proposal_path).read_text())
         results.record("staging-keeps-template-proposal-schema", proposal["schema_version"] == 2 and "qualification" not in proposal)
+        results.record("staging-preserves-authored-generated-and-executable-modes",
+                       all(target["postimage_mode"] == before[target["destination"]][1]
+                           and stat.S_IMODE((root / target["staged_path"]).stat().st_mode) == target["postimage_mode"]
+                           for target in proposal["targets"])
+                       and all(stat.S_IMODE((root / "tmp/staged" / name).stat().st_mode) == 0o644
+                               for name in ("proposal.json", "staging-result.json")),
+                       repr([(target["destination"], target["postimage_mode"],
+                              stat.S_IMODE((root / target["staged_path"]).stat().st_mode))
+                             for target in proposal["targets"]]))
+        for label, formatted_request in (
+            ("pretty-json", json.dumps(request, indent=2)),
+            ("reordered-spaced-json", json.dumps(dict(reversed(list(request.items()))))),
+            ("crlf-json", json.dumps(request, indent=2).replace("\n", "\r\n") + "\r\n"),
+        ):
+            (root / "tmp/request.json").write_bytes(formatted_request.encode())
+            retry = stage_capture_proposal(root, "tmp/request.json", "tmp/staged")
+            results.record("staging-accepts-" + label, retry.result_code == "ALREADY_STAGED"
+                           and (root / staged.proposal_path).read_bytes() == canonical_capture_proposal_bytes(proposal)
+                           and snapshot(root) == before)
+        alpha_staged = next(target["staged_path"] for target in proposal["targets"]
+                            if target["destination"] == "wiki/concepts/alpha.md")
+        for label, relative, altered_mode, planned_mode in (
+            ("payload", alpha_staged, 0o644, 0o600),
+            ("metadata", staged.proposal_path, 0o600, 0o644),
+        ):
+            path = root / relative
+            path.chmod(altered_mode)
+            try:
+                stage_capture_proposal(root, "tmp/request.json", "tmp/staged")
+            except CaptureStagingError:
+                rejected = True
+            else:
+                rejected = False
+            results.record("staging-retry-rejects-" + label + "-mode-drift", rejected
+                           and stat.S_IMODE(path.stat().st_mode) == altered_mode and snapshot(root) == before)
+            path.chmod(planned_mode)
         prepared = prepare_capture_proposal(root, staged.proposal_path)
         apply_capture_proposal(root, staged.proposal_path, str(prepared["authorization_digest"]))
         approved = snapshot(root)
         checks = [run(root, "validate_capture_runs.py"), run(root, "lint.py")]
         retried = apply_capture_proposal(root, staged.proposal_path, str(prepared["authorization_digest"]))
+        results.record("staged-approval-installs-preserved-file-modes", all(
+            stat.S_IMODE((root / relative).stat().st_mode) == mode
+            for relative, mode in preserved_modes.items()))
         results.record("approved-finish-is-validation-only-and-byte-mode-exact", snapshot(root) == approved
                        and all(check.returncode == 0 for check in checks) and retried["result_code"] == "ALREADY_APPLIED",
                        "\n".join(check.stdout + check.stderr for check in checks))

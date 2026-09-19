@@ -18,8 +18,6 @@ from render_wiki_wrappers import (
 
 
 README_COMMAND_RE = re.compile(r"^\| `((?:wiki-[a-z0-9-]+))` \|", re.MULTILINE)
-AGENTS_LIST_RE = re.compile(r"default wrapped workflows: (?P<list>[^.]+)\.")
-BACKTICK_NAME_RE = re.compile(r"`(wiki-[a-z0-9-]+)`")
 
 
 def _present_wrappers(repo_root: Path, surface: str) -> set[Path]:
@@ -38,23 +36,16 @@ def _present_wrappers(repo_root: Path, surface: str) -> set[Path]:
     } if root.is_dir() else set()
 
 
-def _human_name_problems(repo_root: Path, expected_names: set[str]) -> list[str]:
+def _readme_name_problems(repo_root: Path, expected_names: set[str]) -> list[str]:
     problems: list[str] = []
     try:
         readme = (repo_root / "README.md").read_text(encoding="utf-8")
-        agents = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
-        return [f"cannot read README.md or AGENTS.md: {exc}"]
+        return [f"cannot read README.md: {exc}"]
     readme_names = set(README_COMMAND_RE.findall(readme))
-    match = AGENTS_LIST_RE.search(agents)
-    agents_names = set(BACKTICK_NAME_RE.findall(match.group("list"))) if match else set()
     if readme_names != expected_names:
         problems.append(
             f"README.md shortcut names differ: expected {sorted(expected_names)}, found {sorted(readme_names)}"
-        )
-    if agents_names != expected_names:
-        problems.append(
-            f"AGENTS.md shortcut names differ: expected {sorted(expected_names)}, found {sorted(agents_names)}"
         )
     return problems
 
@@ -84,7 +75,7 @@ def wrapper_parity_problems(
         if actual != expected[relative]:
             problems.append(f"stale generated wrapper: {relative.as_posix()}")
     problems.extend(
-        _human_name_problems(repo_root, {shortcut.name for shortcut in contract.shortcuts})
+        _readme_name_problems(repo_root, {shortcut.name for shortcut in contract.shortcuts})
     )
     return problems
 

@@ -1,79 +1,93 @@
 #!/usr/bin/env python3
 """Seeded evals for lint page and baseline hard rules."""
 
-from eval_lint_fixture import *
+import shutil
+from wiki_lint_contract import ADJUDICATION_CATEGORY_FIELDS
+
+from eval_lint_fixture import (
+    add_authority,
+    append,
+    edit,
+    finish_lint_eval,
+    run_lint_fixture_case,
+    write_adjudications,
+    write_registered_raw_fixture,
+    setup_lint_fixture_repository,
+)
 from _file_transactions import run_transaction
 
+setup_lint_fixture_repository()
+
 # ---- Tier 1: clean fixture is the control ----
-run_case("clean-fixture-passes", None)
+run_lint_fixture_case("clean-fixture-passes", None)
 
 # ---- Tier 1: each check fires on a seeded violation ----
-run_case(
+run_lint_fixture_case(
     "filename-nonkebab-fires",
     lambda r: shutil.copy(r / "wiki/concepts/alpha.md", r / "wiki/concepts/Bad_Name.md"),
     expect_code=1, expect=("filename", "not kebab-case"),
 )
-run_case(
+run_lint_fixture_case(
     "filename-date-prefix-fires",
     lambda r: shutil.copy(r / "wiki/concepts/alpha.md", r / "wiki/concepts/2026-06-01-alpha.md"),
     expect_code=1, expect=("filename", "has date prefix"),
 )
-run_case(
+run_lint_fixture_case(
     "missing-frontmatter-key-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md", "tags: [fixture]\n", ""),
     expect_code=1, expect=("frontmatter", "missing keys: tags"),
 )
-run_case(
+run_lint_fixture_case(
     "type-folder-mismatch-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md", "type: concept", "type: source"),
     expect_code=1, expect=("type", "folder type 'concept'"),
 )
-run_case(
+run_lint_fixture_case(
     "invalid-confidence-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md", "confidence: medium", "confidence: certain"),
     expect_code=1, expect=("confidence", "invalid value 'certain'"),
 )
-run_case(
+run_lint_fixture_case(
     "malformed-date-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md", "created: 2026-06-01", "created: 2026/06/01"),
     expect_code=1, expect=("date", "created '2026/06/01'"),
 )
-run_case(
+run_lint_fixture_case(
     "invalid-source-type-fires",
     lambda r: edit(r, "wiki/sources/gamma.md", "source_type: other", "source_type: invalid"),
     expect_code=1, expect=("source-type", "invalid value 'invalid'"),
 )
-run_case(
+run_lint_fixture_case(
     "source-type-on-non-source-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md", "agent_use_cases:", "source_type: other\nagent_use_cases:"),
     expect_code=1, expect=("source-type", "source_type set on non-source page"),
 )
-run_case(
+run_lint_fixture_case(
     "index-missing-fires",
     lambda r: edit(r, "wiki/index.md", "| [alpha.md](concepts/alpha.md) | Test concept alpha |\n", ""),
     expect_code=1, expect=("index-missing", "concepts/alpha.md"),
 )
-run_case(
+run_lint_fixture_case(
     "index-stale-fires",
     lambda r: append(r, "wiki/index.md", "| [missing.md](concepts/missing.md) | stale fixture |\n"),
     expect_code=1, expect=("index-stale", "concepts/missing.md"),
 )
-run_case(
+run_lint_fixture_case(
     "non-utf8-index-fails-cleanly",
     lambda r: (r / "wiki" / "index.md").write_bytes(b"\xff"),
     expect_code=1, expect=("index", "not valid UTF-8"),
 )
-run_case(
+run_lint_fixture_case(
     "related-label-fires",
     lambda r: append(r, "wiki/concepts/alpha.md", "- Causes: [[delta-one]]\n"),
     expect_code=1, expect=("related-label", "'Causes:'"),
 )
-run_case(
+run_lint_fixture_case(
     "confidence-restate-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md", "confidence: medium", "confidence: low"),
     expect_code=1, expect=("confidence-restate", "not restated in body"),
 )
-run_case(
+run_lint_fixture_case(
     "confidence-restate-satisfied",
     lambda r: (
         edit(r, "wiki/concepts/alpha.md", "confidence: medium", "confidence: low"),
@@ -81,7 +95,7 @@ run_case(
              "Confidence is low; fixture restatement. Alpha body text"),
     ),
 )
-run_case(
+run_lint_fixture_case(
     "contested-needs-disagreement",
     lambda r: (
         edit(r, "wiki/concepts/alpha.md", "confidence: medium", "confidence: contested"),
@@ -90,33 +104,33 @@ run_case(
     ),
     expect_code=1, expect=("confidence-restate", "Disagreement"),
 )
-run_case(
+run_lint_fixture_case(
     "dangling-link-fires",
     lambda r: append(r, "wiki/concepts/alpha.md", "- [[no-such-page]]\n"),
     expect_code=1, expect=("dangling-link",),
 )
-run_case(
+run_lint_fixture_case(
     "synthesis-as-source-frontmatter-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md",
                    'sources: ["experience: lint eval fixture"]',
                    'sources: ["experience: lint eval fixture", "[[synthesis]]"]'),
     expect_code=1, expect=("synthesis-as-source", "sources: cites the synthesis ledger"),
 )
-run_case(
+run_lint_fixture_case(
     "synthesis-as-source-bare-slug-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md",
                    'sources: ["experience: lint eval fixture"]',
                    'sources: ["experience: lint eval fixture", "synthesis"]'),
     expect_code=1, expect=("synthesis-as-source", "source-ref"),
 )
-run_case(
+run_lint_fixture_case(
     "synthesis-as-source-body-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md",
                    "Alpha body text for the lint eval fixture.",
                    "Alpha body text for the lint eval fixture (source: [[synthesis]])."),
     expect_code=1, expect=("synthesis-as-source", "body cites [[synthesis]] as a source"),
 )
-run_case(
+run_lint_fixture_case(
     "synthesis-link-not-as-source-allowed",
     lambda r: (
         edit(r, "wiki/concepts/alpha.md",
@@ -127,7 +141,7 @@ run_case(
     ),
     expect_code=0, absent=("synthesis-as-source",),
 )
-run_case(
+run_lint_fixture_case(
     # content:links#2 + #3: a [[link]] written as a syntax example inside an
     # inline code span on an ENTITY page must not be reported dangling, matching
     # the meta-page behavior. Reverting the code-span strip in the Tier-1
@@ -137,7 +151,7 @@ run_case(
                      "\nLink syntax example: `[[some-undefined-demo-page]]`.\n"),
     expect_code=0, absent=("some-undefined-demo-page",),
 )
-run_case(
+run_lint_fixture_case(
     "rich-code-links-not-dangling",
     lambda r: append(
         r,
@@ -149,7 +163,7 @@ run_case(
     expect_code=0,
     absent=("double-code-decoy", "tilde-code-decoy", "four-code-decoy"),
 )
-run_case(
+run_lint_fixture_case(
     "uppercase-generated-backlinks-not-dangling",
     lambda r: append(
         r,
@@ -159,7 +173,7 @@ run_case(
     expect_code=0,
     absent=("generated-dangling-decoy",),
 )
-run_case(
+run_lint_fixture_case(
     # code:lint#4: a raw/ token inside a non-sources frontmatter field (here a
     # title) must NOT be existence-checked as a provenance ref. Reverting the
     # sources-scoped scan reintroduces a spurious (source-ref) failure.
@@ -169,7 +183,7 @@ run_case(
                    'title: "How to use raw/data pipelines"'),
     expect_code=0, absent=("source-ref",),
 )
-run_case(
+run_lint_fixture_case(
     "source-url-containing-raw-segment-is-not-repo-path",
     lambda r: edit(
         r,
@@ -180,7 +194,7 @@ run_case(
     expect_code=0,
     absent=("source-ref",),
 )
-run_case(
+run_lint_fixture_case(
     "prefixed-absolute-raw-path-fires",
     lambda r: edit(
         r,
@@ -191,7 +205,7 @@ run_case(
     expect_code=1,
     expect=("source-ref", "unsafe raw repository path expression"),
 )
-run_case(
+run_lint_fixture_case(
     "uri-raw-path-fires",
     lambda r: edit(
         r,
@@ -202,7 +216,7 @@ run_case(
     expect_code=1,
     expect=("source-ref", "unsafe raw repository path expression"),
 )
-run_case(
+run_lint_fixture_case(
     "windows-raw-path-fires",
     lambda r: edit(
         r,
@@ -213,7 +227,7 @@ run_case(
     expect_code=1,
     expect=("source-ref", "unsafe raw repository path expression"),
 )
-run_case(
+run_lint_fixture_case(
     "nul-prefixed-raw-path-fires",
     lambda r: edit(
         r,
@@ -224,7 +238,7 @@ run_case(
     expect_code=1,
     expect=("source-ref", "unsafe raw repository path expression"),
 )
-run_case(
+run_lint_fixture_case(
     "explicit-wiki-source-ref-passes",
     lambda r: edit(
         r,
@@ -233,7 +247,7 @@ run_case(
         "sources: [wiki/sources/gamma.md]",
     ),
 )
-run_case(
+run_lint_fixture_case(
     "traversing-wiki-source-ref-fires",
     lambda r: edit(
         r,
@@ -244,7 +258,7 @@ run_case(
     expect_code=1,
     expect=("source-ref", "wiki/sources/../../outside.md", "unsafe"),
 )
-run_case(
+run_lint_fixture_case(
     "uri-wiki-source-ref-fires",
     lambda r: edit(
         r,
@@ -255,7 +269,7 @@ run_case(
     expect_code=1,
     expect=("source-ref", "unsafe wiki repository path expression"),
 )
-run_case(
+run_lint_fixture_case(
     "generic-traversing-source-ref-fires",
     lambda r: edit(
         r,
@@ -266,7 +280,7 @@ run_case(
     expect_code=1,
     expect=("source-ref", "unsafe provenance path expression"),
 )
-run_case(
+run_lint_fixture_case(
     # code:lint#3: a prose bullet of the form "- Word: ..." with NO wikilink in
     # a Related pages section is permitted (page-to-create / descriptive prose).
     # Reverting the "[[ in line" guard makes this a (related-label) failure.
@@ -274,14 +288,14 @@ run_case(
     lambda r: append(r, "wiki/concepts/alpha.md", "- Background: context, no link\n"),
     expect_code=0, absent=("related-label",),
 )
-run_case(
+run_lint_fixture_case(
     # code:lint#3 companion: a "- Word: [[link]]" bullet with a non-vocabulary
     # label DOES still fire, so the guard narrows scope without disarming.
     "related-label-with-link-still-fires",
     lambda r: append(r, "wiki/concepts/alpha.md", "- Causes: [[delta-one]] context\n"),
     expect_code=1, expect=("related-label", "'Causes:'"),
 )
-run_case(
+run_lint_fixture_case(
     # content:contradictions#2: a bare-slug source ref that names no
     # wiki/sources/ page (a typo'd citation) is a Tier-1 source-ref failure.
     "bare-slug-source-ref-typo-fires",
@@ -290,7 +304,7 @@ run_case(
                    'sources: [gamma-typo-not-a-real-source]'),
     expect_code=1, expect=("source-ref", "matches no wiki/sources/ page"),
 )
-run_case(
+run_lint_fixture_case(
     # content:contradictions#2 companion: a bare-slug ref that DOES name a real
     # source page passes, and an experience: entry is never treated as a slug.
     "bare-slug-source-ref-resolves-passes",
@@ -299,25 +313,25 @@ run_case(
                    'sources: [gamma]'),
     expect_code=0, absent=("source-ref",),
 )
-run_case(
+run_lint_fixture_case(
     "empty-agent-use-cases-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md",
                    "agent_use_cases:\n  - lint eval fixture", "agent_use_cases:"),
     expect_code=1, expect=("frontmatter", "agent_use_cases has no list items"),
 )
-run_case(
+run_lint_fixture_case(
     "impossible-review-by-date-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md", "confidence: medium",
                    "confidence: medium\nreview_by: 2026-13-99"),
     expect_code=1, expect=("date", "real calendar date"),
 )
-run_case(
+run_lint_fixture_case(
     "invalid-authority-kind-fires",
     lambda r: add_authority(r, "wiki/concepts/alpha.md",
                             "authority_kind: stale-source"),
     expect_code=1, expect=("authority-field-values", "authority_kind 'stale-source'"),
 )
-run_case(
+run_lint_fixture_case(
     "invalid-authority-freshness-fires",
     lambda r: add_authority(r, "wiki/concepts/alpha.md",
                             "authority_kind: none",
@@ -325,7 +339,7 @@ run_case(
     expect_code=1, expect=("authority-field-values",
                            "authority_freshness 'always-fresh'"),
 )
-run_case(
+run_lint_fixture_case(
     "nonboolean-verify-before-action-fires",
     lambda r: add_authority(r, "wiki/concepts/alpha.md",
                             "authority_kind: none",
@@ -333,7 +347,7 @@ run_case(
     expect_code=1, expect=("authority-field-values",
                            "verify_before_action must be true or false"),
 )
-run_case(
+run_lint_fixture_case(
     "malformed-last-verified-fires",
     lambda r: add_authority(r, "wiki/concepts/alpha.md",
                             "authority_kind: none",
@@ -341,21 +355,21 @@ run_case(
     expect_code=1, expect=("authority-field-values",
                            "last_verified '2026/07/04'"),
 )
-run_case(
+run_lint_fixture_case(
     "authority-field-without-kind-fires",
     lambda r: add_authority(r, "wiki/concepts/alpha.md",
                             "authority_ref: wiki/sources/gamma.md"),
     expect_code=1, expect=("authority-kind-anchor",
                            "authority metadata present without authority_kind"),
 )
-run_case(
+run_lint_fixture_case(
     "authority-ref-required-fires",
     lambda r: add_authority(r, "wiki/concepts/alpha.md",
                             "authority_kind: source-page"),
     expect_code=1, expect=("authority-ref-required",
                            "authority_ref required"),
 )
-run_case(
+run_lint_fixture_case(
     "authority-raw-source-missing-fires",
     lambda r: add_authority(r, "wiki/concepts/alpha.md",
                             "authority_kind: raw-source",
@@ -363,7 +377,7 @@ run_case(
     expect_code=1, expect=("authority-ref-shape",
                            "raw/notes/missing-authority.md"),
 )
-run_case(
+run_lint_fixture_case(
     "authority-source-page-traversal-fires",
     lambda r: (
         (r / "outside.md").write_text("outside fixture"),
@@ -377,7 +391,7 @@ run_case(
     expect_code=1,
     expect=("authority-ref-shape", "contained existing wiki/sources"),
 )
-run_case(
+run_lint_fixture_case(
     "external-url-authority-must-be-one-url",
     lambda r: add_authority(
         r,
@@ -388,7 +402,7 @@ run_case(
     expect_code=1,
     expect=("authority-ref-shape", "exactly one http:// or https:// URL"),
 )
-run_case(
+run_lint_fixture_case(
     "mixed-authority-traversal-fires",
     lambda r: add_authority(
         r,
@@ -399,7 +413,7 @@ run_case(
     expect_code=1,
     expect=("authority-ref-shape", "mixed authority_ref", "unsafe repository path"),
 )
-run_case(
+run_lint_fixture_case(
     "source-url-plus-unsafe-path-fires",
     lambda r: edit(
         r,
@@ -410,7 +424,7 @@ run_case(
     expect_code=1,
     expect=("source-ref", "raw/../outside.md"),
 )
-run_case(
+run_lint_fixture_case(
     "source-ref-traversal-fires",
     lambda r: (
         (r / "outside.md").write_text("outside fixture"),
@@ -424,7 +438,7 @@ run_case(
     expect_code=1,
     expect=("source-ref", "raw/../outside.md"),
 )
-run_case(
+run_lint_fixture_case(
     "source-page-current-state-authority-fires",
     lambda r: (
         write_registered_raw_fixture(r, "raw/notes/source-authority.md"),
@@ -436,7 +450,7 @@ run_case(
     expect_code=1, expect=("source-page-authority",
                            "authority_freshness to immutable-source"),
 )
-run_case(
+run_lint_fixture_case(
     "predictive-authority-without-review-by-fires",
     lambda r: add_authority(r, "wiki/concepts/alpha.md",
                             "authority_kind: source-page",
@@ -445,7 +459,7 @@ run_case(
     expect_code=1, expect=("predictive-review-enrollment",
                            "requires review_by"),
 )
-run_case(
+run_lint_fixture_case(
     "authority-none-with-ref-fires",
     lambda r: add_authority(r, "wiki/concepts/alpha.md",
                             "authority_kind: none",
@@ -453,7 +467,7 @@ run_case(
     expect_code=1, expect=("authority-ref-shape",
                            "authority_kind 'none'"),
 )
-run_case(
+run_lint_fixture_case(
     "valid-source-page-authority-passes",
     lambda r: (
         write_registered_raw_fixture(r, "raw/notes/source-authority.md"),
@@ -462,27 +476,27 @@ run_case(
                       "authority_ref: raw/notes/source-authority.md"),
     ),
 )
-run_case(
+run_lint_fixture_case(
     "valid-owner-page-authority-passes",
     lambda r: add_authority(r, "wiki/concepts/alpha.md",
                             "authority_kind: owner-page",
                             "authority_ref: wiki/concepts/beta.md",
                             "verify_before_action: true"),
 )
-run_case(
+run_lint_fixture_case(
     "adjudication-stale-fires",
     lambda r: write_adjudications(r, accepted_orphans=[
         {"page": "sources/renamed-away.md", "reason": "x", "date": "2026-06-11"}]),
     expect_code=1, expect=("adjudication-stale", "renamed-away"),
 )
-run_case(
+run_lint_fixture_case(
     "adjudication-stale-fires-reviewed-authority-missing",
     lambda r: write_adjudications(r, reviewed_authority_missing=[
         {"page": "concepts/renamed-authority.md", "reason": "x",
          "date": "2026-07-04"}]),
     expect_code=1, expect=("adjudication-stale", "renamed-authority"),
 )
-run_case(
+run_lint_fixture_case(
     # reviewed_quotes carries a 'page' field like the other entity-page keys, so a
     # stale entry pointing at a renamed/deleted page must also fail loudly rather
     # than keep silently suppressing.
@@ -492,21 +506,21 @@ run_case(
          "date": "2026-06-11"}]),
     expect_code=1, expect=("adjudication-stale", "renamed-quote-page"),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-adjudication-stale-fires",
     lambda r: write_adjudications(r, reviewed_recompile_candidates=[
         {"pair": ["concepts/renamed-away.md", "sources/gamma.md"],
          "reason": "fixture", "date": "2026-06-26"}]),
     expect_code=1, expect=("adjudication-stale", "renamed-away"),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-adjudication-source-shape-fires",
     lambda r: write_adjudications(r, reviewed_recompile_candidates=[
         {"pair": ["concepts/alpha.md", "concepts/beta.md"],
          "reason": "fixture", "date": "2026-06-26"}]),
     expect_code=1, expect=("adjudication-stale", "source page must be under sources/"),
 )
-run_case(
+run_lint_fixture_case(
     "recompile-adjudication-compiled-shape-fires",
     lambda r: write_adjudications(r, reviewed_recompile_candidates=[
         {"pair": ["sources/gamma.md", "sources/gamma.md"],
@@ -514,22 +528,22 @@ run_case(
     expect_code=1, expect=("adjudication-stale",
                            "compiled page must not be under sources/"),
 )
-run_case(
+run_lint_fixture_case(
     "non-utf8-page-fails-cleanly",
     lambda r: (r / "wiki/concepts/alpha.md").write_bytes(b"---\ntitle: x\n---\n\xff\xfe"),
     expect_code=1, expect=("encoding", "not valid UTF-8"),
 )
-run_case(
+run_lint_fixture_case(
     "non-utf8-glossary-fails-cleanly",
     lambda r: (r / "wiki" / "glossary.md").write_bytes(b"# Glossary\n\n\xff"),
     expect_code=1, expect=("glossary", "not valid UTF-8"),
 )
-run_case(
+run_lint_fixture_case(
     "malformed-adjudication-json-fails-cleanly",
     lambda r: (r / "scripts/lint-adjudications.json").write_text("{not json"),
     expect_code=1, expect=("adjudication-file", "unreadable JSON"),
 )
-run_case(
+run_lint_fixture_case(
     # A suppression filed under a misspelled category key would silently
     # detach; an unknown top-level key is a Tier-1 adjudication-file failure.
     "adjudication-unknown-key-fails-cleanly",
@@ -537,27 +551,27 @@ run_case(
         '{"accepted_orphanz": []}'),
     expect_code=1, expect=("adjudication-file", "unknown top-level"),
 )
-run_case(
+run_lint_fixture_case(
     # Underscore-prefixed keys are documentation metadata, not categories.
     "adjudication-metadata-key-allowed",
     lambda r: (r / "scripts/lint-adjudications.json").write_text(
         '{"_description": "fixture", "accepted_orphans": []}'),
     expect_code=0, absent=("unknown top-level",),
 )
-run_case(
+run_lint_fixture_case(
     # An undecodable log.md must fail the header guard loudly instead of
     # silently disarming the rotate_log cut-point protection.
     "non-utf8-log-fails-header-guard",
     lambda r: (r / "wiki" / "log.md").write_bytes(b"# Log\n\n\xff\xfe## garbage\n"),
     expect_code=1, expect=("log-entry-header", "not valid UTF-8"),
 )
-run_case(
+run_lint_fixture_case(
     "misshapen-adjudication-entry-fails-cleanly",
     lambda r: (r / "scripts/lint-adjudications.json").write_text(
         '{"accepted_orphans": [{"reason": "no page key"}]}'),
     expect_code=1, expect=("adjudication-file", "string 'page'"),
 )
-run_case(
+run_lint_fixture_case(
     "duplicate-stem-fires",
     lambda r: (
         shutil.copy(r / "wiki/concepts/delta-three.md", r / "wiki/sources/delta-three.md"),
@@ -566,14 +580,14 @@ run_case(
     ),
     expect_code=1, expect=("duplicate-stem",),
 )
-run_case(
+run_lint_fixture_case(
     "missing-raw-source-ref-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md",
                    'sources: ["experience: lint eval fixture"]',
                    'sources: [raw/notes/does-not-exist.md]'),
     expect_code=1, expect=("source-ref", "does-not-exist"),
 )
-run_case(
+run_lint_fixture_case(
     "resolving-raw-source-ref-passes",
     lambda r: (
         write_registered_raw_fixture(r, "raw/notes/real.md"),
@@ -582,7 +596,7 @@ run_case(
              'sources: [raw/notes/real.md]'),
     ),
 )
-run_case(
+run_lint_fixture_case(
     "resolving-raw-directory-marker-passes",
     lambda r: (
         (r / "raw" / "notes" / "record-folder").mkdir(parents=True),
@@ -594,7 +608,7 @@ run_case(
         ),
     ),
 )
-run_case(
+run_lint_fixture_case(
     # Block-style sources: lists get the same provenance checks as inline
     # lists: a missing raw/ ref on an indented '- item' line must fire.
     "block-style-missing-raw-source-ref-fires",
@@ -603,7 +617,7 @@ run_case(
                    'sources:\n  - raw/notes/does-not-exist.md'),
     expect_code=1, expect=("source-ref", "does-not-exist"),
 )
-run_case(
+run_lint_fixture_case(
     # Companion: block-style refs that resolve (a real raw path, a real source
     # slug, and free-text provenance) pass without source-ref noise.
     "block-style-source-refs-resolve-passes",
@@ -615,7 +629,7 @@ run_case(
              '  - "experience: block-style fixture"'),
     ),
 )
-run_case(
+run_lint_fixture_case(
     # A typo'd bare slug on a block-style line is caught like an inline one.
     "block-style-bare-slug-typo-fires",
     lambda r: edit(r, "wiki/concepts/alpha.md",
@@ -623,19 +637,19 @@ run_case(
                    'sources:\n  - gamma-typo-not-a-real-source'),
     expect_code=1, expect=("source-ref", "matches no wiki/sources/ page"),
 )
-run_case(
+run_lint_fixture_case(
     "unexpected-root-file-fires",
     lambda r: (r / "loose.txt").write_text("loose root file"),
     expect_code=1, expect=("repo-structure", "unexpected top-level file"),
 )
-run_case(
+run_lint_fixture_case(
     # code:eval-lint#2: the directory branch of the repo-structure check was
     # never proven. An unknown top-level directory is a Tier-1 failure.
     "unexpected-root-dir-fires",
     lambda r: (r / "notabucket").mkdir(),
     expect_code=1, expect=("repo-structure", "unexpected top-level directory"),
 )
-run_case(
+run_lint_fixture_case(
     "legacy-codex-root-fires",
     lambda r: (r / ".codex").mkdir(),
     expect_code=1, expect=("repo-structure", ".codex"),
@@ -659,17 +673,17 @@ def seed_nonclean_transaction(root):
         pass
 
 
-run_case(
+run_lint_fixture_case(
     "nonclean-transaction-state-fails-tier1",
     seed_nonclean_transaction,
     expect_code=1,
     expect=("transaction-state", "PREPARED"),
 )
-run_case(
+run_lint_fixture_case(
     "empty-transaction-authority-passes-tier1",
     lambda root: (root / ".wiki-transactions").mkdir(mode=0o700),
 )
-run_case(
+run_lint_fixture_case(
     "unknown-transaction-authority-entry-fails-tier1",
     lambda root: (
         (root / ".wiki-transactions").mkdir(mode=0o700),
@@ -678,12 +692,12 @@ run_case(
     expect_code=1,
     expect=("transaction-state", "unknown authority entry"),
 )
-run_case(
+run_lint_fixture_case(
     "unexpected-wiki-folder-fires",
     lambda r: (r / "wiki" / "misc").mkdir(),
     expect_code=1, expect=("wiki-structure", "unexpected wiki/ folder"),
 )
-run_case(
+run_lint_fixture_case(
     "nested-wiki-page-fires",
     lambda r: (
         (r / "wiki/concepts/nested").mkdir(),
@@ -692,14 +706,14 @@ run_case(
     expect_code=1, expect=("wiki-structure", "wiki/concepts/nested", "direct directory"),
     absent=("nested/deep.md",),
 )
-run_case(
+run_lint_fixture_case(
     # code:eval-lint#2: the file branch of the wiki-structure check was never
     # proven. A stray non-allowed file directly under wiki/ is a Tier-1 failure.
     "stray-wiki-root-file-fires",
     lambda r: (r / "wiki" / "notes.txt").write_text("stray wiki root file"),
     expect_code=1, expect=("wiki-structure", "unexpected wiki/ root file"),
 )
-run_case(
+run_lint_fixture_case(
     # code:eval-lint#1: the entity-folder check (unknown wiki subfolder) had no
     # firing case. A page under a folder absent from FOLDER_TYPE fires.
     "unknown-entity-folder-fires",
@@ -709,20 +723,20 @@ run_case(
     ),
     expect_code=1, expect=("entity-folder", "unknown folder 'misc'"),
 )
-run_case(
+run_lint_fixture_case(
     # code:eval-lint#1: the missing/malformed-frontmatter branch (a body-only
     # page with no --- block) had no firing case.
     "body-only-page-fires",
     lambda r: (r / "wiki/concepts/alpha.md").write_text("Just a body, no frontmatter.\n"),
     expect_code=1, expect=("frontmatter", "missing or malformed"),
 )
-run_case(
+run_lint_fixture_case(
     "junk-frontmatter-close-fails-cleanly",
     lambda r: edit(r, "wiki/concepts/alpha.md", "---\n\nAlpha body", "---junk\n\nAlpha body"),
     expect_code=1,
     expect=("frontmatter", "missing an exact closing"),
 )
-run_case(
+run_lint_fixture_case(
     "junk-frontmatter-full-lint-fails-cleanly",
     lambda r: edit(r, "wiki/concepts/alpha.md", "---\n\nAlpha body", "---junk\n\nAlpha body"),
     args=(),
@@ -730,7 +744,7 @@ run_case(
     expect=("frontmatter", "missing an exact closing"),
     absent=("Traceback",),
 )
-run_case(
+run_lint_fixture_case(
     # code:eval-lint#1: corrupt raw-buckets.json (the integrity branch) had no
     # firing case. A raw/ tree plus unparseable taxonomy is a Tier-1 failure.
     "corrupt-raw-buckets-fires",
@@ -741,7 +755,7 @@ run_case(
     ),
     expect_code=1, expect=("raw-buckets", "unreadable JSON"),
 )
-run_case(
+run_lint_fixture_case(
     # code:eval-lint#1: wrong-shape raw-buckets.json (buckets not an object).
     "wrong-shape-raw-buckets-fires",
     lambda r: (
@@ -753,7 +767,7 @@ run_case(
     ),
     expect_code=1, expect=("raw-buckets", "must contain a 'buckets' object"),
 )
-run_case(
+run_lint_fixture_case(
     "loose-raw-file-fires",
     lambda r: (
         (r / "raw").mkdir(exist_ok=True),
@@ -761,19 +775,19 @@ run_case(
     ),
     expect_code=1, expect=("raw-structure", "loose raw/ file"),
 )
-run_case(
+run_lint_fixture_case(
     "unknown-raw-bucket-fires",
     lambda r: (r / "raw" / "misc").mkdir(parents=True),
     expect_code=1, expect=("raw-structure", "missing from scripts/raw-buckets.json"),
 )
-run_case(
+run_lint_fixture_case(
     "raw-folder-nonkebab-fires",
     lambda r: (
         (r / "raw" / "BadBucket").mkdir(parents=True),
     ),
     expect_code=1, expect=("raw-structure", "raw/ folder is not kebab-case"),
 )
-run_case(
+run_lint_fixture_case(
     # The tracked .gitkeep placeholder is exempt; any other loose file fires.
     "loose-deliverable-fires",
     lambda r: (
@@ -784,19 +798,19 @@ run_case(
     expect_code=1, expect=("deliverables-structure", "loose deliverable"),
     absent=(".gitkeep",),
 )
-run_case(
+run_lint_fixture_case(
     "deliverables-folder-nonkebab-fires",
     lambda r: (
         (r / "deliverables" / "Bad Folder").mkdir(parents=True),
     ),
     expect_code=1, expect=("deliverables-structure", "deliverables/ subfolder is not kebab-case"),
 )
-run_case(
+run_lint_fixture_case(
     "finder-metadata-fires",
     lambda r: (r / "wiki" / ".DS_Store").write_text("metadata"),
     expect_code=1, expect=("os-metadata", ".DS_Store"),
 )
-run_case(
+run_lint_fixture_case(
     # A standalone </content> line is a stray agent tool-call artifact that leaks
     # into a page during ingest Write/Edit. Removing check_stray_tool_tags stops
     # this firing.
@@ -804,14 +818,14 @@ run_case(
     lambda r: append(r, "wiki/concepts/alpha.md", "\n</content>\n"),
     expect_code=1, expect=("stray-tag", "</content>"),
 )
-run_case(
+run_lint_fixture_case(
     # The <parameter ...> opening tag is matched by prefix, not exact string,
     # because it carries attributes. This exercises the startswith branch.
     "stray-parameter-tag-fires",
     lambda r: append(r, "wiki/concepts/alpha.md", '\n<parameter name="content">x\n'),
     expect_code=1, expect=("stray-tag", "<parameter"),
 )
-run_case(
+run_lint_fixture_case(
     # Negative/precision: a sentence that merely mentions the tag (the
     # whole-line-equals / startswith guard) must NOT fire, matching the real
     # wiki/log.md prose that records a prior cleanup. Reverting the standalone-only
@@ -821,6 +835,61 @@ run_case(
                      "\nThe 2026-06-10 sweep removed two stray </content> "
                      "ingestion artifacts from the corpus.\n"),
     expect_code=0, absent=("stray-tag",),
+)
+
+for name, wrapper in (
+    ("fenced", "```markdown\n{}\n```"),
+    ("commented", "<!--\n{}\n-->"),
+):
+    run_lint_fixture_case(
+        f"{name}-open-questions-example-does-not-satisfy-heading",
+        lambda r, template=wrapper: edit(
+            r, "wiki/concepts/alpha.md", "## Open questions / gaps",
+            template.format("## Open questions / gaps"),
+        ),
+        expect_code=1, expect=("open-questions",),
+    )
+    run_lint_fixture_case(
+        f"{name}-confidence-example-does-not-satisfy-caveat",
+        lambda r, template=wrapper: (
+            edit(r, "wiki/concepts/alpha.md", "confidence: medium", "confidence: contested"),
+            edit(r, "wiki/concepts/alpha.md", "Alpha body text", template.format(
+                "confidence is contested\n## Disagreement") + "\nAlpha body text"),
+        ),
+        expect_code=1, expect=("not restated in body", "lacks a Disagreement section"),
+    )
+    run_lint_fixture_case(
+        f"{name}-related-label-example-is-not-a-relation",
+        lambda r, template=wrapper: append(
+            r, "wiki/concepts/alpha.md", "\n" + template.format("- Causes: [[delta-one]]") + "\n",
+        ),
+        expect_code=0, absent=("related-label",),
+    )
+
+run_lint_fixture_case(
+    "authored-open-questions-heading-allows-markdown-case-and-closing-hashes",
+    lambda r: edit(r, "wiki/concepts/alpha.md", "## Open questions / gaps", "## OPEN QUESTIONS / GAPS ###"),
+    expect_code=0,
+)
+
+for category in ADJUDICATION_CATEGORY_FIELDS.values():
+    for label, value in (("null", None), ("number", 1), ("object", {}), ("string", "")):
+        run_lint_fixture_case(
+            f"adjudication-{category}-{label}-fails-cleanly",
+            lambda r, key=category, container=value: write_adjudications(r, **{key: container}),
+            expect_code=1, expect=("adjudication-file", "must be a list"), absent=("Traceback",),
+        )
+run_lint_fixture_case(
+    "duplicate-adjudication-category-fails-cleanly",
+    lambda r: (r / "scripts/lint-adjudications.json").write_text(
+        '{"accepted_orphans": [], "accepted_orphans": []}'),
+    expect_code=1, expect=("adjudication-file", "duplicate JSON key"), absent=("Traceback",),
+)
+run_lint_fixture_case(
+    "duplicate-adjudication-entry-key-fails-cleanly",
+    lambda r: (r / "scripts/lint-adjudications.json").write_text(
+        '{"accepted_orphans": [{"page": "concepts/alpha.md", "page": "concepts/beta.md"}]}'),
+    expect_code=1, expect=("adjudication-file", "duplicate JSON key"), absent=("Traceback",),
 )
 
 raise SystemExit(finish_lint_eval())

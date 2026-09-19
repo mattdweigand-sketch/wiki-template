@@ -6,15 +6,18 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import stat
 import subprocess
 import sys
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path, PurePosixPath
 
+from _durable_files import fsync_directory
 from _file_transactions import transaction_status
 from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 from wiki_backup_receipt import (
@@ -183,15 +186,45 @@ def build_backup_manifest(repo_root: Path, files: list[Path]) -> dict[str, objec
     }
 
 
-def build_zip(repo_root: Path, output: Path, files: list[Path]) -> None:
+def build_zip(
+    repo_root: Path, output: Path, files: list[Path], *, require_restore_ready: bool = False,
+) -> None:
+    """Publish a verified archive only after its complete replacement is ready."""
     output.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for path in files:
-            zf.write(path, path.relative_to(repo_root).as_posix())
-        info = zipfile.ZipInfo(BACKUP_MANIFEST_NAME)
-        info.compress_type = zipfile.ZIP_DEFLATED
-        info.external_attr = (0o100600 << 16)
-        zf.writestr(info, _canonical_json_bytes(build_backup_manifest(repo_root, files)))
+    descriptor, name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
+    os.close(descriptor)
+    staged = Path(name)
+    try:
+        with zipfile.ZipFile(staged, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for path in files:
+                zf.write(path, path.relative_to(repo_root).as_posix())
+            info = zipfile.ZipInfo(BACKUP_MANIFEST_NAME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = (0o100600 << 16)
+            zf.writestr(info, _canonical_json_bytes(build_backup_manifest(repo_root, files)))
+        if require_restore_ready:
+            from restore_wiki import verify_backup_restore_readiness
+
+            try:
+                output_rel = output.resolve().relative_to(repo_root.resolve()).as_posix()
+            except ValueError:
+                output_rel = None
+            with zipfile.ZipFile(staged) as zf:
+                errors = _backup_member_coverage_errors(zf.namelist(), len(files), output_rel)
+            if not errors:
+                errors = verify_backup_restore_readiness(staged)
+            if errors:
+                raise ValueError("backup restore readiness failed: " + "; ".join(errors))
+        else:
+            _manifest, errors = verify_backup_archive(staged)
+            if errors:
+                raise ValueError("backup verification failed: " + "; ".join(errors))
+        with staged.open("rb") as stream:
+            os.fsync(stream.fileno())
+        os.replace(staged, output)
+        fsync_directory(output.parent)
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def validate_names(names: list[str]) -> list[str]:
@@ -391,6 +424,17 @@ def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[
     return (manifest if not errors else None), errors
 
 
+def _backup_member_coverage_errors(
+    names: list[str], expected_count: int, output_rel: str | None,
+) -> list[str]:
+    errors = validate_names(names)
+    if output_rel is not None and output_rel in names:
+        errors.append(f"archive unexpectedly contains itself ({output_rel})")
+    if len(names) != expected_count + 1:
+        errors.append(f"archive file count {len(names)} did not match expected {expected_count + 1}")
+    return errors
+
+
 def verify_zip(
     output: Path,
     expected_count: int,
@@ -399,15 +443,11 @@ def verify_zip(
     errors: list[str] = []
     if not output.exists():
         return False, [f"{output} was not created"]
-    manifest, manifest_errors = verify_backup_archive(output)
+    _manifest, manifest_errors = verify_backup_archive(output)
     errors.extend(manifest_errors)
     with zipfile.ZipFile(output) as zf:
         names = zf.namelist()
-    if output_rel is not None and output_rel in names:
-        errors.append(f"archive unexpectedly contains itself ({output_rel})")
-    errors.extend(validate_names(names))
-    if len(names) != expected_count + 1:
-        errors.append(f"archive file count {len(names)} did not match expected {expected_count + 1}")
+    errors.extend(_backup_member_coverage_errors(names, expected_count, output_rel))
     return not errors, errors
 
 
@@ -617,11 +657,6 @@ def main() -> int:
         print("Error: --receipt-path must differ from the export archive path.", file=sys.stderr)
         return 2
     files = export_files(repo_root, output)
-    try:
-        output_rel = output.resolve().relative_to(repo_root).as_posix()
-    except ValueError:
-        output_rel = None
-
     if args.dry_run:
         names = [path.relative_to(repo_root).as_posix() for path in files]
         errors = validate_names(names)
@@ -633,12 +668,10 @@ def main() -> int:
             print(f"- {error}")
         return 0 if not errors else 1
 
-    build_zip(repo_root, output, files)
-    ok, errors = verify_zip(output, len(files), output_rel)
-    if not ok:
-        print("Wiki export verification failed:")
-        for error in errors:
-            print(f"- {error}")
+    try:
+        build_zip(repo_root, output, files, require_restore_ready=True)
+    except (OSError, ValueError, zipfile.BadZipFile) as exc:
+        print(f"Wiki export verification failed: {exc}", file=sys.stderr)
         return 1
 
     print(f"Wiki export created: {output}")

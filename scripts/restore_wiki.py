@@ -162,6 +162,79 @@ def _fsync_restored_regular_file(path: Path) -> None:
         os.close(descriptor)
 
 
+def _extract_backup_snapshot(
+    archive: Path, staged: Path, manifest: dict[str, object], *, durable: bool,
+) -> None:
+    """Share exact extraction between readiness checks and durable restores."""
+    with zipfile.ZipFile(archive) as zf:
+        members = manifest["members"]
+        assert isinstance(members, list)
+        if manifest.get("schema_version") == 3:
+            directories = manifest.get("directories")
+            assert isinstance(directories, list)
+            for directory in directories:
+                assert isinstance(directory, dict) and isinstance(directory.get("path"), str)
+                staged.joinpath(*directory["path"].split("/")).mkdir(
+                    parents=True, exist_ok=True
+                )
+        for member in members:
+            assert isinstance(member, dict) and isinstance(member.get("path"), str)
+            relative = member["path"]
+            target = staged.joinpath(*relative.split("/"))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(relative, "r") as source, target.open("xb") as output:
+                shutil.copyfileobj(source, output, length=1024 * 1024)
+                output.flush()
+                if durable:
+                    os.fsync(output.fileno())
+            if manifest.get("schema_version") in {2, 3}:
+                permission_mode = member.get("mode")
+                assert isinstance(permission_mode, int)
+            else:
+                archived_mode = (zf.getinfo(relative).external_attr >> 16) & 0xFFFF
+                permission_mode = (
+                    stat.S_IMODE(archived_mode) if archived_mode else 0o600
+                )
+            os.chmod(target, permission_mode)
+            if durable:
+                _fsync_restored_regular_file(target)
+        if manifest.get("schema_version") == 3:
+            for directory in sorted(
+                manifest["directories"],
+                key=lambda item: len(item["path"].split("/")),
+                reverse=True,
+            ):
+                os.chmod(
+                    staged.joinpath(*directory["path"].split("/")),
+                    directory["mode"],
+                )
+        staged_directories = [
+            path for path in staged.rglob("*")
+            if path.is_dir() and not path.is_symlink()
+        ]
+        for directory in sorted(
+            [*staged_directories, staged],
+            key=lambda path: len(path.relative_to(staged).parts),
+            reverse=True,
+        ):
+            if durable:
+                fsync_directory(directory)
+
+
+def verify_backup_restore_readiness(archive: Path) -> list[str]:
+    """Check the archived tree with trusted tools without installing a destination."""
+    manifest, errors = verify_backup_archive(archive)
+    if manifest is None:
+        return errors
+    try:
+        with tempfile.TemporaryDirectory(prefix="wiki-backup-readiness-") as directory:
+            staged = Path(directory)
+            _extract_backup_snapshot(archive, staged, manifest, durable=False)
+            return verify_restored_wiki_tree(staged, manifest)
+    except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+        return [f"backup restore readiness failed: {exc}"]
+
+
 def restore_backup_archive(
     archive: Path,
     destination: Path,
@@ -183,56 +256,7 @@ def restore_backup_archive(
 
     staged = Path(tempfile.mkdtemp(prefix=f".{destination.name}.restore-", dir=parent))
     try:
-        with zipfile.ZipFile(archive) as zf:
-            members = manifest["members"]
-            assert isinstance(members, list)
-            if manifest.get("schema_version") == 3:
-                directories = manifest.get("directories")
-                assert isinstance(directories, list)
-                for directory in directories:
-                    assert isinstance(directory, dict) and isinstance(directory.get("path"), str)
-                    staged.joinpath(*directory["path"].split("/")).mkdir(
-                        parents=True, exist_ok=True
-                    )
-            for member in members:
-                assert isinstance(member, dict) and isinstance(member.get("path"), str)
-                relative = member["path"]
-                target = staged.joinpath(*relative.split("/"))
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(relative, "r") as source, target.open("xb") as output:
-                    shutil.copyfileobj(source, output, length=1024 * 1024)
-                    output.flush()
-                    os.fsync(output.fileno())
-                if manifest.get("schema_version") in {2, 3}:
-                    permission_mode = member.get("mode")
-                    assert isinstance(permission_mode, int)
-                else:
-                    archived_mode = (zf.getinfo(relative).external_attr >> 16) & 0xFFFF
-                    permission_mode = (
-                        stat.S_IMODE(archived_mode) if archived_mode else 0o600
-                    )
-                os.chmod(target, permission_mode)
-                _fsync_restored_regular_file(target)
-            if manifest.get("schema_version") == 3:
-                for directory in sorted(
-                    manifest["directories"],
-                    key=lambda item: len(item["path"].split("/")),
-                    reverse=True,
-                ):
-                    os.chmod(
-                        staged.joinpath(*directory["path"].split("/")),
-                        directory["mode"],
-                    )
-            staged_directories = [
-                path for path in staged.rglob("*")
-                if path.is_dir() and not path.is_symlink()
-            ]
-            for directory in sorted(
-                [*staged_directories, staged],
-                key=lambda path: len(path.relative_to(staged).parts),
-                reverse=True,
-            ):
-                fsync_directory(directory)
+        _extract_backup_snapshot(archive, staged, manifest, durable=True)
         restored_errors = verify_restored_wiki_tree(staged, manifest)
         if restored_errors:
             raise RestoreError("; ".join(restored_errors))
@@ -272,4 +296,4 @@ if __name__ == "__main__":
     sys.exit(main())
 
 
-__all__ = ["RestoreError", "restore_backup_archive", "verify_restored_wiki_tree"]
+__all__ = ["RestoreError", "restore_backup_archive", "verify_backup_restore_readiness", "verify_restored_wiki_tree"]

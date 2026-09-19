@@ -23,10 +23,8 @@ from pathlib import Path
 #   [[slug]], [[dir/slug]], [[dir/slug|alias]]  -> captures "slug".
 LINK_RE = re.compile(r"\[\[(?:[^/\]|]+/)?([^\]|]+?)(?:\|[^\]]+)?\]\]")
 
-# Root-level wiki pages that are catalogs/indexes, not entity pages: never link
-# targets and never counted as link sources. Shared so the dangling-link scan,
-# the index-coverage check, and the referenced-by rebuild enumerate the corpus
-# identically and cannot drift on what counts as a meta page.
+# Root-level catalogs and operating pages are valid wikilink targets, but are
+# excluded from entity enumeration and the generated backlink graph.
 META_PAGES = {
     "index", "log", "overview", "glossary", "primer",
     "sourcing-queue", "contradictions", "design-notes", "SCHEMA", "synthesis",
@@ -113,7 +111,7 @@ def _leading_frontmatter(text: str) -> _FrontmatterParts | None:
 
 
 def split_frontmatter(text: str) -> tuple[dict[str, str] | None, str]:
-    """Return (frontmatter_dict_of_toplevel_keys, body_text). Empty dict if none.
+    """Return (frontmatter_dict_of_toplevel_keys, body_text).
 
     Returns (None, text) when there is no parseable leading --- fence block.
     Block-style list values are flattened to '' (the key is present with an
@@ -445,14 +443,6 @@ def get_entity_pages(wiki_root: Path) -> list[Path]:
         elif len(parts) == 2:
             pages.append(p)
     return sorted(pages)
-
-
-def strip_referenced_by(text: str) -> str:
-    """Remove the auto-generated "## Referenced by" section so it never counts as
-    an authored link. Shared by lint.py (its outbound link-graph reads only
-    authored links) and rebuild_referenced_by.py (it must not feed generated
-    output back into the graph), so the two cannot drift on what is generated."""
-    return strip_sections(text, "Referenced by")
 
 
 def split_quoted_csv(value: str) -> list[str]:

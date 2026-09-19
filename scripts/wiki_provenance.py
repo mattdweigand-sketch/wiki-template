@@ -55,6 +55,12 @@ class RawSourceClosure:
     files: tuple[RawClosureFile, ...]
 
 
+@dataclass(frozen=True)
+class RawSourceClosureSnapshot:
+    manifest_sha256: str
+    closures: tuple[RawSourceClosure, ...]
+
+
 def _strict_json(content: bytes, label: str) -> tuple[Optional[object], list[str]]:
     try:
         text = content.decode("utf-8")
@@ -405,18 +411,22 @@ def _validate_against_baseline(
     ))
 
 
+def _live_provenance_issues(root: Path, view: _RepositoryView) -> tuple[str, ...]:
+    return _validate_against_baseline(
+        view,
+        _revision_view(root, "HEAD"),
+        proposed_has_raw_bytes=True,
+        baseline_has_raw_bytes=False,
+        proposed_is_git_view=False,
+        baseline_is_git_view=True,
+    )
+
+
 def validate_live_provenance(repo_root: Path) -> tuple[str, ...]:
     """Validate live raw identities against the exact current HEAD."""
     root = repo_root.resolve()
     try:
-        return _validate_against_baseline(
-            _live_view(root),
-            _revision_view(root, "HEAD"),
-            proposed_has_raw_bytes=True,
-            baseline_has_raw_bytes=False,
-            proposed_is_git_view=False,
-            baseline_is_git_view=True,
-        )
+        return _live_provenance_issues(root, _live_view(root))
     except (OSError, ValueError) as exc:
         return (f"provenance validation failed: {exc}",)
 
@@ -514,64 +524,68 @@ def validate_ci_provenance(repo_root: Path, trusted_base: str) -> tuple[str, ...
         return (f"provenance validation failed: {exc}",)
 
 
-def _resolve_source_closure(
-    repo_root: Path,
-    source_slug: str,
+def _resolve_source_closures(
+    view: _RepositoryView,
+    source_slugs: Sequence[str],
     provenance_issues: tuple[str, ...],
-) -> RawSourceClosure:
-    if not SLUG_RE.fullmatch(source_slug):
-        raise ValueError(f"invalid source slug {source_slug!r}")
+) -> RawSourceClosureSnapshot:
     if provenance_issues:
         raise ValueError("; ".join(provenance_issues))
-    view = _live_view(repo_root.resolve())
     artifacts, manifest_issues = _parse_manifest(view, allow_missing=False)
     if manifest_issues:
         raise ValueError("; ".join(manifest_issues))
-    artifact = next(
-        (
-            item for item in artifacts
-            if isinstance(item, dict) and item.get("source_slug") == source_slug
-        ),
-        None,
+    artifacts_by_slug = {artifact["source_slug"]: artifact for artifact in artifacts}
+    closures: list[RawSourceClosure] = []
+    for source_slug in dict.fromkeys(source_slugs):
+        if not isinstance(source_slug, str) or not SLUG_RE.fullmatch(source_slug):
+            raise ValueError(f"invalid source slug {source_slug!r}")
+        artifact = artifacts_by_slug.get(source_slug)
+        if artifact is None:
+            raise ValueError(f"source slug {source_slug!r} has no raw artifact record")
+        source_path = f"wiki/sources/{source_slug}.md"
+        source_content = view.files[source_path]
+        closures.append(RawSourceClosure(
+            source_slug=source_slug,
+            source_path=source_path,
+            source_sha256=hashlib.sha256(source_content).hexdigest(),
+            files=tuple(
+                RawClosureFile(path=member["path"], size=member["size"], sha256=member["sha256"])
+                for member in artifact["files"]
+            ),
+        ))
+    return RawSourceClosureSnapshot(
+        manifest_sha256=hashlib.sha256(view.files[MANIFEST_PATH]).hexdigest(),
+        closures=tuple(closures),
     )
-    if artifact is None:
-        raise ValueError(f"source slug {source_slug!r} has no raw artifact record")
-    source_path = f"wiki/sources/{source_slug}.md"
-    source_content = view.files.get(source_path)
-    if source_content is None:
-        raise ValueError(f"source page {source_path!r} is missing")
-    members = artifact.get("files")
-    if not isinstance(members, list):
-        raise ValueError(f"source slug {source_slug!r} has invalid files")
-    return RawSourceClosure(
-        source_slug=source_slug,
-        source_path=source_path,
-        source_sha256=hashlib.sha256(source_content).hexdigest(),
-        files=tuple(
-            RawClosureFile(
-                path=member["path"], size=member["size"], sha256=member["sha256"]
-            )
-            for member in members
-            if isinstance(member, dict)
-            and isinstance(member.get("path"), str)
-            and isinstance(member.get("size"), int)
-            and isinstance(member.get("sha256"), str)
-        ),
-    )
+
+
+def resolve_live_source_closures(
+    repo_root: Path, source_slugs: Sequence[str],
+) -> RawSourceClosureSnapshot:
+    """Bind selected closures to one complete validated live raw snapshot."""
+    root = repo_root.resolve()
+    try:
+        view = _live_view(root)
+        return _resolve_source_closures(view, source_slugs, _live_provenance_issues(root, view))
+    except OSError as exc:
+        raise ValueError(f"provenance validation failed: {exc}") from exc
 
 
 def resolve_live_source_closure(repo_root: Path, source_slug: str) -> RawSourceClosure:
     """Resolve a live source closure after checking local bytes and Git metadata."""
-    return _resolve_source_closure(
-        repo_root, source_slug, validate_live_provenance(repo_root)
-    )
+    return resolve_live_source_closures(repo_root, (source_slug,)).closures[0]
 
 
 def resolve_restored_source_closure(repo_root: Path, source_slug: str) -> RawSourceClosure:
     """Resolve a restored source closure after offline consistency validation."""
-    return _resolve_source_closure(
-        repo_root, source_slug, validate_restored_provenance(repo_root)
-    )
+    try:
+        view = _live_view(repo_root.resolve())
+        _artifacts, issues = _validate_view(
+            view, allow_missing_manifest=False, require_raw_bytes=True,
+        )
+        return _resolve_source_closures(view, (source_slug,), issues).closures[0]
+    except OSError as exc:
+        raise ValueError(f"restored provenance validation failed: {exc}") from exc
 
 
 def parser() -> argparse.ArgumentParser:
@@ -601,7 +615,9 @@ __all__ = [
     "TRACKED_RAW_EXCEPTIONS",
     "RawClosureFile",
     "RawSourceClosure",
+    "RawSourceClosureSnapshot",
     "resolve_live_source_closure",
+    "resolve_live_source_closures",
     "resolve_restored_source_closure",
     "validate_ci_provenance",
     "validate_live_provenance",

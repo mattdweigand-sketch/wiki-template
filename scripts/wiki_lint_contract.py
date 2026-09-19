@@ -93,13 +93,6 @@ WIKI_REPO_TOKEN_RE = re.compile(
 REVIEW_BY_REQUIRED_FOLDERS = ENTITY_CATALOG.review_date_expected_folders
 KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
-STOPWORDS = {
-    "the", "and", "that", "this", "with", "from", "into", "your", "you",
-    "are", "for", "not", "but", "what", "when", "where", "which", "they",
-    "them", "then", "than", "have", "has", "had", "was", "were", "will",
-    "would", "can", "could", "should", "its", "it's", "their", "these",
-    "those", "there", "here", "page", "pages", "wiki", "type", "tags",
-}
 
 
 class PageContext:
@@ -180,7 +173,6 @@ __all__ = [
     "SOURCING_QUEUE_COUNT_MARKER_INTENT_RE",
     "SOURCING_QUEUE_COUNT_MARKER_RE",
     "STATUS_RE",
-    "STOPWORDS",
     "Tier1Check",
     "VALID_AUTHORITY_FRESHNESS",
     "VALID_AUTHORITY_KIND",

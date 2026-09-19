@@ -25,8 +25,6 @@ This is the canonical agent-neutral map. Procedures live in `workflows/`; [`REFE
 
 Follow `CONTEXT.md` and the selected workflow. `wiki-ask` is the default question route; `wiki-research` requires explicit invocation. Bare `setup` routes to `wiki-setup` only while domain placeholders remain.
 
-The default wrapped workflows: `wiki-setup`, `wiki-ask`, `wiki-research`, `wiki-ingest`, `wiki-capture`, `wiki-lint`, `wiki-eval`, `wiki-promote`, `wiki-synthesize`, and `wiki-export`.
-
 `scripts/wiki-wrapper-contract.json` owns deterministic `.claude/commands/` and `.agents/skills/` renders. Never hand-edit generated wrappers; keep behavior in agent-neutral files. For bounded navigation use `python3 scripts/wiki_lookup.py index --query "<topic>"` or `log --count 5`; paginate before expanding scope. Explicit whole-file audits remain allowed.
 
 ## Exact approval boundary

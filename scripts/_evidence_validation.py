@@ -281,6 +281,14 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
         if extra:
             errors.append(f"verdicts: unknown files {sorted(extra)}")
     item_by_id = {item.get("item_id"): item for item in all_items}
+    assigned_by_batch = {
+        batch.get("batch_id"): {
+            item.get("item_id") for item in batch.get("items", [])
+            if isinstance(item, dict) and isinstance(item.get("item_id"), str)
+        }
+        for batch in batches
+        if isinstance(batch.get("batch_id"), str) and isinstance(batch.get("items"), list)
+    }
     evidence_errors: list[str] = []
     for path in verdict_paths:
         data = _load_collect(path, path.name, errors)
@@ -295,6 +303,8 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
             if not isinstance(verdict, dict):
                 continue
             item_id = verdict.get("item_id")
+            if isinstance(item_id, str) and item_id not in assigned_by_batch.get(path.stem, set()):
+                errors.append(f"{path.name}: item {item_id} is outside its assigned batch")
             returned_ids[item_id] += 1
             item = item_by_id.get(item_id)
             if item and not sample_errors and not plant_errors and sample and plant:

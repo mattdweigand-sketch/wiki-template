@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import stat
 import subprocess
@@ -19,6 +20,7 @@ import export_wiki
 import restore_wiki
 from _file_transactions import run_transaction
 from eval_lib import Results
+from eval_export_fixture import build_export_fixture
 from wiki_provenance import resolve_restored_source_closure
 
 
@@ -40,6 +42,55 @@ def parser() -> argparse.ArgumentParser:
 
 
 ARGS = parser().parse_args()
+
+
+if ARGS.profile == "portable":
+    def reject_private_corpus_access(event: str, arguments: tuple[object, ...]) -> None:
+        if event not in {"open", "os.listdir", "os.scandir"} or not arguments:
+            return
+        target = arguments[0]
+        if not isinstance(target, (str, bytes, os.PathLike)):
+            return
+        path = Path(os.fsdecode(target))
+        # Relative os.open events may use a directory descriptor outside cwd.
+        if not path.is_absolute():
+            return
+        if any(path.is_relative_to(REPO_ROOT / folder) for folder in ("wiki", "raw")):
+            raise AssertionError(f"portable export eval accessed the private corpus: {path}")
+
+    sys.addaudithook(reject_private_corpus_access)
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-export-preserve-eval-") as td:
+    root = Path(td)
+    source = root / "source.txt"
+    source.write_bytes(b"new source")
+    output = root / "backup.zip"
+    output.write_bytes(b"previous verified backup")
+    try:
+        with patch.object(zipfile.ZipFile, "write", side_effect=OSError("injected write failure")):
+            export_wiki.build_zip(root, output, [source])
+    except OSError:
+        pass
+    results.record(
+        "interrupted-backup-keeps-previous-archive",
+        output.read_bytes() == b"previous verified backup"
+        and not list(root.glob(f".{output.name}.*.tmp")),
+        "building a replacement must not truncate the previously verified backup",
+    )
+    with patch.object(export_wiki, "verify_backup_archive", return_value=(None, ["injected invalid manifest"])):
+        try:
+            export_wiki.build_zip(root, output, [source])
+        except ValueError as exc:
+            integrity_rejected = "injected invalid manifest" in str(exc)
+        else:
+            integrity_rejected = False
+    results.record(
+        "backup-integrity-failure-keeps-previous-archive",
+        integrity_rejected
+        and output.read_bytes() == b"previous verified backup"
+        and not list(root.glob(f".{output.name}.*.tmp")),
+    )
 
 
 def write(path: Path, text: str = "x") -> None:
@@ -124,33 +175,45 @@ else:
 
 with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
     root = Path(td)
-    required_files = [
-        ".gitignore",
-        "AGENTS.md",
-        "CLAUDE.md",
-        "CONTEXT.md",
-        "LICENSE",
-        "README.md",
-        "REFERENCES.md",
+    build_export_fixture(root, REPO_ROOT)
+    required_files = sorted(export_wiki.REQUIRED_FILES)
+    raw_paths = [
+        "raw/documents/source.txt",
+        "raw/documents/source.zip",
+        "raw/documents/wiki-export-2026-06-24.zip",
     ]
-    for rel in required_files:
-        write(root / rel)
+    for relative in raw_paths:
+        write(root / relative, "synthetic source bytes")
+    source_text = """---
+title: Export Source
+type: source
+created: 2026-08-22
+updated: 2026-08-22
+sources: [%s]
+source_type: other
+tags: [export]
+confidence: high
+---
+
+# Export Source
+
+Synthetic export source.
+
+## Open questions / gaps
+
+- None.
+""" % ", ".join(raw_paths)
+    write(root / "wiki/sources/export-source.md", source_text)
+    write(root / "wiki/index.md", "# Index\n\n| [Export Source](sources/export-source.md) | Synthetic source |\n")
+    manifest = {"schema_version": 1, "artifacts": [{
+        "source_slug": "export-source", "captured_at": "2026-08-22",
+        "files": [{"path": relative, "size": len((root / relative).read_bytes()),
+                   "sha256": hashlib.sha256((root / relative).read_bytes()).hexdigest()}
+                  for relative in raw_paths],
+    }]}
+    write(root / "scripts/raw-artifacts.json",
+          json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n")
     for rel in [
-        ".claude/commands/wiki-ingest.md",
-        ".agents/skills/wiki-ingest/SKILL.md",
-        ".github/workflows/wiki-ci.yml",
-        "raw/README.md",
-        "raw/.gitkeep",
-        "raw/customer-research/source.txt",
-        "raw/customer-research/source.zip",
-        "raw/customer-research/wiki-export-2026-06-24.zip",
-        "scripts/lint.py",
-        "wiki/index.md",
-        "workflows/maintenance/export.md",
-    ]:
-        write(root / rel)
-    for rel in [
-        ".env",
         ".agents/local-state.json",
         ".claude/settings.local.json",
         ".claude/worktrees/private.txt",
@@ -160,7 +223,6 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         "tmp/scratch.txt",
         "tmp/wiki-export-2026-06-23.zip",
         "tmp/wiki-export-2026-06-24.zip",
-        "wiki/.DS_Store",
     ]:
         write(root / rel)
 
@@ -184,7 +246,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
     )
     zip_path = root / "tmp" / "wiki-export-2026-06-24.zip"
     names: set[str] = set()
-    if zip_path.exists():
+    if zipfile.is_zipfile(zip_path):
         with zipfile.ZipFile(zip_path) as zf:
             names = set(zf.namelist())
     required_present = all(rel in names for rel in required_files)
@@ -203,15 +265,13 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
     recovery_state_present = all(
         rel in names
         for rel in (
-            ".env",
             ".agents/local-state.json",
             ".claude/settings.local.json",
             ".claude/worktrees/private.txt",
             ".git/config",
             "deliverables/output/file.txt",
             "tmp/scratch.txt",
-            "wiki/.DS_Store",
-        )
+            )
     )
     current_output_absent = "tmp/wiki-export-2026-06-24.zip" not in names
     earlier_output_absent = "tmp/wiki-export-2026-06-23.zip" not in names
@@ -219,8 +279,8 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
     legitimate_zip_sources_present = all(
         rel in names
         for rel in (
-            "raw/customer-research/source.zip",
-            "raw/customer-research/wiki-export-2026-06-24.zip",
+            "raw/documents/source.zip",
+            "raw/documents/wiki-export-2026-06-24.zip",
         )
     )
     results.record(
@@ -235,7 +295,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-eval-") as td:
         and legitimate_zip_sources_present,
         "stdout: " + build.stdout.replace("\n", " | ") + " names: " + repr(sorted(names)),
     )
-    if zip_path.exists():
+    if zipfile.is_zipfile(zip_path):
         count_ok, count_errors = export_wiki.verify_zip(zip_path, len(names) + 1)
         results.record(
             "verify-rejects-count-mismatch",
@@ -533,8 +593,32 @@ def rewrite_archive(source: Path, target: Path, mutation: str) -> None:
 with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
     root = Path(td)
     archive = root / "backup.zip"
-    files = export_wiki.export_files(REPO_ROOT)
-    export_wiki.build_zip(REPO_ROOT, archive, files)
+    source_root = root / "neutral-source"
+    source_root.mkdir()
+    build_export_fixture(source_root, REPO_ROOT)
+    write(source_root / ".git/HEAD", "ref: refs/heads/main\n")
+    write(source_root / ".git/config", "[core]\n    repositoryformatversion = 0\n")
+    files = export_wiki.export_files(source_root)
+    with (
+        patch.object(export_wiki, "verify_backup_archive", wraps=export_wiki.verify_backup_archive) as export_verify,
+        patch.object(restore_wiki, "verify_backup_archive", wraps=restore_wiki.verify_backup_archive) as restore_verify,
+    ):
+        export_wiki.build_zip(source_root, archive, files, require_restore_ready=True)
+    results.record(
+        "restore-ready-export-verifies-archive-integrity-once",
+        export_verify.call_count + restore_verify.call_count == 1,
+        repr((export_verify.call_count, restore_verify.call_count)),
+    )
+    with (
+        patch.object(restore_wiki, "_install_directory_exclusive", side_effect=AssertionError("native install called")),
+        patch.object(restore_wiki, "fsync_directory", side_effect=AssertionError("durable install called")),
+    ):
+        readiness_errors = restore_wiki.verify_backup_restore_readiness(archive)
+    results.record(
+        "backup-readiness-checks-archived-tree-without-native-install",
+        not readiness_errors,
+        repr(readiness_errors),
+    )
     manifest, archive_errors = export_wiki.verify_backup_archive(archive)
     results.record(
         "backup-manifest-v3-binds-file-and-directory-modes",
@@ -553,7 +637,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
             member["path"] for member in manifest["members"]
         }
         and manifest["raw_artifact_manifest_sha256"]
-        == hashlib.sha256((REPO_ROOT / "scripts/raw-artifacts.json").read_bytes()).hexdigest(),
+        == hashlib.sha256((source_root / "scripts/raw-artifacts.json").read_bytes()).hexdigest(),
         repr(archive_errors),
     )
 
@@ -592,10 +676,10 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
     )
     results.record(
         "valid-restore-is-byte-and-mode-exact-and-passes-deterministic-checks",
-        all((destination / path).read_bytes() == (REPO_ROOT / path).read_bytes() for path in exact_pairs)
+        all((destination / path).read_bytes() == (source_root / path).read_bytes() for path in exact_pairs)
         and all(
             stat.S_IMODE((destination / path).stat().st_mode)
-            == stat.S_IMODE((REPO_ROOT / path).stat().st_mode)
+            == stat.S_IMODE((source_root / path).stat().st_mode)
             for path in (
                 "README.md",
                 "scripts/capture_gate.py",
@@ -605,14 +689,14 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
         )
         and all(
             stat.S_IMODE((destination / path).stat().st_mode)
-            == stat.S_IMODE((REPO_ROOT / path).stat().st_mode)
+            == stat.S_IMODE((source_root / path).stat().st_mode)
             for path in ("scripts", "wiki", ".github")
         )
-        and (destination / ".git").exists() == (REPO_ROOT / ".git").exists()
+        and (destination / ".git").exists() == (source_root / ".git").exists()
         and (
-            not (REPO_ROOT / ".git/HEAD").is_file()
+            not (source_root / ".git/HEAD").is_file()
             or (destination / ".git/HEAD").read_bytes()
-            == (REPO_ROOT / ".git/HEAD").read_bytes()
+            == (source_root / ".git/HEAD").read_bytes()
         )
         and all("git" not in Path(command[0]).name and "rclone" not in Path(command[0]).name for command in commands),
         repr(commands),
@@ -621,6 +705,10 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
     if ARGS.profile == "portable":
         results.record("portable-profile-excludes-private-corpus-closure", True)
     else:
+        private_archive = root / "private-backup.zip"
+        export_wiki.build_zip(REPO_ROOT, private_archive, export_wiki.export_files(REPO_ROOT))
+        private_destination = root / "private-restored"
+        restore_wiki.restore_backup_archive(private_archive, private_destination)
         raw_registry = json.loads(
             (REPO_ROOT / "scripts/raw-artifacts.json").read_text(encoding="utf-8")
         )
@@ -632,7 +720,7 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
                 if not isinstance(member, dict) or not isinstance(member.get("path"), str):
                     live_closure_exact = False
                     continue
-                restored_bytes = (destination / member["path"]).read_bytes()
+                restored_bytes = (private_destination / member["path"]).read_bytes()
                 live_closure_exact = live_closure_exact and (
                     len(restored_bytes) == member.get("size")
                     and hashlib.sha256(restored_bytes).hexdigest() == member.get("sha256")
@@ -655,9 +743,9 @@ with tempfile.TemporaryDirectory(prefix="wiki-restore-eval-") as td:
         and not legacy_errors
         and legacy_manifest["schema_version"] == 1
         and stat.S_IMODE((legacy_destination / "scripts/wiki_eval.py").stat().st_mode)
-        == stat.S_IMODE((REPO_ROOT / "scripts/wiki_eval.py").stat().st_mode)
+        == stat.S_IMODE((source_root / "scripts/wiki_eval.py").stat().st_mode)
         and stat.S_IMODE((legacy_destination / "README.md").stat().st_mode)
-        == stat.S_IMODE((REPO_ROOT / "README.md").stat().st_mode),
+        == stat.S_IMODE((source_root / "README.md").stat().st_mode),
         repr(legacy_errors),
     )
     try:
@@ -903,5 +991,55 @@ The configured restore retains exact evidence. (source: [[closure-source]])
         "restore-validates-schema-vocabularies-against-staged-tree",
         broken_schema_rejected,
     )
+
+    previous_backup = configured_archive.read_bytes()
+    invalid_sources = {"broken-schema": (broken_schema_source, "schema vocabulary")}
+    missing_raw_source = root / "missing-raw-source"
+    shutil.copytree(configured_source, missing_raw_source)
+    (missing_raw_source / "raw/internal-memos/closure.txt").unlink()
+    missing_raw_archive = root / "missing-raw.zip"
+    export_wiki.build_zip(missing_raw_source, missing_raw_archive, export_wiki.export_files(missing_raw_source))
+    (missing_raw_source / "raw/internal-memos/closure.txt").write_bytes(raw_bytes)
+    missing_raw_errors = restore_wiki.verify_backup_restore_readiness(missing_raw_archive)
+    results.record(
+        "backup-readiness-rejects-missing-raw-in-archive-despite-live-source-repair",
+        any("raw/internal-memos/closure.txt" in error for error in missing_raw_errors),
+        repr(missing_raw_errors),
+    )
+    (missing_raw_source / "raw/internal-memos/closure.txt").unlink()
+    invalid_sources["missing-declared-raw"] = (missing_raw_source, "raw/internal-memos/closure.txt")
+    extra_root_source = root / "extra-root-source"
+    shutil.copytree(configured_source, extra_root_source)
+    write(extra_root_source / ".env", "SYNTHETIC_INVALID_ROOT_FILE=1\n")
+    invalid_sources["invalid-root-file"] = (extra_root_source, "unexpected top-level file")
+    for label, (invalid_source, expected_error) in invalid_sources.items():
+        output = invalid_source / "tmp/wiki-export-2026-08-22.zip"
+        output.parent.mkdir(exist_ok=True)
+        output.write_bytes(previous_backup)
+        command = [
+            sys.executable, str(EXPORT), "--repo-root", str(invalid_source),
+            "--date", "2026-08-22", "--upload-target", "fixture:archive.zip",
+            "--rclone-bin", str(root / "missing-rclone"),
+        ]
+        rejected = subprocess.run(command, text=True, capture_output=True, check=False)
+        results.record(
+            f"export-{label}-keeps-previous-backup-before-upload",
+            rejected.returncode == 1
+            and expected_error in rejected.stderr
+            and "Wiki export created:" not in rejected.stdout
+            and output.read_bytes() == previous_backup
+            and not list(output.parent.glob(f".{output.name}.*.tmp")),
+            repr((rejected.stdout, rejected.stderr)),
+        )
+        output.unlink()
+        rejected = subprocess.run(command, text=True, capture_output=True, check=False)
+        results.record(
+            f"export-{label}-does-not-publish-new-backup",
+            rejected.returncode == 1
+            and expected_error in rejected.stderr
+            and not output.exists()
+            and not list(output.parent.glob(f".{output.name}.*.tmp")),
+            repr((rejected.stdout, rejected.stderr)),
+        )
 
 sys.exit(results.finish())

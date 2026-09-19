@@ -40,9 +40,7 @@ def build_clean_tree(root: Path) -> None:
         encoding="utf-8",
     )
     (root / "AGENTS.md").write_text(
-        "The default wrapped workflows: "
-        + ", ".join(f"`{name}`" for name in names)
-        + ".\n",
+        "Read CONTEXT.md. Shortcut names live in scripts/wiki-wrapper-contract.json.\n",
         encoding="utf-8",
     )
     problems = render_all(root, check=False)
@@ -154,9 +152,9 @@ parity_case(
     "README.md shortcut names differ",
 )
 parity_case(
-    "agents-name-drift-fails",
-    lambda root: replace_once(root / "AGENTS.md", b"`wiki-eval`", b"`wiki-evaluate`"),
-    "AGENTS.md shortcut names differ",
+    "agents-needs-no-duplicate-shortcut-list",
+    lambda root: (root / "AGENTS.md").write_text("Read CONTEXT.md.\n", encoding="utf-8"),
+    None,
 )
 parity_case(
     "partial-render-fails-check",

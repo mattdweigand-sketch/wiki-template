@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal, Sequence, cast
 
@@ -170,11 +170,10 @@ def publish_evidence_batches(
 
 
 def validate_evidence_run(repo_root: Path, run_dir: Path) -> EvidenceRunValidation:
-    """Validate exact artifacts and snapshot fidelity, then persist the result."""
+    """Validate exact artifacts and snapshot fidelity without changing the run."""
     root = repo_root.resolve()
     resolved_run = safe_run_dir(root, run_dir.as_posix())
     payload = validate_run(root, resolved_run)
-    atomic_json(resolved_run / "validation.json", payload)
     raw_status = payload.get("status")
     if raw_status not in {"PASSED", "FAILED", "STALE SNAPSHOT"}:
         raise EvidenceRunError("evidence validation returned an invalid status")
@@ -224,6 +223,18 @@ def validate_evidence_run(repo_root: Path, run_dir: Path) -> EvidenceRunValidati
     )
 
 
+def persist_evidence_validation(repo_root: Path, run_dir: Path) -> EvidenceRunValidation:
+    """Record an explicit validation result while keeping reader calls pure."""
+    root = repo_root.resolve()
+    resolved_run = safe_run_dir(root, run_dir.as_posix())
+    validation = validate_evidence_run(root, run_dir)
+    atomic_json(resolved_run / "validation.json", {
+        "schema_version": 1,
+        **asdict(validation),
+    })
+    return validation
+
+
 __all__ = [
     "EvidenceBatchPlan",
     "EvidenceRunError",
@@ -237,5 +248,6 @@ __all__ = [
     "create_evidence_sample",
     "create_targeted_evidence_sample",
     "publish_evidence_batches",
+    "persist_evidence_validation",
     "validate_evidence_run",
 ]

@@ -1,10 +1,47 @@
 #!/usr/bin/env python3
 """Seeded evals for lint repository structure and Git boundaries."""
 
+import hashlib
+import json
 import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
-from eval_lint_fixture import *
+from eval_lint_fixture import (
+    LINT,
+    REPO_ROOT,
+    add_index_row,
+    append,
+    copy_lint_fixture,
+    edit,
+    fail_prerequisite,
+    finish_lint_eval,
+    results,
+    run_lint_fixture_case,
+    write_adjudications,
+    write_raw_buckets,
+    setup_lint_fixture_repository,
+)
 from _wiki_parse import META_PAGES
+
+setup_lint_fixture_repository()
+
+fixture_import = subprocess.run(
+    [sys.executable, "-c", (
+        "from unittest.mock import patch; "
+        "guard = patch('tempfile.TemporaryDirectory', side_effect=AssertionError('import wrote a fixture')); "
+        "guard.start(); import eval_lint_fixture"
+    )],
+    cwd=REPO_ROOT / "scripts", text=True, capture_output=True,
+)
+results.append(("fixture-helper-import-does-not-create-repository", fixture_import.returncode == 0))
+print(("PASS " if fixture_import.returncode == 0 else "FAIL ")
+      + "fixture-helper-import-does-not-create-repository")
+if fixture_import.returncode:
+    print(fixture_import.stderr)
 
 
 def write_sourcing_queue(root: Path, *markers: str) -> None:
@@ -14,7 +51,7 @@ def write_sourcing_queue(root: Path, *markers: str) -> None:
     )
 
 # ---- Tier 1: index-row uniqueness ----
-run_case(
+run_lint_fixture_case(
     "index-duplicate-row-fails-tier1",
     lambda r: add_index_row(r, "concepts/alpha.md", "duplicate row"),
     expect_code=1, expect=("index-duplicate", "multiple index.md rows"),
@@ -25,7 +62,7 @@ def write_log_text(root, text):
     (root / "wiki" / "log.md").write_text(text)
 
 
-run_case(
+run_lint_fixture_case(
     "log-entry-header-bad-heading-fails-tier1",
     lambda r: write_log_text(
         r,
@@ -33,14 +70,14 @@ run_case(
     ),
     expect_code=1, expect=("log-entry-header", "not a recognized log entry header"),
 )
-run_case(
+run_lint_fixture_case(
     "log-entry-header-valid-forms-pass-tier1",
     lambda r: write_log_text(
         r,
         "# Log\n\n## [2026-06-01] ingest | ok\nBody.\n\n## 2026-06-02 | plain form\nBody.\n",
     ),
 )
-run_case(
+run_lint_fixture_case(
     # rotate_log's cuts are fence-unaware, so ANY fenced '## ' line in log.md
     # is a hazard: a fenced date-shaped header would become a bogus cut point.
     "log-entry-header-fenced-line-fails-tier1",
@@ -81,13 +118,13 @@ def seed_decision_without_review_by(root):
     append(root, "wiki/concepts/alpha.md", "- Related: [[target]]\n")
 
 
-run_case(
+run_lint_fixture_case(
     "review-by-missing-fires",
     seed_decision_without_review_by,
     args=(), expect_code=0,
     expect=("with no review_by", "decisions/target.md"),
 )
-run_case(
+run_lint_fixture_case(
     "review-by-present-not-flagged",
     lambda r: (
         seed_decision_without_review_by(r),
@@ -111,13 +148,13 @@ def seed_goal_without_review_by(root):
     append(root, "wiki/concepts/alpha.md", "- Related: [[target-goal]]\n")
 
 
-run_case(
+run_lint_fixture_case(
     "goal-review-by-missing-fires",
     seed_goal_without_review_by,
     args=(), expect_code=0,
     expect=("goals and decisions with no review_by", "goals/target-goal.md"),
 )
-run_case(
+run_lint_fixture_case(
     "goal-review-by-present-not-flagged",
     lambda r: (
         seed_goal_without_review_by(r),
@@ -133,24 +170,24 @@ def remove_governed_concepts_folder(root: Path) -> None:
     shutil.rmtree(root / "wiki" / "concepts")
 
 
-run_case(
+run_lint_fixture_case(
     "configured-layout-drift-fails-tier1",
     remove_governed_concepts_folder,
     expect_code=1,
     expect=("entity-configuration", "governed entity folders missing: concepts"),
 )
 # ---- Tier 1: meta-page dangling links (promoted from Tier-2; gates commit) ----
-run_case(
+run_lint_fixture_case(
     "meta-dangling-link-fires",
     lambda r: append(r, "wiki/index.md", "\nSee [[no-such-meta-target]] for details.\n"),
     expect_code=1, expect=("meta-dangling-link", "index.md: [[no-such-meta-target]]"),
 )
-run_case(
+run_lint_fixture_case(
     "meta-dangling-ignores-folder-and-code",
     lambda r: append(r, "wiki/index.md", "\nRouting: [[concepts/]]. Example: `[[demo]]`.\n"),
     expect_code=0, absent=("index.md: [[concepts/]]", "index.md: [[demo]]"),
 )
-run_case(
+run_lint_fixture_case(
     # content:links#3: an in-code-span [[link]] on a META page must not fire
     # even when its target is a real-looking but nonexistent slug.
     "meta-dangling-in-code-span-ignored",
@@ -158,7 +195,7 @@ run_case(
                      "\nSyntax example: `[[some-undefined-meta-demo]]`.\n"),
     expect_code=0, absent=("some-undefined-meta-demo",),
 )
-run_case(
+run_lint_fixture_case(
     "meta-dangling-rich-code-ignored",
     lambda r: append(
         r,
@@ -172,21 +209,21 @@ run_case(
 )
 
 # ---- Phase 5: fail-closed structure and governed Tier-1 data ----
-run_case(
+run_lint_fixture_case(
     "direct-entity-junk-file-fails",
     lambda r: (r / "wiki/concepts/illegal.bin").write_bytes(b"junk"),
     expect_code=1,
     expect=("wiki-structure", "wiki/concepts/illegal.bin", "non-.md"),
     absent=("Traceback",),
 )
-run_case(
+run_lint_fixture_case(
     "empty-direct-entity-directory-fails",
     lambda r: (r / "wiki/concepts/nested").mkdir(),
     expect_code=1,
     expect=("wiki-structure", "wiki/concepts/nested", "directory"),
     absent=("Traceback",),
 )
-run_case(
+run_lint_fixture_case(
     "direct-entity-broken-symlink-fails",
     lambda r: (r / "wiki/concepts/escape.md").symlink_to(r / "missing-target.md"),
     args=(),
@@ -194,7 +231,7 @@ run_case(
     expect=("wiki-structure", "wiki/concepts/escape.md", "special entry"),
     absent=("Traceback",),
 )
-run_case(
+run_lint_fixture_case(
     "direct-entity-directory-symlink-fails",
     lambda r: (r / "wiki/concepts/directory-link.md").symlink_to(
         r / "wiki/concepts", target_is_directory=True
@@ -229,7 +266,7 @@ for case_name, registry, marker in (
         "bucket 'notes' needs a nonempty string description",
     ),
 ):
-    run_case(
+    run_lint_fixture_case(
         case_name,
         lambda r, value=registry: write_raw_buckets(r, value),
         expect_code=1,
@@ -242,7 +279,7 @@ def remove_registered_raw_bucket(root: Path) -> None:
     shutil.rmtree(root / "raw/notes")
 
 
-run_case(
+run_lint_fixture_case(
     "registered-raw-bucket-missing-from-tree-fires",
     remove_registered_raw_bucket,
     expect_code=1,
@@ -258,7 +295,7 @@ for page, field in (
     ("wiki/sources/gamma.md", "source_type"),
 ):
     for suffix, replacement in (("blank", ""), ("quote-only", "''")):
-        run_case(
+        run_lint_fixture_case(
             f"required-{field}-{suffix}-fails",
             lambda r, rel=page, key=field, value=replacement: edit(
                 r, rel, next(
@@ -272,7 +309,7 @@ for page, field in (
         )
 
 for meta_name in sorted(META_PAGES):
-    run_case(
+    run_lint_fixture_case(
         f"non-utf8-meta-{meta_name.lower()}-fails-cleanly",
         lambda r, name=meta_name: (r / "wiki" / f"{name}.md").write_bytes(b"\xff"),
         expect_code=1,
@@ -280,7 +317,7 @@ for meta_name in sorted(META_PAGES):
         absent=("Traceback",),
     )
 
-run_case(
+run_lint_fixture_case(
     "sourcing-marker-duplicate-attribute-fails",
     lambda r: write_sourcing_queue(
         r, "<!-- lint:entity-count folder=concepts folder=sources count=5 -->"
@@ -289,7 +326,7 @@ run_case(
     expect=("sourcing-queue-count-marker", "duplicate attribute 'folder'"),
     absent=("Traceback",),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-marker-unknown-attribute-fails",
     lambda r: write_sourcing_queue(
         r, "<!-- lint:entity-count folder=concepts count=5 extra=yes -->"
@@ -298,7 +335,7 @@ run_case(
     expect=("sourcing-queue-count-marker", "unknown attribute 'extra'"),
     absent=("Traceback",),
 )
-run_case(
+run_lint_fixture_case(
     "sourcing-marker-unparsed-attribute-text-fails",
     lambda r: write_sourcing_queue(
         r, "<!-- lint:entity-count folder=concepts stray count=5 -->"
@@ -332,7 +369,7 @@ def seed_long_quote_identity(root):
     }])
 
 
-run_case(
+run_lint_fixture_case(
     "long-quotes-sharing-eighty-character-prefix-stay-distinct",
     seed_long_quote_identity,
     args=(),
@@ -347,7 +384,7 @@ run_case(
 
 def _install_raw_git_fixture(root: Path, real_git: str) -> bytes:
     """Install one valid local-only raw record and the real pre-commit guard."""
-    copy_fixture(root)
+    copy_lint_fixture(root)
     shutil.copyfile(REPO_ROOT / ".gitignore", root / ".gitignore")
     (root / "scripts/hooks").mkdir()
     for name in (
@@ -500,7 +537,7 @@ def check_tracked_raw_case_variant_fires():
         return
     with tempfile.TemporaryDirectory(prefix="wiki-raw-case-") as td:
         root = Path(td)
-        copy_fixture(root)
+        copy_lint_fixture(root)
         subprocess.run([real_git, "init", "-q"], cwd=root, check=True, capture_output=True)
         subprocess.run(
             [real_git, "config", "core.ignorecase", "true"],
@@ -533,7 +570,7 @@ def check_git_tracking_query_failure_fires():
         return
     with tempfile.TemporaryDirectory(prefix="wiki-git-query-") as td:
         root = Path(td)
-        copy_fixture(root)
+        copy_lint_fixture(root)
         subprocess.run([real_git, "init", "-q"], cwd=root, check=True, capture_output=True)
         fake_bin = root / "tmp/fake-bin"
         fake_bin.mkdir(parents=True)
@@ -566,9 +603,50 @@ def check_git_tracking_query_failure_fires():
             print(f"  exit {proc.returncode}; output: {output[:500]}")
 
 
+def check_restored_lint_is_offline() -> None:
+    """A restored Git config stub never requires Git; tracked views still do."""
+    with tempfile.TemporaryDirectory(prefix="wiki-restored-lint-") as td:
+        root = Path(td)
+        copy_lint_fixture(root)
+        shutil.rmtree(root / ".git")
+        (root / ".git").mkdir()
+        (root / ".git/config").write_text("[core]\n\tbare = false\n", encoding="utf-8")
+        fake_bin = root / "tmp/fake-bin"
+        fake_bin.mkdir(parents=True)
+        marker = root / "tmp/git-invocations.txt"
+        env = {**os.environ, "PATH": str(fake_bin)}
+        for name, args, install_git, expected_code in (
+            ("restored-lint-with-unavailable-git", ("--restored-tree",), False, 0),
+            ("restored-lint-with-failing-git-does-not-invoke-it", ("--restored-tree",), True, 0),
+            ("live-lint-still-requires-git-tracking", (), True, 1),
+            ("git-view-lint-still-requires-git-tracking", ("--git-view",), True, 1),
+        ):
+            if install_git:
+                fake_git = fake_bin / "git"
+                fake_git.write_text(
+                    "#!/bin/sh\nprintf 'invoked\\n' >> tmp/git-invocations.txt\nexit 73\n",
+                    encoding="utf-8",
+                )
+                fake_git.chmod(0o755)
+            marker.unlink(missing_ok=True)
+            proc = subprocess.run(
+                [sys.executable, str(LINT), "--tier1", *args],
+                cwd=root, text=True, capture_output=True, env=env,
+            )
+            output = proc.stdout + proc.stderr
+            ok = proc.returncode == expected_code and marker.exists() == (expected_code == 1)
+            if expected_code == 1:
+                ok = ok and "raw-tracked" in output
+            results.append((name, ok))
+            print(("PASS " if ok else "FAIL ") + name)
+            if not ok:
+                print(f"  exit {proc.returncode}; Git invoked={marker.exists()}; output: {output[:500]}")
+
+
 check_untracked_raw_artifact_workflow_passes()
 check_tracked_raw_artifact_fires()
 check_tracked_raw_case_variant_fires()
 check_git_tracking_query_failure_fires()
+check_restored_lint_is_offline()
 
 raise SystemExit(finish_lint_eval())

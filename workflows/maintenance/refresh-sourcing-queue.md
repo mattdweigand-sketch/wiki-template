@@ -11,9 +11,11 @@ description: Use this workflow when the user says "refresh sourcing queue". Re-p
 ## Steps
 
 1. Read `wiki/sourcing-queue.md` if present; otherwise create it only if the current wiki structure makes a sourcing queue useful.
-2. Re-prioritize based on what the latest ingests revealed
+2. Re-prioritize based on what the latest ingests revealed.
 3. For each priority gap, name the source artifact most likely to fill it, such as CRM export, win/loss note, call transcript, product spec, board deck, research memo, or support thread.
-4. Append to `wiki/log.md`:
+4. Write one dated entry to `tmp/update-entry.md`, then follow the [routine finish](../../REFERENCES.md#routine-finalization) with `python3 scripts/finalize_wiki_update.py --log-entry tmp/update-entry.md`. The shared writer serializes the log and makes an exact retry a no-op. Review the resulting lint output before reporting completion.
+
+Entry format
 
 ```
 ## [YYYY-MM-DD] refresh-sourcing-queue

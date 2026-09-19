@@ -50,7 +50,6 @@ class RotationPlan:
     log_preimage_sha256: str = ""
     log_mode: int = 0o644
     archive_preimage: bytes | None = None
-    archive_preimage_sha256: str | None = None
 
 
 def line_count(lines: list[str]) -> int:
@@ -133,14 +132,12 @@ def rotation_entry(
     after_lines: int,
 ) -> list[str]:
     return [
-        "\n",
-        "---\n",
-        "\n",
         f"## [{rotation_date}] maintenance | Log rotation\n",
         f"Archived range: {oldest} through {newest} to {archive_rel.as_posix()}.\n",
         f"Line delta: wiki/log.md {before_lines} lines -> {after_lines} lines.\n",
         f"Entries archived: {moved_entries}. Entries retained: {kept_entries}.\n",
         "Verification: rotate_log.py payload conservation check passed; rerun lint after rotation.\n",
+        "\n",
     ]
 
 
@@ -157,7 +154,7 @@ def validate_target(target_lines: int) -> None:
 
 def assert_payload_conserved(original: list[Entry], moved: list[Entry], kept: list[Entry]) -> None:
     original_payload = flatten(original)
-    rotated_payload = flatten(moved) + flatten(kept)
+    rotated_payload = flatten(kept) + flatten(moved)
     if original_payload != rotated_payload:
         raise RotationError("payload conservation failed: original log entries changed")
 
@@ -254,12 +251,12 @@ def build_log_rotation_plan(root: Path, target_lines: int, rotation_date: str) -
 
     chosen: tuple[list[Entry], list[Entry]] | None = None
     for cut in range(1, len(entries)):
-        moved = entries[:cut]
-        kept = entries[cut:]
+        kept = entries[:-cut]
+        moved = entries[-cut:]
         if not kept:
             continue
-        oldest = moved[0].date
-        newest = moved[-1].date
+        oldest = moved[-1].date
+        newest = moved[0].date
         archive_rel = ARCHIVE_DIR / f"{oldest}-to-{newest}.md"
         new_header = add_archive_pointer(header, archive_rel, oldest, newest)
         after_without_rotation = new_header + flatten(kept)
@@ -289,8 +286,8 @@ def build_log_rotation_plan(root: Path, target_lines: int, rotation_date: str) -
     moved, kept = chosen
     assert_payload_conserved(entries, moved, kept)
 
-    oldest = moved[0].date
-    newest = moved[-1].date
+    oldest = moved[-1].date
+    newest = moved[0].date
     archive_lines = trim_terminal_blank_line(
         archive_header(oldest, newest, rotation_date, len(moved))
         + flatten(moved)
@@ -318,7 +315,6 @@ def build_log_rotation_plan(root: Path, target_lines: int, rotation_date: str) -
     after_count = line_count(after_without_rotation) + rotation_line_count
     live_lines = (
         new_header
-        + flatten(kept)
         + rotation_entry(
             rotation_date=rotation_date,
             archive_rel=archive_rel,
@@ -329,6 +325,7 @@ def build_log_rotation_plan(root: Path, target_lines: int, rotation_date: str) -
             before_lines=before_count,
             after_lines=after_count,
         )
+        + flatten(kept)
     )
 
     if line_count(live_lines) != after_count:
@@ -350,10 +347,6 @@ def build_log_rotation_plan(root: Path, target_lines: int, rotation_date: str) -
         log_preimage_sha256=hashlib.sha256(log_preimage).hexdigest(),
         log_mode=stat.S_IMODE(log_info.st_mode),
         archive_preimage=archive_preimage,
-        archive_preimage_sha256=(
-            hashlib.sha256(archive_preimage).hexdigest()
-            if archive_preimage is not None else None
-        ),
     )
 
 

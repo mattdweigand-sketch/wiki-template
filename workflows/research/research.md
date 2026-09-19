@@ -34,8 +34,8 @@ Use this workflow only when the user explicitly invokes `wiki-research`, `$wiki-
    ```
 
    Creation is write-once. Rendering uses the captured text and source-page links, with supported authority links when available. It refuses draft, review, packet, or snapshot drift. Use a fresh run when review inputs change.
-6. Give the rendered packet and its named claims to a fresh reviewer. The reviewer checks each statement for support, scope, conflation, citation fit, and any flagged source claim.
-7. Return the rendered packet only if the fresh reviewer marks every selected statement `VERIFIED`. Otherwise start a fresh run with a narrower selection. Report gaps and contradictions separately without presenting them as verified findings. Do not rewrite the rendered claims.
+6. Give the question, rendered packet, and review results to a fresh reviewer. This second review checks whether the selected claims answer the question and whether the response omits a material limit, contradiction, or gap already found in the evidence review. It does not repeat claim verification. The reviewer returns either `READY` or the specific selection or omission to fix.
+7. Return the rendered packet when the answer review is `READY`. Report gaps and contradictions separately without presenting them as verified findings. If selection must change, create a fresh run for the revised packet because response artifacts are write-once. If only a gap note is missing, add that separate note and repeat the answer review. Do not rewrite the rendered claims.
 8. If the user asks to file the result, use the Analysis Capture rules in `ask.md`.
 
 `wiki-research` adds review cost on purpose. It is for cases where the user wants each returned statement bound to checked claims, not for ordinary corpus questions.

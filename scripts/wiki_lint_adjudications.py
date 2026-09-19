@@ -15,7 +15,7 @@ from wiki_lint_contract import (
 from wiki_lint_repository_checks import read_adjudications
 
 
-AdjudicationValue = Union[str, frozenset[str], tuple[str, str]]
+AdjudicationValue = Union[str, tuple[str, str]]
 Adjudications = dict[str, set[AdjudicationValue]]
 
 

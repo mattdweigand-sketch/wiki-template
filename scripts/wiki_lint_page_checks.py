@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from _repo_paths import EXISTING_FILE, RepoPathError, is_http_url, resolve_repo_path
-from _wiki_parse import dangling_slugs, evidentiary_view, section_body, split_frontmatter
+from _wiki_parse import authored_body_view, dangling_slugs, evidentiary_view, section_body
 from wiki_lint_contract import (
     AUTHORITY_ANCHOR_FIELDS,
     AUTHORITY_METADATA_FIELDS,
@@ -29,7 +29,6 @@ from wiki_lint_contract import (
     VALID_SOURCE_TYPE,
 )
 from wiki_lint_frontmatter import (
-    authored_body,
     block_list_has_items,
     fm_scalar,
     is_nonrepository_source_reference,
@@ -330,7 +329,7 @@ def check_source_refs(ctx: PageContext) -> LintFailures:
 def check_dangling_links(ctx: PageContext) -> LintFailures:
     """Wikilinks resolve to a real page. Code spans are stripped (a [[link]]
     inside a code example is not a failure); the shared dangling_slugs helper
-    keeps this in lockstep with the Tier-2 meta-page dangling check."""
+    keeps this in lockstep with the meta-page dangling check."""
     if ctx.frontmatter_error:
         return []
     return [("dangling-link", ctx.rel, f"[[{slug}]] resolves to nothing")
@@ -360,8 +359,7 @@ def check_synthesis_not_cited(ctx: PageContext) -> LintFailures:
 
 
 def check_related_labels(ctx: PageContext) -> LintFailures:
-    """Related-pages relationship labels come from the fixed vocabulary
-    (RELATED_LABELS here; the meanings table lives in REFERENCES.md). A bullet
+    """Related-pages labels come from the governed schema vocabulary. A bullet
     may be untyped ("- [[page]]"), but a "Label:" prefix on a bullet that carries
     a [[link]] must be one of the six labels. A plain prose bullet ("- Note:
     ...", a page-to-create) is permitted by SCHEMA and is not an attempted
@@ -369,7 +367,7 @@ def check_related_labels(ctx: PageContext) -> LintFailures:
     fails = []
     related = section_body(ctx.text, "Related pages")
     if related is not None:
-        for line in related.splitlines():
+        for line in authored_body_view(related).splitlines():
             lm = re.match(r"^-\s+([A-Za-z][A-Za-z ]*?):\s", line)
             if lm and "[[" in line and lm.group(1) not in RELATED_LABELS:
                 fails.append(("related-label", ctx.rel,
@@ -384,7 +382,7 @@ def check_open_questions(ctx: PageContext) -> LintFailures:
     so it gates like the other structural mandates."""
     if ctx.folder == "sources":
         return []
-    if not re.search(r"^##+ Open [Qq]uestions", ctx.text, re.M):
+    if not re.search(r"^##+ Open questions", evidentiary_view(ctx.text), re.M | re.I):
         return [("open-questions", ctx.rel, "missing Open questions / gaps section")]
     return []
 
@@ -401,12 +399,13 @@ def check_confidence_restate(ctx: PageContext) -> LintFailures:
     fails = []
     conf = ctx.fm.get("confidence")
     if conf in ("low", "contested"):
-        _, body = split_frontmatter(ctx.text)
-        ab = authored_body(body)
+        ab = evidentiary_view(ctx.text)
         if not re.search(r"confidence", ab, re.I):
             fails.append(("confidence-restate", ctx.rel,
                           f"confidence '{conf}' not restated in body"))
-        if conf == "contested" and "## Disagreement" not in ab:
+        if conf == "contested" and not re.search(
+            r"^##[ \t]+Disagreement(?:[ \t]+#+)?[ \t]*$", ab, re.M | re.I
+        ):
             fails.append(("confidence-restate", ctx.rel,
                           "contested page lacks a Disagreement section"))
     return fails

@@ -22,7 +22,9 @@ description: Use this workflow when the user says "export the wiki" or wants a c
    python3 scripts/export_wiki.py --date YYYY-MM-DD
    ```
 
-   This includes every regular file under the repo root except generated `wiki-export-YYYY-MM-DD.zip` archives outside `raw/`. Wiki pages, local-only raw sources, workflows, scripts, wrappers, CI, Git history, local settings, other scratch files, deliverables, and any existing backup receipt remain included. A source artifact under `raw/` remains included even when its filename matches the export pattern. `BACKUP-MANIFEST.json` binds the exact sorted member set, sizes, hashes, POSIX permission modes, creation time, and raw-artifact manifest hash; it does not list itself. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree and any nonclean `.wiki-transactions/` state.
+   This includes every regular file under the repo root except generated `wiki-export-YYYY-MM-DD.zip` archives outside `raw/`. Wiki pages, local-only raw sources, workflows, scripts, wrappers, CI, Git history, local settings, other scratch files, deliverables, and any existing backup receipt remain included. A source artifact under `raw/` remains included even when its filename matches the export pattern. `BACKUP-MANIFEST.json` binds the exact sorted member set, sizes, hashes, POSIX permission modes, creation time, and raw-artifact manifest hash. It does not list itself. `--date` accepts only a real ISO `YYYY-MM-DD` value before any output path is created. The export refuses any symlink in the tree and any nonclean `.wiki-transactions/` state.
+
+   The script writes a temporary archive beside the final path, extracts that exact snapshot into a temporary directory, and runs the same tree checks used by restore. Missing raw bytes, invalid schema, or other restore-check failures stop publication and upload. Only a complete, checked archive replaces an earlier backup at that path. The check needs temporary space for the archive and its extracted tree.
 
 2. If you need to inspect before building, run:
 
@@ -37,7 +39,7 @@ description: Use this workflow when the user says "export the wiki" or wants a c
    python3 scripts/restore_wiki.py restore <archive.zip> <absent-destination>
    ```
 
-   Restore refuses an existing destination, validates before extraction, restores file and directory permission modes, runs restored-tree checks, flushes restored files and directories plus the destination parent, and atomically installs only the complete verified directory. It restores included Git history without running Git. Version 1 and 2 backups remain supported. New version 3 backups bind file and directory modes in the manifest. Verification is portable. Restore requires macOS or Linux because other supported Python platforms do not expose the atomic no-replace directory rename this safety contract needs.
+   `verify` checks archive safety, membership, hashes, and modes. It does not extract the tree or run wiki checks. Export also checks restore readiness through temporary extraction. Restore refuses an existing destination, validates before extraction, restores file and directory permission modes, runs restored-tree checks, flushes restored files and directories plus the destination parent, and atomically installs only the complete verified directory. It restores included Git history without running Git. Version 1 and 2 backups remain supported. New version 3 backups bind file and directory modes in the manifest. Archive verification is portable. Restore requires macOS or Linux because other supported Python platforms do not expose the atomic no-replace directory rename this safety contract needs.
 
 3. Report the absolute path to the zip. Do not copy it off-device unless the user explicitly approves a private backup destination.
 

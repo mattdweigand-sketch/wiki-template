@@ -9,7 +9,7 @@ import stat
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Iterable
 
 from _durable_files import (
     fsync_directory,
@@ -56,7 +56,6 @@ TARGET_V1_FIELDS = frozenset(
 )
 TARGET_FIELDS = TARGET_V1_FIELDS | {"output_state"}
 GUARD_FIELDS = frozenset({"path", "sha256", "mode"})
-FaultHook = Callable[[str], None]
 
 
 class TransactionError(RuntimeError):
@@ -71,7 +70,7 @@ class TransactionCorrupt(TransactionError):
     """Transaction authority is malformed, unsafe, or incomplete."""
 
 
-def _now() -> str:
+def transaction_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
@@ -79,11 +78,11 @@ def _canonical_json(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
-def _integrity(journal: dict[str, object]) -> str:
+def transaction_journal_integrity(journal: dict[str, object]) -> str:
     return sha256_bytes(_canonical_json({key: value for key, value in journal.items() if key != "integrity_sha256"}))
 
 
-def _plan_hash(
+def transaction_plan_hash(
     consumer: str,
     allowed_prefixes: list[str],
     targets: list[dict[str, object]],
@@ -120,7 +119,7 @@ def _is_mode(value: object) -> bool:
     return _is_int(value) and value <= 0o7777
 
 
-def _canonical_relative(value: object) -> bool:
+def is_canonical_transaction_path(value: object) -> bool:
     if not isinstance(value, str) or not value or "\\" in value or "\x00" in value:
         return False
     path = Path(value)
@@ -141,7 +140,7 @@ def _allowed(path: str, prefixes: Iterable[str]) -> bool:
 
 def validate_target_path(repo_root: Path, relative: str, allowed_prefixes: Iterable[str]) -> Path:
     """Confine a transaction target without dereferencing unsafe ancestors."""
-    if not _canonical_relative(relative):
+    if not is_canonical_transaction_path(relative):
         raise TransactionError(f"noncanonical transaction target: {relative!r}")
     if not _allowed(relative, allowed_prefixes):
         raise TransactionError(f"transaction target outside consumer scope: {relative}")
@@ -165,12 +164,12 @@ def validate_target_path(repo_root: Path, relative: str, allowed_prefixes: Itera
     return target
 
 
-def _authority_root(repo_root: Path) -> Path:
+def transaction_authority_root(repo_root: Path) -> Path:
     return repo_root / AUTHORITY_NAME
 
 
-def _ensure_authority(repo_root: Path) -> Path:
-    authority = _authority_root(repo_root)
+def ensure_transaction_authority(repo_root: Path) -> Path:
+    authority = transaction_authority_root(repo_root)
     try:
         info = authority.lstat()
     except FileNotFoundError:
@@ -190,7 +189,7 @@ def _ensure_authority(repo_root: Path) -> Path:
     return authority
 
 
-def _strict_regular(path: Path, *, mode: int | None = None) -> os.stat_result:
+def require_transaction_file(path: Path, *, mode: int | None = None) -> os.stat_result:
     try:
         info = path.lstat()
     except OSError as exc:
@@ -202,7 +201,7 @@ def _strict_regular(path: Path, *, mode: int | None = None) -> os.stat_result:
     return info
 
 
-def _strict_directory(path: Path, *, mode: int = 0o700) -> os.stat_result:
+def require_transaction_directory(path: Path, *, mode: int = 0o700) -> os.stat_result:
     try:
         info = path.lstat()
     except OSError as exc:
@@ -214,13 +213,13 @@ def _strict_directory(path: Path, *, mode: int = 0o700) -> os.stat_result:
     return info
 
 
-def _load_journal(
+def load_transaction_journal(
     tx_dir: Path,
     *,
     expected_transaction_id: str | None = None,
 ) -> dict[str, object]:
     journal_path = tx_dir / "journal.json"
-    _strict_regular(journal_path, mode=0o600)
+    require_transaction_file(journal_path, mode=0o600)
     try:
         content, _ = read_regular_bytes(journal_path)
         assert content is not None
@@ -269,7 +268,7 @@ def validate_journal(journal: object) -> list[str]:
         not isinstance(allowed_prefixes, list)
         or not allowed_prefixes
         or allowed_prefixes != sorted(set(allowed_prefixes))
-        or not all(_canonical_relative(prefix) for prefix in allowed_prefixes)
+        or not all(is_canonical_transaction_path(prefix) for prefix in allowed_prefixes)
     ):
         errors.append("allowed_prefixes must be a sorted unique canonical path list")
         allowed_prefixes = []
@@ -289,7 +288,7 @@ def validate_journal(journal: object) -> list[str]:
         if set(target) != expected_target_fields:
             errors.append(f"{label} fields differ")
         path = target.get("path")
-        if not _canonical_relative(path):
+        if not is_canonical_transaction_path(path):
             errors.append(f"{label} has noncanonical path")
         elif path in seen_paths:
             errors.append(f"{label} repeats path {path}")
@@ -317,7 +316,7 @@ def validate_journal(journal: object) -> list[str]:
             errors.append(f"{label} has noncanonical output_blob")
         for blob_key in ("pre_blob", "output_blob"):
             blob = target.get(blob_key)
-            if blob is not None and (not _canonical_relative(blob) or not blob.startswith("blobs/")):
+            if blob is not None and (not is_canonical_transaction_path(blob) or not blob.startswith("blobs/")):
                 errors.append(f"{label} invalid {blob_key}")
         if not isinstance(target.get("installed"), bool):
             errors.append(f"{label} installed must be boolean")
@@ -334,7 +333,7 @@ def validate_journal(journal: object) -> list[str]:
         if set(guard) != GUARD_FIELDS:
             errors.append(f"{label} fields differ")
         path = guard.get("path")
-        if not _canonical_relative(path):
+        if not is_canonical_transaction_path(path):
             errors.append(f"{label} has noncanonical path")
         elif path in seen_paths or path in guard_paths:
             errors.append(f"{label} repeats governed path {path}")
@@ -344,65 +343,11 @@ def validate_journal(journal: object) -> list[str]:
             errors.append(f"{label} has invalid sha256")
         if not _is_mode(guard.get("mode")):
             errors.append(f"{label} has invalid mode")
-    if targets and allowed_prefixes and _is_sha(journal.get("plan_sha256")) and _plan_hash(journal.get("consumer"), allowed_prefixes, targets, guards) != journal["plan_sha256"]:
+    if targets and allowed_prefixes and _is_sha(journal.get("plan_sha256")) and transaction_plan_hash(journal.get("consumer"), allowed_prefixes, targets, guards) != journal["plan_sha256"]:
         errors.append("plan_sha256 mismatch")
-    if not _is_sha(journal.get("integrity_sha256")) or _integrity(journal) != journal.get("integrity_sha256"):
+    if not _is_sha(journal.get("integrity_sha256")) or transaction_journal_integrity(journal) != journal.get("integrity_sha256"):
         errors.append("integrity_sha256 mismatch")
     return errors
-
-
-# The execution facade consumes this one typed seam; journal helpers stay private.
-class _TransactionExecutionContract:
-    __slots__ = ()
-
-    def authority_root(self, repo_root: Path) -> Path:
-        return _authority_root(repo_root)
-
-    def canonical_relative(self, value: object) -> bool:
-        return _canonical_relative(value)
-
-    def ensure_authority(self, repo_root: Path) -> Path:
-        return _ensure_authority(repo_root)
-
-    def integrity(self, journal: dict[str, object]) -> str:
-        return _integrity(journal)
-
-    def load_journal(
-        self,
-        tx_dir: Path,
-        *,
-        expected_transaction_id: str | None = None,
-    ) -> dict[str, object]:
-        return _load_journal(
-            tx_dir,
-            expected_transaction_id=expected_transaction_id,
-        )
-
-    def now(self) -> str:
-        return _now()
-
-    def plan_hash(
-        self,
-        consumer: str,
-        allowed_prefixes: list[str],
-        targets: list[dict[str, object]],
-        guards: list[dict[str, object]],
-    ) -> str:
-        return _plan_hash(consumer, allowed_prefixes, targets, guards)
-
-    def strict_directory(self, path: Path, *, mode: int = 0o700) -> os.stat_result:
-        return _strict_directory(path, mode=mode)
-
-    def strict_regular(
-        self,
-        path: Path,
-        *,
-        mode: int | None = None,
-    ) -> os.stat_result:
-        return _strict_regular(path, mode=mode)
-
-
-TRANSACTION_EXECUTION_CONTRACT = _TransactionExecutionContract()
 
 
 __all__ = [
@@ -412,11 +357,19 @@ __all__ = [
     "PREPARING_PREFIX",
     "SCHEMA_VERSION",
     "STATES",
-    "TRANSACTION_EXECUTION_CONTRACT",
     "TRANSITIONS",
     "TransactionConflict",
     "TransactionCorrupt",
     "TransactionError",
+    "ensure_transaction_authority",
+    "is_canonical_transaction_path",
+    "load_transaction_journal",
+    "require_transaction_directory",
+    "require_transaction_file",
+    "transaction_authority_root",
+    "transaction_journal_integrity",
+    "transaction_plan_hash",
+    "transaction_timestamp",
     "validate_journal",
     "validate_target_path",
 ]
