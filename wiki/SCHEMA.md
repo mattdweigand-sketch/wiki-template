@@ -118,3 +118,7 @@ Summaries should state what the source can support, what needs care, the main cl
 ## Referenced by
 
 _No inbound links yet._
+
+## Optional current-state owners
+
+Enroll a compiled entity only when it owns volatile claims. Use the existing `authority_freshness: current-state` value, appropriate authority metadata, and a dated Status note; consult the [current-state contract](../REFERENCES.md#current-state-and-retired-claims). Source pages retain source-era evidence and cannot be current-state owners. Enrollment is disabled in a fresh clone.

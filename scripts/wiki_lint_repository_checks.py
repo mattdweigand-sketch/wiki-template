@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import json
+import re
+from datetime import date
 import subprocess
 from pathlib import Path
 from typing import Optional
 
+from _durable_files import read_regular_bytes
 from _file_transactions import transaction_status
 from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 from _wiki_parse import META_PAGES, get_entity_pages, parse_log_entry_date
@@ -27,6 +30,14 @@ from wiki_lint_contract import (
     WIKI_ALLOWED_FILES,
     WIKI_ROOT,
 )
+from wiki_current_state import (
+    CURRENT_STATE_REGISTRY_PATH, CurrentStateOwnerRegistry, CurrentStateRegistryError,
+    current_state_page_path, load_current_state_registry, validate_current_state_registry,
+)
+from wiki_retired_claims import (
+    RETIRED_CLAIMS_PATH, load_retired_claim_registry, validate_retired_claim_registry,
+    find_retired_claim_mentions,
+)
 from wiki_lint_frontmatter import fm_scalar
 from wiki_entity_catalog import load_entity_catalog, validate_configured_layout
 
@@ -36,6 +47,58 @@ SourcingQueueMarker = tuple[str, int, int]
 SourcingQueueMarkers = tuple[list[SourcingQueueMarker], LintFailures]
 AdjudicationDocument = dict[str, object]
 TRACKED_RAW_EXCEPTIONS = frozenset({"raw/.gitkeep", "raw/README.md"})
+
+
+def check_current_state_registry() -> LintFailures:
+    try:
+        registry = load_current_state_registry()
+    except (OSError, ValueError) as exc:
+        return [("current-state-registry", str(CURRENT_STATE_REGISTRY_PATH), str(exc))]
+    return [("current-state-registry", str(CURRENT_STATE_REGISTRY_PATH), error)
+            for error in validate_current_state_registry(registry, Path.cwd())]
+
+
+def check_retired_claim_policy() -> LintFailures:
+    try:
+        registry = load_retired_claim_registry()
+    except (OSError, ValueError) as exc:
+        return [("retired-claim-registry", str(RETIRED_CLAIMS_PATH), str(exc))]
+    try:
+        owners = load_current_state_registry()
+    except (OSError, ValueError):
+        owners = CurrentStateOwnerRegistry(False, ())  # Owner check reports root cause.
+    failures = [("retired-claim-registry", str(RETIRED_CLAIMS_PATH), error)
+                for error in validate_retired_claim_registry(registry, Path.cwd(), owners)]
+    try:
+        failures.extend(("retired-claim", f"{hit.path}:{hit.line}",
+                         f"contains retired phrase {hit.phrase!r} from claim {hit.claim_id!r}")
+                        for hit in find_retired_claim_mentions(registry, Path.cwd()))
+    except (OSError, ValueError) as exc:
+        failures.append(("retired-claim-scan", "wiki/", str(exc)))
+    return failures
+
+
+def check_status_drift_reviews(raw: dict) -> LintFailures:
+    """Check directional review references; stale hashes are only Tier 2."""
+    entries = raw.get(ADJUDICATION_CATEGORY_FIELDS["status_drift"], [])
+    if not entries:
+        return []
+    try:
+        registry = load_current_state_registry()
+    except (OSError, ValueError):
+        return []  # The registry check reports this error.
+    failures = []
+    for entry in entries:
+        try:
+            for page in entry["pair"]:
+                read_regular_bytes(current_state_page_path(Path.cwd(), page))
+            if not registry.enabled or entry["pair"][1] not in registry.owners:
+                raise ValueError("status drift pair's second page must be an enrolled owner")
+            if entry["pair"][0] == entry["pair"][1]:
+                raise ValueError("status drift pair members must differ")
+        except (OSError, ValueError) as exc:
+            failures.append(("adjudication-stale", str(ADJUDICATIONS_PATH), str(exc)))
+    return failures
 
 
 def check_no_tracked_raw_artifacts() -> LintFailures:
@@ -488,6 +551,23 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
         if not (isinstance(pair, list) and len(pair) == 2
                 and all(isinstance(x, str) for x in pair)):
             return {}, f"every '{recompile_key}' entry needs a two-item string 'pair' field"
+    for entry in raw.get(ADJUDICATION_CATEGORY_FIELDS["status_drift"], []):
+        if not isinstance(entry, dict):
+            return {}, "reviewed_status_drift entries must be objects"
+        pair, hashes = entry.get("pair"), entry.get("pair_sha256")
+        if not (isinstance(pair, list) and len(pair) == 2 and all(isinstance(p, str) for p in pair)):
+            return {}, "reviewed_status_drift requires a directional two-string pair"
+        if not (isinstance(hashes, list) and len(hashes) == 2
+                and all(isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in hashes)):
+            return {}, "reviewed_status_drift requires pair_sha256 with two lowercase SHA-256 hashes"
+        if not isinstance(entry.get("reason"), str) or not entry["reason"].strip():
+            return {}, "reviewed_status_drift requires a nonempty reason"
+        reviewed = entry.get("date")
+        try:
+            if not isinstance(reviewed, str) or date.fromisoformat(reviewed).isoformat() != reviewed:
+                raise ValueError("not a canonical date")
+        except ValueError:
+            return {}, "reviewed_status_drift requires a real YYYY-MM-DD review date"
     quotes_key = ADJUDICATION_CATEGORY_FIELDS["quotes"]
     for e in raw.get(quotes_key, []):
         if not (isinstance(e, dict) and isinstance(e.get("page"), str)
@@ -503,6 +583,9 @@ def read_adjudications() -> tuple[AdjudicationDocument, str | None]:
 
 
 __all__ = [
+    "check_current_state_registry",
+    "check_retired_claim_policy",
+    "check_status_drift_reviews",
     "check_configured_entity_layout",
     "check_folder_structure",
     "check_log_entry_headers",

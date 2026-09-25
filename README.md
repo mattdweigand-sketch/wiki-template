@@ -41,7 +41,7 @@ Confirm that python3 is Python 3.9 or newer and that rg is available.
 Run setup. Ask me for the context name, scope, and example questions, then update only those placeholders in wiki/domain.md. Offer optional help connecting my own GitHub repository and a private off-device backup. Keep connection details and credentials out of tracked files. Report the changed files and validation results; do not create the commit.
 ```
 
-The repo has ten workflow shortcuts. Claude Code exposes them as slash commands. Codex exposes them as skills, invoked with `$wiki-*` or selected through `/skills`. Other agents use the same routes through `CONTEXT.md`.
+The repo has eleven workflow shortcuts. Claude Code exposes them as slash commands. Codex exposes them as skills, invoked with `$wiki-*` or selected through `/skills`. Other agents use the same routes through `CONTEXT.md`.
 
 | Workflow | Claude Code | Codex | Use it to |
 |---|---|---|---|
@@ -53,6 +53,7 @@ The repo has ten workflow shortcuts. Claude Code exposes them as slash commands.
 | `wiki-promote` | `/wiki-promote` | `$wiki-promote` | Route a useful artifact into the wiki, or decide not to save it. |
 | `wiki-lint` | `/wiki-lint` | `$wiki-lint` | Run deterministic checks, judgment candidates, compiled-page recompile review candidates, and evidence review. |
 | `wiki-eval` | `/wiki-eval` | `$wiki-eval` | Verify that the wiki tools and guardrails still work. |
+| `wiki-refresh` | `/wiki-refresh` | `$wiki-refresh` | Review changing claims, update their owners, and retire superseded wording while preserving history. |
 | `wiki-synthesize` | `/wiki-synthesize` | `$wiki-synthesize` | Draft corpus distillations for review and approved promotion. |
 | `wiki-export` | `/wiki-export` | `$wiki-export` | Build a complete private backup and optionally copy it to an approved private off-device destination. |
 
@@ -144,3 +145,5 @@ The full schema, [`wiki/SCHEMA.md`](wiki/SCHEMA.md), defines the available page 
 ## Credits
 
 - Pattern by [Andrej Karpathy](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
+
+Current-state tracking starts disabled with empty registries. Use [wiki refresh](workflows/maintenance/refresh/CONTEXT.md) when the domain needs it; each proposed content change is reviewed before application.

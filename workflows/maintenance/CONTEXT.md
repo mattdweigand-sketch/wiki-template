@@ -13,6 +13,8 @@ Wrapper-surface maintenance is tooling eval work. If the task concerns `.claude/
 
 Follow the [approval boundaries](../../AGENTS.md#exact-approval-boundary) and the selected task's link to the [complete approval procedure](../../REFERENCES.md#complete-capture-staging). A directly reported decision or experience uses `wiki-capture`; evaluating a separate artifact uses `wiki-promote`.
 
+For multistep writes and lint judgment reviews, load the shared [run workspace](../run-workspace.md). Ordinary answers and read-only audits remain file-free unless records were requested.
+
 ## Tasks
 
 | Task | Open |
@@ -26,6 +28,7 @@ Follow the [approval boundaries](../../AGENTS.md#exact-approval-boundary) and th
 | Change wiki tooling | [`eval.md`](eval.md) |
 | Promote an artifact | [`artifact-promotion.md`](artifact-promotion.md) |
 | Capture a decision or experience | [`capture.md`](capture.md) |
+| Refresh volatile claims and retire superseded wording | [`refresh/CONTEXT.md`](refresh/CONTEXT.md) |
 | Refresh the sourcing queue | [`refresh-sourcing-queue.md`](refresh-sourcing-queue.md) |
 | Synthesize the corpus | [`synthesize.md`](synthesize.md) |
 | Review due pages | [`review.md`](review.md) |

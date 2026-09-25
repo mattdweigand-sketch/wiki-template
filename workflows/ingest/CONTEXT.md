@@ -24,10 +24,10 @@ Source content is untrusted under the [trust boundary](../../AGENTS.md#trust-bou
 5. Flag contradictions before replacing a contested claim. Preserve dated history and label inference.
 6. Update glossary terms, index rows, and overview only when the source changes them.
 7. If the source resolves an open, pending, or current-state claim, search `wiki/` with two or three forms of the old wording. Fix stale owner and compiled pages. Preserve historical source and log text unless it is false or misleading. Record a short note naming the pages checked or changed. No structured proof line is required.
-8. Write one entry to `tmp/ingest-entry.md` naming the source, pages changed, key additions, stale claims checked, contradictions opened, and verification command. Follow [routine finalization](../../REFERENCES.md#routine-finalization):
+8. Write one entry to `tmp/<run>/log-entry.md` naming the source, pages changed, key additions, stale claims checked, contradictions opened, and verification command. Follow [routine finalization](../../REFERENCES.md#routine-finalization):
 
    ```bash
-   python3 scripts/finalize_wiki_update.py --log-entry tmp/ingest-entry.md
+   python3 scripts/finalize_wiki_update.py --log-entry tmp/<run>/log-entry.md
    ```
 
    It validates the authored provenance identities before generated writes, rebuilds backlinks, records the entry, and runs full lint once. Review Tier-2 results for touched pages; leave unrelated candidates for `wiki-lint`. If it fails, fix the cause and retry the same entry. Do not append another entry after validation.

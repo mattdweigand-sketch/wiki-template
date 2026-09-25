@@ -9,8 +9,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Optional
+from urllib.parse import unquote
 
 from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
+from _wiki_parse import strip_code_spans
 
 MANIFEST_PATH = Path("scripts/document-reachability.json")
 MANIFEST_FIELDS = {
@@ -22,6 +24,35 @@ MANIFEST_FIELDS = {
     "standalone_documents",
 }
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+MARKDOWN_HEADING_RE = re.compile(r"^ {0,3}#{1,6}\s+(.*?)\s*#*\s*$")
+
+
+def _markdown_fragments(path: Path) -> set[str]:
+    """ATX heading IDs, excluding fences and retaining inline-code text."""
+    fragments: set[str] = set()
+    fence = ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not marker[2].strip():
+                fence = ""
+            continue
+        if marker:
+            fence = marker[1]
+            continue
+        heading = MARKDOWN_HEADING_RE.match(line)
+        if not heading:
+            continue
+        text = re.sub(r"`+([^`]*)`+", r"\1", heading[1])
+        text = re.sub(r"<[^>]+>", "", text).strip().lower()
+        base = "".join(c for c in text if c.isalnum() or c in (" ", "-", "_"))
+        base = re.sub(r"\s", "-", base)
+        slug, occurrence = base, 0
+        while slug in fragments:
+            occurrence += 1
+            slug = f"{base}-{occurrence}"
+        fragments.add(slug)
+    return fragments
 
 
 class ReachabilityError(ValueError):
@@ -111,15 +142,13 @@ def _linked_markdown_paths(repo_root: Path, source: Path) -> tuple[list[str], li
         text = source.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return [], [f"cannot read routed document {source.relative_to(repo_root)}: {exc}"]
-    for match in MARKDOWN_LINK_RE.finditer(text):
+    for match in MARKDOWN_LINK_RE.finditer(strip_code_spans(text)):
         raw = match.group(1).strip()
         target = raw.split()[0].strip("<>") if raw else ""
-        if not target or target.startswith(("#", "http://", "https://", "mailto:")):
+        if not target or target.startswith(("http://", "https://", "mailto:")):
             continue
-        without_anchor = target.split("#", 1)[0]
-        if not without_anchor:
-            continue
-        candidate = (source.parent / without_anchor).resolve()
+        without_anchor, separator, fragment = target.partition("#")
+        candidate = (source.parent / without_anchor).resolve() if without_anchor else source.resolve()
         try:
             relative = candidate.relative_to(repo_root.resolve()).as_posix()
         except ValueError:
@@ -136,6 +165,12 @@ def _linked_markdown_paths(repo_root: Path, source: Path) -> tuple[list[str], li
                 f"{source.relative_to(repo_root).as_posix()} -> {target}"
             )
             continue
+        if separator:
+            try:
+                if unquote(fragment) not in _markdown_fragments(candidate):
+                    problems.append(f"missing local Markdown fragment: {source.relative_to(repo_root).as_posix()} -> {target} (target {relative}, fragment {unquote(fragment)})")
+            except (OSError, UnicodeDecodeError) as exc:
+                problems.append(f"cannot read local Markdown target for fragment validation: {relative}: {exc}")
         linked.append(relative)
     return linked, problems
 
@@ -160,7 +195,7 @@ def document_reachability_problems(repo_root: Path) -> list[str]:
     queue = list(seeds)
     while queue:
         relative = queue.pop(0)
-        if relative in reachable or _under(relative, manifest.excluded_directories):
+        if relative in reachable or (_under(relative, manifest.excluded_directories) and relative not in seeds):
             continue
         reachable.add(relative)
         linked, link_problems = _linked_markdown_paths(repo_root, repo_root / relative)

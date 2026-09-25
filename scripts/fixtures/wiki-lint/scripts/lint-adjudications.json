@@ -2,5 +2,6 @@
   "accepted_orphans": [],
   "reviewed_quotes": [],
   "reviewed_recompile_candidates": [],
-  "reviewed_authority_missing": []
+  "reviewed_authority_missing": [],
+  "reviewed_status_drift": []
 }

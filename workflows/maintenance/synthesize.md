@@ -52,7 +52,7 @@ Approved draft text remains `confidence: low` and `status: draft` unless the use
 
 ## Apply
 
-Routine approved draft edits that do not cross an approval boundary use a dated `draft` log entry and finish with `python3 scripts/finalize_wiki_update.py --log-entry tmp/draft-entry.md`; see [routine finalization](../../REFERENCES.md#routine-finalization).
+Routine approved draft edits that do not cross an approval boundary use a dated `draft` log entry and finish with `python3 scripts/finalize_wiki_update.py --log-entry tmp/<run>/log-entry.md`; see [routine finalization](../../REFERENCES.md#routine-finalization).
 
 New analysis filing uses `capture_boundary: analysis-capture`. Promoting reviewed synthesis, updating `wiki/synthesis.md`, raising draft confidence/status, or logging a synthesis promotion uses `synthesis-promotion`. Prepare the index and synthesis ledger edits with the proposed pages, then follow the [complete approval procedure](../../REFERENCES.md#complete-capture-staging) through its validation-only finish. Load that section only for these actions.
 

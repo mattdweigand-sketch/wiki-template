@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "description": "Reviewed phrases retired from active wiki knowledge; history is preserved.",
+  "profiles": [
+    "pricing-and-entitlements",
+    "product-availability",
+    "security-and-retention",
+    "talk-track"
+  ],
+  "claims": []
+}

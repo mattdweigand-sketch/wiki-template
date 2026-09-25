@@ -9,6 +9,16 @@ updated: 2026-08-25
 
 Append-only history of work in this configured wiki. Newest entries go on top.
 
+## [2026-09-24] maintenance | Port wiki reliability and optional current-state refresh
+
+Implemented bounded lint judgment coverage and shared run records; atomic routine-finalization results; Markdown heading-link checks; clickable chat source citations; and optional current-state owner tracking, hash-bound drift review, retired-claim policy, and the reviewed wiki-refresh workflow. Defaults remain disabled and empty; all eleven shortcuts are generated from the existing contract.
+
+Preserved configurable domain/setup, raw identities and privacy, capture/transaction/provenance engines, bounded lookup, evidence-response binding, and CI architecture. Twenty protected files retained their initial bytes and modes. No source-specific owner or claim content was imported.
+
+Verification: full (28 suites) and portable (27 suites) profiles passed on Python 3.9.6 and 3.11.15, with 898 individual suite cases and zero failures in each run. A clean Git archive passed five structural checks. Synthetic workflow walks covered coverage invalidation, safe chat citations, and distinct refresh stop outcomes. Independent verification passed 109 cases with no remaining actionable findings after fixing Markdown destination semantics, quoted authority interpretation, and citation guidance. Added reserved-name alias protection for case-insensitive filesystems.
+
+Limits: fixture checks establish tooling behavior, not populated-corpus semantic accuracy. Drift remains a review signal; retirement matches literal same-line phrases. Changes have not been committed or published.
+
 ## [2026-09-19] maintenance | Port bounded content retrieval
 
 Adapted retrieval mechanisms from wiki-pplx commits 03c796047222850089ea64a709daf2af86253342 and d0f92669d73565fbda0755884525760590f2df9a: read-only cataloged entity-body lookup, match-centered exact excerpts, and bounded query reformulation. Preserved template citation and capture rules, existing index/log behavior, configurable setup, and all provenance, approval, transaction, and recovery controls. Added neutral lookup fixtures and a short scripts entry point governed by existing documentation and prompt registries. No source corpus or private evaluation artifacts were imported.

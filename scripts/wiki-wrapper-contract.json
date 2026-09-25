@@ -85,6 +85,18 @@
       "authorization": "none",
       "claude_arguments": true
     },
+    "wiki-refresh": {
+      "name": "wiki-refresh",
+      "workflow_refs": [
+        "workflows/maintenance/CONTEXT.md",
+        "workflows/maintenance/refresh/CONTEXT.md"
+      ],
+      "script_hint": null,
+      "claude_description": "Review changing claims and retire superseded wording while preserving source history",
+      "codex_description": "Run the wiki refresh workflow. Use when the user says wiki-refresh, refresh current-state claims, or asks to review changing facts or messaging and retire superseded wording.",
+      "authorization": "none",
+      "claude_arguments": true
+    },
     "wiki-research": {
       "name": "wiki-research",
       "workflow_refs": [

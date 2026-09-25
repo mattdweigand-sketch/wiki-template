@@ -2,6 +2,8 @@
 """Seeded evals for Tier-2 review signals and meta maintenance."""
 
 
+import hashlib
+import json
 from pathlib import Path
 
 from eval_lint_fixture import (
@@ -14,6 +16,8 @@ from eval_lint_fixture import (
     write_adjudications,
     write_peer_source,
     setup_lint_fixture_repository,
+    seed_current_state_owner,
+    add_authority,
 )
 from _wiki_parse import get_entity_pages
 from wiki_log import render_wiki_log_postimage
@@ -688,5 +692,88 @@ run_lint_fixture_case(
     ),
     expect_code=1, expect=("sourcing-queue-count-marker", "duplicate folder"),
 )
+
+
+DRIFT = "concepts/beta.md (page 2026-06-01) -> concepts/alpha.md (status 2026-07-01)"
+
+def drift_fixture(r, reference="[[alpha]]"):
+    seed_current_state_owner(r)
+    edit(r, "wiki/concepts/delta-one.md", "[[alpha]]", "fixture")
+    append(r, "wiki/concepts/beta.md", "\n" + reference + "\n")
+
+
+def record_drift_review(r, reverse=False):
+    pair = ["concepts/beta.md", "concepts/alpha.md"]
+    if reverse:
+        pair.reverse()
+        # Both paths must be owners for the reverse direction to be structurally valid.
+        registry = r / "scripts/current-state-owners.json"
+        registry.write_text(json.dumps({"schema_version": 1, "enabled": True, "owners": sorted(pair)}))
+        add_authority(r, "wiki/concepts/beta.md", "authority_kind: none", "authority_freshness: current-state")
+    write_adjudications(r, reviewed_status_drift=[{
+        "pair": pair, "pair_sha256": [hashlib.sha256((r / "wiki" / p).read_bytes()).hexdigest() for p in pair],
+        "date": "2026-07-01", "reason": "Reviewed exact fixture versions; bounded historical claim.",
+    }])
+
+for reference in ("[[alpha]]", "[owner](alpha.md#status)", "[owner](../concepts/alpha.md)", "[owner](alpha%2Emd)",
+                  '[owner](alpha.md "Owner")', "[owner](<alpha.md>)",
+                  '[owner](<alpha.md> "Owner title")', "[owner](../../wiki/concepts/alpha.md)"):
+    run_lint_fixture_case("owner-drift-reference-" + reference, lambda r, ref=reference: drift_fixture(r, ref), args=(), expect=(DRIFT,))
+run_lint_fixture_case("owner-drift-authority-reference", lambda r: (drift_fixture(r, ""),
+                      add_authority(r, "wiki/concepts/beta.md", "authority_kind: owner-page", "authority_ref: wiki/concepts/alpha.md")),
+                      args=(), expect=(DRIFT,))
+for reference in ("`[[alpha]]`", "```md\n[[alpha]]\n```", "~~~md\n[owner](alpha.md)\n~~~",
+                  "## Referenced by\n\n- [[alpha]]", "[owner](https://example.invalid/alpha.md)",
+                  "[owner](wiki/concepts/alpha.md)", "[owner](alpha.md malformed title)"):
+    run_lint_fixture_case("no-fabricated-drift-" + reference, lambda r, ref=reference: drift_fixture(r, ref), args=(), absent=(DRIFT,))
+run_lint_fixture_case("source-reference-does-not-drift", lambda r: (drift_fixture(r, ""), append(r, "wiki/sources/gamma.md", "\n[[alpha]]\n")),
+                      args=(), absent=("sources/gamma.md (page", DRIFT))
+run_lint_fixture_case("newer-page-status-prevents-drift", lambda r: (drift_fixture(r),
+                      append(r, "wiki/concepts/beta.md", "\n**Status (2026-07-02):** Reviewed.\n")), args=(), absent=(DRIFT,))
+run_lint_fixture_case("owner-status-missing-fires", lambda r: (drift_fixture(r),
+                      edit(r, "wiki/concepts/alpha.md", "**Status (2026-07-01):**", "Status example:")),
+                      args=(), expect=("concepts/alpha.md: no parseable dated Status note",), absent=(DRIFT,))
+run_lint_fixture_case("owner-self-drift-fires", lambda r: (drift_fixture(r),
+                      edit(r, "wiki/concepts/alpha.md", "updated: 2026-07-01", "updated: 2026-06-01")),
+                      args=(), expect=("concepts/alpha.md: updated 2026-06-01, status 2026-07-01",))
+run_lint_fixture_case("enabled-empty-registry-warns", lambda r: (r / "scripts/current-state-owners.json").write_text(
+                      json.dumps({"schema_version": 1, "enabled": True, "owners": []})), args=(),
+                      expect=("current-state ownership is enabled but no owner pages are registered",))
+run_lint_fixture_case("unenrolled-authority-owner-warns", lambda r: (drift_fixture(r),
+                      add_authority(r, "wiki/concepts/beta.md", "authority_kind: owner-page", "authority_ref: wiki/concepts/delta-one.md")),
+                      args=(), expect=("authority_ref 'wiki/concepts/delta-one.md' is not a registered owner",))
+run_lint_fixture_case("matching-drift-hashes-suppress", lambda r: (drift_fixture(r), record_drift_review(r)), args=(),
+                      expect=("adjudicated, suppressed via scripts/lint-adjudications.json: 1",), absent=(DRIFT, "status_drift:"))
+run_lint_fixture_case("reversed-drift-hashes-do-not-suppress", lambda r: (drift_fixture(r), record_drift_review(r, reverse=True)),
+                      args=(), expect=(DRIFT, "status_drift:"))
+for page in ("alpha", "beta"):
+    for addition in ("\nChanged body without updated bump.\n", "\n## Referenced by\n\n- [[gamma]]\n"):
+        run_lint_fixture_case("drift-hash-expired-" + page + addition, lambda r, page=page, addition=addition:
+                              (drift_fixture(r), record_drift_review(r), append(r, "wiki/concepts/" + page + ".md", addition)),
+                              args=(), expect=(DRIFT,), absent=("status_drift:",))
+run_lint_fixture_case("matching-but-unneeded-review-is-dead", lambda r: (drift_fixture(r, ""), record_drift_review(r)),
+                      args=(), expect=("status_drift:",))
+
+# Ambiguous bare slugs never pick an arbitrary owner; explicit paths still work.
+def ambiguous_owner(r, reference):
+    drift_fixture(r, reference)
+    path = r / "wiki/people/alpha.md"
+    path.write_text((r / "wiki/concepts/alpha.md").read_text().replace("type: concept", "type: person"))
+    add_index_row(r, "people/alpha.md", "Second alpha")
+run_lint_fixture_case("ambiguous-slug-no-owner-edge", lambda r: ambiguous_owner(r, "[[alpha]]"), args=(),
+                      expect_code=1, absent=(DRIFT,))
+run_lint_fixture_case("explicit-path-resolves-ambiguous-slug", lambda r: ambiguous_owner(r, "[owner](alpha.md)"), args=(),
+                      expect_code=1, expect=(DRIFT,))
+
+
+for quote in ('"', "'"):
+    run_lint_fixture_case("quoted-authority-ref-retains-drift-" + quote, lambda r, quote=quote: (drift_fixture(r, ""),
+                          add_authority(r, "wiki/concepts/beta.md", "authority_kind: " + quote + "owner-page" + quote,
+                                        "authority_ref: " + quote + "wiki/concepts/alpha.md" + quote)),
+                          args=(), expect=(DRIFT,), absent=("is not a registered owner",))
+    run_lint_fixture_case("quoted-kind-retains-mismatch-" + quote, lambda r, quote=quote: (drift_fixture(r, ""),
+                          add_authority(r, "wiki/concepts/beta.md", "authority_kind: " + quote + "owner-page" + quote,
+                                        "authority_ref: wiki/concepts/delta-one.md")),
+                          args=(), expect=("authority_ref 'wiki/concepts/delta-one.md' is not a registered owner",))
 
 raise SystemExit(finish_lint_eval())

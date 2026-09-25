@@ -3,7 +3,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
+from pathlib import Path
+
+from _durable_files import read_regular_bytes
+from wiki_current_state import current_state_page_path
 from collections.abc import Iterator
 from typing import Union
 
@@ -60,6 +65,18 @@ def glossary_entry_lines() -> Iterator[tuple[str, str]]:
             yield term, line
 
 
+def _status_review_matches(entry: dict) -> bool:
+    try:
+        for relative, expected in zip(entry["pair"], entry["pair_sha256"]):
+            path = current_state_page_path(Path.cwd(), relative)
+            content, _ = read_regular_bytes(path)
+            if hashlib.sha256(content).hexdigest() != expected:
+                return False
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def load_adjudications() -> Adjudications:
     """Settled Tier-2 judgments, held as data so lint stops re-surfacing them.
 
@@ -74,6 +91,7 @@ def load_adjudications() -> Adjudications:
         # absent file or invalid file: suppress nothing; tier1 reports the error
         return empty
     return {
+        "status_drift": {tuple(e["pair"]) for e in raw.get(ADJUDICATION_CATEGORY_FIELDS["status_drift"], []) if _status_review_matches(e)},
         "orphans": {e["page"] for e in raw.get(ADJUDICATION_CATEGORY_FIELDS["orphans"], [])},
         "quotes": {(e["page"], normalize_quote(e["quote"]))
                    for e in raw.get(ADJUDICATION_CATEGORY_FIELDS["quotes"], [])},

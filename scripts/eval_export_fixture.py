@@ -22,7 +22,10 @@ def build_export_fixture(root: Path, tooling_root: Path) -> None:
     for name in META_PAGES:
         path = root / "wiki" / f"{name}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"# {name}\n", encoding="utf-8")
+        # The run-template route links this operational heading. Keep the
+        # fixture neutral without reading any live wiki/ or raw/ content.
+        body = f"# {name}\n" + ("\n## Page format\n\nSynthetic page contract.\n" if name == "SCHEMA" else "")
+        path.write_text(body, encoding="utf-8")
     (root / "wiki/domain.md").write_text(
         "---\ntitle: Export Fixture\ntype: domain\nstatus: configured\n---\n\n# Export Fixture\n",
         encoding="utf-8",
@@ -38,6 +41,8 @@ def build_export_fixture(root: Path, tooling_root: Path) -> None:
         (path / ".gitkeep").touch()
     (root / "raw/README.md").write_text("# Synthetic raw sources\n", encoding="utf-8")
     (root / "scripts/raw-artifacts.json").write_text('{"artifacts":[],"schema_version":1}\n', encoding="utf-8")
+    for name in ("current-state-owners.json", "retired-claims.json"):
+        shutil.copy2(tooling_root / "scripts/fixtures/wiki-lint/scripts" / name, root / "scripts" / name)
     (root / "scripts/lint-adjudications.json").write_text("{}\n", encoding="utf-8")
     (root / "scripts/capture-runs.jsonl").write_text(
         '{"description":"Synthetic empty capture ledger.","record_type":"schema","schema_version":1}\n',

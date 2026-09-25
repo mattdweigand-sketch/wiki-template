@@ -17,7 +17,7 @@ The [approval boundaries](AGENTS.md#exact-approval-boundary) determine when to u
 | Configure a fresh clone's domain, GitHub repository, or private backup | [`workflows/maintenance/CONTEXT.md`](workflows/maintenance/CONTEXT.md) |
 | Ingest a source (`raw/` -> wiki page) | [`workflows/ingest/CONTEXT.md`](workflows/ingest/CONTEXT.md) |
 | Answer a wiki question or compare entities. Default to `wiki-ask`; use `wiki-research` only when explicitly invoked | [`workflows/research/CONTEXT.md`](workflows/research/CONTEXT.md) |
-| Audit or lint the wiki, maintain or verify tooling, capture context, promote artifacts, refresh sourcing, synthesize, review outcomes, rotate the log, or export | [`workflows/maintenance/CONTEXT.md`](workflows/maintenance/CONTEXT.md) |
+| Audit or lint the wiki, maintain or verify tooling, capture context, promote artifacts, refresh current-state claims or sourcing, synthesize, review outcomes, rotate the log, or export | [`workflows/maintenance/CONTEXT.md`](workflows/maintenance/CONTEXT.md) |
 | Browse what's in the wiki | [`wiki/index.md`](wiki/index.md) |
 
 The workspace `CONTEXT.md` and task files own task-level routing and Load / Skip lists. Follow the selected workspace instead of reconstructing maintenance routes here.

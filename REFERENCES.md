@@ -75,11 +75,11 @@ The main control mechanisms are:
 
 ## Cross-Referencing Rules
 
-Use `[[filename-without-extension]]` for all internal links.
+Use `[[filename-without-extension]]` for internal links in durable wiki content. Chat uses the clickable citation rules in the [ask workflow](workflows/research/ask.md#steps).
 
 In `## Related pages`, use a typed relationship label when it adds meaning. The governed labels and definitions live in `scripts/schema-vocabularies.json`. Format each item as `- Label: [[page]]`. Existing untyped links remain valid.
 
-When stating a specific fact, append `(source: [[source-filename]])`. When stating an opinion or inference, prefix with `Inference:` or `Hypothesis:`.
+In durable wiki pages, append `(source: [[source-filename]])` to specific facts. Label opinions and inferences with `Inference:` or `Hypothesis:`.
 
 ---
 
@@ -112,9 +112,9 @@ When stating a specific fact, append `(source: [[source-filename]])`. When stati
 | `scripts/wiki_backup_receipt.py`, `scripts/backup_state.py` | Destination-redacted verified-upload receipt and nonblocking freshness reporter; the local receipt is gitignored |
 | `scripts/export_wiki.py`, `scripts/restore_wiki.py` | Atomic archive publication after integrity and restore-readiness checks, portable offline archive verification, and macOS/Linux absent-destination restore |
 | `scripts/capture-runs.jsonl`, `scripts/capture_ledger.py` | Exact application ledger and its strict parser; proposal apply installs the ledger postimage with approved targets through the shared transaction |
-| `scripts/wiki-wrapper-contract.json` | Strict machine authority for the ten generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
+| `scripts/wiki-wrapper-contract.json` | Strict machine authority for the eleven generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
 | `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
-| `scripts/check_document_reachability.py` | Follows Markdown links from declared roots and rejects missing routes or unreachable operational documents |
+| `scripts/check_document_reachability.py` | Checks local paths and ATX heading fragments, ignores fenced examples, and rejects unreachable operating documents |
 | `.wiki-transactions/` | Gitignored recovery authority for exact approved capture; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
 | [`scripts/CONTEXT.md`](scripts/CONTEXT.md) | Tooling entry points and links to canonical maintenance contracts |
 | `scripts/fixtures/` | Fixture data for live tooling evals |
@@ -231,15 +231,17 @@ After apply, make no backlink rewrite, routine finalizer call, new log entry, or
 
 ## Routine finalization
 
-For routine ingest, first-person capture, review, lint fixes, or draft maintenance, finish authored edits and write one dated entry to `tmp/update-entry.md`, then run:
+Use the [run workspace](workflows/run-workspace.md) for multistep work. For routine ingest, first-person capture, review, lint fixes, refresh, or draft maintenance, finish authored edits and write one dated entry to `tmp/<run>/log-entry.md`, then run:
 
 ```bash
-python3 scripts/finalize_wiki_update.py --log-entry tmp/update-entry.md
+python3 scripts/finalize_wiki_update.py --log-entry tmp/<run>/log-entry.md
 ```
 
-The helper validates the entry before writes, rejects promotion and analysis actions, checks transaction state and provenance, rebuilds backlinks, records the log under a stable lock, and runs full lint exactly once. Ingest must author new `raw-artifacts.json` identities using its existing procedure first. There is no provenance rebaselining operation. Review relevant Tier-2 candidates; a signal is not a verdict.
+The helper validates the entry before durable wiki edits, rejects promotion and analysis actions, checks transaction state and provenance, rebuilds backlinks, records the log under a stable lock, and runs full lint exactly once. Ingest must author new `raw-artifacts.json` identities using its existing procedure first. There is no provenance rebaselining operation. Review relevant Tier-2 candidates; a signal is not a verdict.
 
 A Git checkout must have its committed capture ledger unchanged and no new analyses pending. It uses live provenance, which requires local private raw bytes. A complete extracted archive uses restored provenance and `lint.py --restored-tree`, including Tier 2. Tier-2 checks use filesystem content and dates, not Git history. A metadata-only clone is not a complete archive; use its separate staged/CI provenance and `lint.py --tier1 --git-view` checks.
+
+The finalizer writes `finalization.json` beside its log entry, with the input hash, timestamp, running/failed/passed status, completed steps, and error. It serializes same-directory attempts and invalidates earlier success before checks. Confirm both command success and the matching passed result; it does not prove later edits, publication, approval, or completion of every workflow step. See the [run contract](workflows/run-workspace.md#routine-finalization) for interruption and recording limits.
 
 Failure leaves the finish incomplete and retryable with the same entry. It is not a transaction over prior authored edits. The log writer preserves other entries and the log's mode; exact retries do not duplicate entries. Archives cannot detect uncommitted captures or newly added analyses from history, so the governed write routes still apply. Setup and connection retain their own procedures and authorization rules.
 
@@ -250,3 +252,19 @@ Failure leaves the finish incomplete and retryable with the same entry. It is no
 A decisive quotation must occur in a cited UTF-8 member of the captured source closure, allowing whitespace differences. Binary artifacts need a captured textual excerpt. Text identity does not establish semantic support: fresh reviewers still judge scope, support, and conflation. `wiki-ask` keeps its lightweight route.
 
 CI provenance checks each introduced transition, including merge-parent edges, plus the final trusted-base comparison. It detects identity rewrites and transient tracked raw exposure without private raw bytes. It proves preservation of tracked identities, not the historical contents of untracked local files.
+
+## Current-state and retired claims
+
+[Wiki refresh](workflows/maintenance/refresh/CONTEXT.md) reviews volatile claims in one profile, proposes exact changes, and applies accepted wording through the appropriate existing boundary. The template starts disabled and empty; no setup change is needed. Ordinary corrections use routine finalization, while new analyses and promotions retain exact staging and validation-only exits.
+
+`scripts/current-state-owners.json` owns `schema_version: 1`, `enabled`, and sorted unique `owners` paths relative to `wiki/`. A disabled registry has no owners. Enabled owners must be existing cataloged non-source pages with `authority_freshness: current-state`. Missing, malformed, or unsafe configuration is Tier 1. Existing schema authority rules still apply.
+
+`wiki_current_state.py` owns validation and evaluation. Tier-2 signals are `status_drift` (referring page older than owner Status), `owner_status_missing`, `owner_self_drift` (Status newer than updated), `owner_registry_empty` (enabled with pages but no owners), and `authority_owner_mismatch`. These dates are review cues, not semantic proof; source pages are never the stale side. Authored wikilinks, confined local Markdown links, and applicable authority references establish dependencies; generated backlinks and code examples do not.
+
+The `reviewed_status_drift` adjudication has `pair: [referring_page, owner_page]`, a nonempty `reason`, a real `date`, and `pair_sha256` containing both complete-file hashes in pair order. The second page must be enrolled. Suppression expires on any byte change to either page, including backlinks. A stale valid hash restores the candidate; missing or malformed hashes fail Tier 1. Only a new review justifies new hashes.
+
+`scripts/retired-claims.json` owns supported profile IDs and reviewed claim entries. Each entry has a unique `id`, `profile`, `retired_on`, sorted exact `phrases`, `replacement`, enrolled `replacement_ref`, and `reason`. Profiles must match regular files in the refresh profiles directory. `wiki_retired_claims.py` validates the registry and enforces case-insensitive literal matches on individual lines of complete active files: non-source cataloged entities plus domain, index, glossary, overview, primer, and synthesis. Findings include claim ID, phrase, path, and line. This does not detect paraphrases or phrases split across lines.
+
+Raw sources, source pages, archived/live log history, contradictions, sourcing queue, schema/design documents, workflow examples, and scratch remain historical or operating records and are excluded. Retirement is a reviewed factual or messaging decision, not a stylistic cleanup or automatic rewrite. Select precise phrases and preserve conflicts. Missing required entity directories and unreadable or unsafe active files fail closed. Optional root pages are scanned when present.
+
+Module changes use the existing lint repository/signals suites, with fixture registries disabled/empty. Finalizer changes use the finalize suite; heading links use document reachability; routing and wrappers use prompt-artifact and wrapper checks. Run both full and portable eval profiles after changes to these contracts.

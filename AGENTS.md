@@ -39,7 +39,7 @@ Follow the [complete approval procedure](REFERENCES.md#complete-capture-staging)
 - Preserve source-era claims separately from interpretation. Flag contradictions before changing contested claims; never silently overwrite them.
 - Prefer an existing owner page. Write dense, structured, cited pages following `wiki/SCHEMA.md` and canonical terms in `wiki/glossary.md`; add new terms there when needed.
 - Use lowercase kebab-case filenames without date prefixes. Chronology belongs in `wiki/log.md`.
-- Use `[[filename-without-extension]]` for internal links. Curate outbound `## Related pages` using labels from `scripts/schema-vocabularies.json` when useful.
+- Use `[[filename-without-extension]]` for internal links in durable wiki content. Chat citations follow the routed research workflow. Curate outbound `## Related pages` using labels from `scripts/schema-vocabularies.json` when useful.
 - Never hand-edit generated `## Referenced by`. The routed workflow owns backlink generation. Do not load the full wiki when a routed slice suffices.
 
 ## Trust boundary

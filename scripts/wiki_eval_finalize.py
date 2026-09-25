@@ -2,19 +2,24 @@
 """Exercise routine finishes and complete approved staging on real fixture trees."""
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
-from capture_gate import (apply_capture_proposal, canonical_capture_proposal_bytes,
+from finalize_wiki_update import finalize_routine_wiki_update
+
+from capture_gate import (CaptureProposalError, apply_capture_proposal, canonical_capture_proposal_bytes,
                           prepare_capture_proposal)
 from capture_staging import CaptureStagingError, stage_capture_proposal
 from eval_lib import Results
-from eval_lint_fixture import copy_lint_fixture, write_registered_raw_fixture
+from eval_lint_fixture import copy_lint_fixture, seed_retired_claim, write_registered_raw_fixture
 
 SCRIPTS = Path(__file__).resolve().parent
 ENTRY = "## [2026-09-03] workflow | Routine fixture\n\nVerification: final full lint.\n"
@@ -60,6 +65,76 @@ def main() -> int:
                        and first.stdout.count("TIER 2  ") == 1
                        and (root / "wiki/log.md").read_text().count(ENTRY.strip()) == 1,
                        first.stdout + first.stderr + second.stderr)
+        receipt = root / "tmp/finalization.json"
+        state = json.loads(receipt.read_text())
+        results.record("success-record-binds-exact-entry-and-checkpoints", state["status"] == "passed"
+                       and state["log_entry_sha256"] == hashlib.sha256(ENTRY.encode()).hexdigest()
+                       and state["completed_steps"] == ["input-validation", "preflight", "backlinks", "log", "lint"])
+        bad_page = root / "wiki/concepts/alpha.md"
+        original = bad_page.read_bytes()
+        bad_page.write_bytes(original.replace(b"confidence: medium", b"confidence: invalid"))
+        failed = run(root, *command)
+        state = json.loads(receipt.read_text())
+        results.record("failed-lint-replaces-prior-success-after-log", failed.returncode != 0
+                       and state["status"] == "failed" and state["completed_steps"][-1] == "log"
+                       and "lint.py" in state["error"] and ENTRY.strip() in (root / "wiki/log.md").read_text())
+        bad_page.write_bytes(original)
+        repaired = run(root, *command)
+        results.record("retry-repairs-failed-receipt", repaired.returncode == 0 and json.loads(receipt.read_text())["status"] == "passed")
+        with patch("finalize_wiki_update.subprocess.run", side_effect=KeyboardInterrupt):
+            try:
+                finalize_routine_wiki_update(root, "tmp/entry.md")
+            except KeyboardInterrupt:
+                pass
+        results.record("interrupt-invalidates-earlier-success", json.loads(receipt.read_text())["status"] == "running")
+        for reserved in ("finalization.json", ".finalization.lock", "FINALIZATION.JSON", ".FINALIZATION.LOCK"):
+            if not (root / "tmp" / reserved).exists():
+                (root / "tmp" / reserved).write_text(ENTRY)
+            preserved = (root / "tmp" / reserved).read_bytes()
+            result = run(root, "finalize_wiki_update.py", "--log-entry", "tmp/" + reserved)
+            results.record("reject-reserved-" + reserved, result.returncode != 0 and "reserved" in result.stderr
+                           and (root / "tmp" / reserved).read_bytes() == preserved)
+        for unsafe in ("finalization.json", ".finalization.lock"):
+            path = root / "tmp" / unsafe
+            path.unlink()
+            target = root / "tmp/unrelated.txt"
+            target.write_text("preserve")
+            for kind in ("symlink", "fifo", "hardlink"):
+                if kind == "symlink":
+                    path.symlink_to(target)
+                elif kind == "fifo":
+                    os.mkfifo(path)
+                else:
+                    os.link(target, path)
+                result = run(root, *command)
+                results.record("reject-" + kind + "-" + unsafe, result.returncode != 0 and target.read_text() == "preserve")
+                path.unlink()
+            run(root, *command)
+        (root / "tmp/real").mkdir()
+        (root / "tmp/alias").symlink_to(root / "tmp/real", target_is_directory=True)
+        (root / "tmp/real/entry.md").write_text(ENTRY)
+        result = run(root, "finalize_wiki_update.py", "--log-entry", "tmp/alias/entry.md")
+        results.record("reject-symlinked-run-directory", result.returncode != 0 and not (root / "tmp/real/finalization.json").exists())
+        from _durable_files import atomic_replace_bytes
+        writes = []
+        def fail_second_record(path, content, **kwargs):
+            writes.append(path)
+            if len(writes) > 1:
+                raise OSError("cannot record result")
+            return atomic_replace_bytes(path, content, **kwargs)
+        with patch("finalize_wiki_update.atomic_replace_bytes", side_effect=fail_second_record), patch("finalize_wiki_update._validate_finalization_input", side_effect=ValueError("original input error")):
+            try:
+                finalize_routine_wiki_update(root, "tmp/entry.md")
+            except ValueError as exc:
+                results.record("recording-failure-preserves-original-error", str(exc) == "original input error")
+            else:
+                results.record("recording-failure-preserves-original-error", False)
+        processes = [subprocess.Popen([sys.executable, str(SCRIPTS / command[0]), *command[1:]], cwd=root,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(2)]
+        outputs = [process.communicate(timeout=30) for process in processes]
+        state = json.loads(receipt.read_text())
+        results.record("concurrent-finalizers-serialize-and-log-once", all(p.returncode == 0 for p in processes)
+                       and state["status"] == "passed" and (root / "wiki/log.md").read_text().count(ENTRY.strip()) == 1, repr(outputs))
         for defect in ("pending-capture", "new-analysis", "ignored-analysis", "malformed-log", "missing-raw", "corrupt-raw", "transaction"):
             ledger = root / "scripts/capture-runs.jsonl"
             raw = root / "raw/notes/source.txt"
@@ -80,7 +155,8 @@ def main() -> int:
                 (root / ".wiki-transactions/unknown").write_text("preserve conflict")
             unchanged = snapshot(root)
             result = run(root, *command)
-            results.record(defect + "-refused-before-writes", result.returncode != 0 and snapshot(root) == unchanged,
+            results.record(defect + "-refused-before-writes", result.returncode != 0 and snapshot(root) == unchanged
+                           and json.loads(receipt.read_text())["status"] == "failed",
                            result.stdout + result.stderr)
             ledger.write_bytes(LEDGER)
             (root / "wiki/analyses/new.md").unlink(missing_ok=True)
@@ -128,6 +204,28 @@ def main() -> int:
                     result = run(parent, *command)
                     results.record("broken-local-git-is-not-an-archive", result.returncode != 0 and snapshot(parent) == unchanged)
 
+    with tempfile.TemporaryDirectory(prefix="wiki-routine-refresh-") as directory:
+        root = Path(directory)
+        fixture(root)
+        initial_rebuild = run(root, "rebuild_referenced_by.py")
+        if initial_rebuild.returncode:
+            raise RuntimeError(initial_rebuild.stderr)
+        history = root / "wiki/sources/gamma.md"
+        history.write_text(history.read_text() + "\nRetired fixture wording\n")
+        history_before = history.read_bytes()
+        raw_before = (root / "raw/notes/source.txt").read_bytes()
+        seed_retired_claim(root)
+        command = ("finalize_wiki_update.py", "--log-entry", "tmp/entry.md")
+        first = run(root, *command)
+        accepted = snapshot(root)
+        second = run(root, *command)
+        results.record("routine-refresh-retires-active-wording-and-preserves-history", first.returncode == second.returncode == 0
+                       and snapshot(root) == accepted and history.read_bytes() == history_before
+                       and (root / "raw/notes/source.txt").read_bytes() == raw_before
+                       and json.loads((root / "tmp/finalization.json").read_text())["status"] == "passed"
+                       and (root / "wiki/log.md").read_text().count(ENTRY.strip()) == 1,
+                       first.stdout + first.stderr + second.stderr)
+
     with tempfile.TemporaryDirectory(prefix="wiki-complete-staging-") as directory:
         root = Path(directory)
         fixture(root)
@@ -143,7 +241,16 @@ def main() -> int:
         (root / "tmp/capture-mode-fixture.py").write_text("print('after')\n")
         for relative, mode in preserved_modes.items():
             (root / relative).chmod(mode)
-        (root / "tmp/alpha.md").write_text(alpha.read_text() + "\n- [[beta]]\n")
+        # Build neutral reviewed refresh drafts; leave all durable preimages untouched.
+        refresh_paths = ("wiki/concepts/alpha.md", "scripts/current-state-owners.json", "scripts/retired-claims.json")
+        refresh_preimages = {relative: (root / relative).read_bytes() for relative in refresh_paths}
+        seed_retired_claim(root)
+        refresh_drafts = {relative: (root / relative).read_bytes() for relative in refresh_paths}
+        for relative, content in refresh_preimages.items():
+            (root / relative).write_bytes(content)
+        (root / "tmp/alpha.md").write_bytes(refresh_drafts["wiki/concepts/alpha.md"] + b"\n- [[beta]]\n")
+        for filename in ("current-state-owners.json", "retired-claims.json"):
+            (root / "tmp" / filename).write_bytes(refresh_drafts["scripts/" + filename])
         (root / "tmp/index.md").write_text((root / "wiki/index.md").read_text().replace("Test concept alpha", "Updated concept alpha"))
         (root / "tmp/entry.md").write_text("## [2026-09-03] promotion | Complete fixture\n\nVerification: exact apply and full lint.\n")
         request = {
@@ -151,7 +258,9 @@ def main() -> int:
             "purpose": "Promote a neutral fixture", "primary_destination": "wiki/concepts/alpha.md",
             "authored_targets": [{"destination": "wiki/concepts/alpha.md", "staged_path": "tmp/alpha.md"},
                                  {"destination": "wiki/index.md", "staged_path": "tmp/index.md"},
-                                 {"destination": "scripts/capture-mode-fixture.py", "staged_path": "tmp/capture-mode-fixture.py"}],
+                                 {"destination": "scripts/capture-mode-fixture.py", "staged_path": "tmp/capture-mode-fixture.py"},
+                                 {"destination": "scripts/current-state-owners.json", "staged_path": "tmp/current-state-owners.json"},
+                                 {"destination": "scripts/retired-claims.json", "staged_path": "tmp/retired-claims.json"}],
             "log_entry_path": "tmp/entry.md", "rebuild_referenced_by": True,
         }
         (root / "tmp/request.json").write_bytes(canonical_capture_proposal_bytes(request))
@@ -227,6 +336,23 @@ def main() -> int:
                            and stat.S_IMODE(path.stat().st_mode) == altered_mode and snapshot(root) == before)
             path.chmod(planned_mode)
         prepared = prepare_capture_proposal(root, staged.proposal_path)
+        results.record("guarded-refresh-stages-pages-registries-index-backlinks-and-log", {
+            "wiki/concepts/alpha.md", "wiki/concepts/beta.md", "wiki/index.md", "wiki/log.md",
+            "scripts/current-state-owners.json", "scripts/retired-claims.json",
+        } <= set(staged.target_paths))
+        for label, path in (("registry-preimage", root / "scripts/retired-claims.json"),
+                            ("staged-owner-draft", root / alpha_staged)):
+            original = path.read_bytes()
+            path.write_bytes(original + b" ")
+            changed_snapshot = snapshot(root)
+            try:
+                apply_capture_proposal(root, staged.proposal_path, str(prepared["authorization_digest"]))
+            except CaptureProposalError:
+                refused = True
+            else:
+                refused = False
+            results.record("guarded-refresh-refuses-" + label + "-drift", refused and snapshot(root) == changed_snapshot)
+            path.write_bytes(original)
         apply_capture_proposal(root, staged.proposal_path, str(prepared["authorization_digest"]))
         approved = snapshot(root)
         checks = [run(root, "validate_capture_runs.py"), run(root, "lint.py")]

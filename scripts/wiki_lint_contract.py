@@ -24,6 +24,7 @@ ADJUDICATION_CATEGORY_FIELDS = {
     "authority_missing": "reviewed_authority_missing",
     "glossary_volatile": "reviewed_glossary_volatile",
     "unconsumed_sources": "reviewed_unconsumed_sources",
+    "status_drift": "reviewed_status_drift",
 }
 ADJUDICATION_PAGE_FIELDS = tuple(
     ADJUDICATION_CATEGORY_FIELDS[key]

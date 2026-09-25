@@ -24,6 +24,9 @@ from eval_lint_fixture import (
     write_adjudications,
     write_raw_buckets,
     setup_lint_fixture_repository,
+    seed_current_state_owner,
+    seed_retired_claim,
+    write_registered_raw_fixture,
 )
 from _wiki_parse import META_PAGES
 
@@ -648,5 +651,162 @@ check_tracked_raw_artifact_fires()
 check_tracked_raw_case_variant_fires()
 check_git_tracking_query_failure_fires()
 check_restored_lint_is_offline()
+
+
+# Optional configuration must fail closed without borrowing live checkout state.
+def change_json(root, relative, change):
+    path = root / relative
+    value = json.loads(path.read_text())
+    change(value)
+    path.write_text(json.dumps(value))
+
+
+OWNER_REGISTRY = "scripts/current-state-owners.json"
+RETIRED_REGISTRY = "scripts/retired-claims.json"
+run_lint_fixture_case("disabled-empty-current-state-and-retirement-pass", None)
+run_lint_fixture_case("valid-enrolled-owner-passes", seed_current_state_owner)
+for label, patch in (
+    ("float-version", {"schema_version": 1.0}),
+    ("boolean-version", {"schema_version": True}),
+    ("nonboolean-enabled", {"enabled": 1}),
+    ("disabled-owners", {"owners": ["concepts/alpha.md"]}),
+    ("extra-field", {"extra": []}),
+    ("duplicate-owners", {"enabled": True, "owners": ["concepts/alpha.md"] * 2}),
+    ("unsorted-owners", {"enabled": True, "owners": ["concepts/beta.md", "concepts/alpha.md"]}),
+):
+    run_lint_fixture_case("owner-" + label, lambda r, patch=patch: change_json(r, OWNER_REGISTRY, lambda v: v.update(patch)),
+                          expect_code=1, expect=("current-state-registry",))
+for owner in ("sources/gamma.md", "../alpha.md", "wiki/concepts/alpha.md", "concepts/./alpha.md",
+              "unknown/alpha.md", "concepts/missing.md", "concepts/Alpha.md", "concepts/alpha.md#status"):
+    run_lint_fixture_case("unsafe-or-unsupported-owner-" + owner,
+                          lambda r, owner=owner: change_json(r, OWNER_REGISTRY, lambda v: v.update(enabled=True, owners=[owner])),
+                          expect_code=1, expect=("current-state-registry",))
+run_lint_fixture_case("owner-needs-current-state-metadata",
+                      lambda r: change_json(r, OWNER_REGISTRY, lambda v: v.update(enabled=True, owners=["concepts/alpha.md"])),
+                      expect_code=1, expect=("must declare authority_freshness",))
+for relative, marker in ((OWNER_REGISTRY, "current-state-registry"), (RETIRED_REGISTRY, "retired-claim-registry")):
+    run_lint_fixture_case("missing-" + relative, lambda r, rel=relative: (r / rel).unlink(), expect_code=1, expect=(marker,))
+    run_lint_fixture_case("duplicate-json-key-" + relative,
+                          lambda r, rel=relative: (r / rel).write_text('{"schema_version":1,' + (r / rel).read_text()[1:]),
+                          expect_code=1, expect=(marker,))
+    for kind in ("symlink", "hardlink", "fifo"):
+        def unsafe_registry(r, rel=relative, kind=kind):
+            original = r / rel
+            target = original.with_suffix(".original")
+            original.rename(target)
+            if kind == "symlink": original.symlink_to(target)
+            elif kind == "hardlink": os.link(target, original)
+            else: os.mkfifo(original)
+        run_lint_fixture_case(kind + "-" + relative, unsafe_registry, expect_code=1, expect=(marker,))
+
+run_lint_fixture_case("valid-retirement-with-no-active-hits", seed_retired_claim)
+for label, mutate in (
+    ("float-version", lambda v: v.update(schema_version=1.0)),
+    ("extra-field", lambda v: v["claims"][0].update(extra=True)),
+    ("bad-date", lambda v: v["claims"][0].update(retired_on="2026-02-30")),
+    ("empty-reason", lambda v: v["claims"][0].update(reason=" ")),
+    ("unknown-profile", lambda v: v["claims"][0].update(profile="unknown")),
+    ("duplicate-phrase-case", lambda v: v["claims"][0].update(phrases=["Same", "same"])),
+    ("unsorted-phrases", lambda v: v["claims"][0].update(phrases=["z", "a"])),
+    ("multiline-phrase", lambda v: v["claims"][0].update(phrases=["a\nb"])),
+    ("duplicate-claim", lambda v: v["claims"].append(dict(v["claims"][0]))),
+    ("cross-claim-phrase", lambda v: v["claims"].append({**v["claims"][0], "id": "second-claim"})),
+    ("unsafe-replacement", lambda v: v["claims"][0].update(replacement_ref="wiki/../concepts/alpha.md")),
+    ("unenrolled-replacement", lambda v: v["claims"][0].update(replacement_ref="wiki/concepts/beta.md")),
+):
+    run_lint_fixture_case("retirement-" + label,
+                          lambda r, mutate=mutate: (seed_retired_claim(r), change_json(r, RETIRED_REGISTRY, mutate)),
+                          expect_code=1, expect=("retired-claim-registry",))
+run_lint_fixture_case("retirement-disabled-owner-refused", lambda r: (seed_retired_claim(r),
+                      change_json(r, OWNER_REGISTRY, lambda v: v.update(enabled=False, owners=[]))),
+                      expect_code=1, expect=("must be enrolled",))
+for action in ("missing", "extra", "symlink"):
+    def profile_error(r, action=action):
+        profiles = r / "workflows/maintenance/refresh/profiles"
+        if action == "extra": (profiles / "extra.md").write_text("# Extra\n")
+        else:
+            path = profiles / "talk-track.md"
+            path.unlink()
+            if action == "symlink": path.symlink_to(profiles / "product-availability.md")
+    run_lint_fixture_case("profile-" + action, profile_error, expect_code=1, expect=("retired-claim-registry",))
+for relative in ("concepts/beta.md", "domain.md", "index.md", "glossary.md", "overview.md", "primer.md", "synthesis.md"):
+    def active_hit(r, relative=relative):
+        seed_retired_claim(r)
+        path = r / "wiki" / relative
+        if not path.exists(): path.write_text("# Fixture\n")
+        append(r, "wiki/" + relative, "\nRETIRED FIXTURE WORDING\n")
+    run_lint_fixture_case("retired-literal-active-" + relative, active_hit, expect_code=1,
+                          expect=("[retired-claim]", "wiki/" + relative + ":", "fixture-retirement"))
+
+def seed_historical_retirement(r):
+    seed_retired_claim(r)
+    append(r, "wiki/sources/gamma.md", "\nRetired fixture wording\n")
+    for relative in ("wiki/log.md", "wiki/contradictions.md", "wiki/sourcing-queue.md", "wiki/SCHEMA.md",
+                     "tmp/example.md", "archive/wiki-log/history.md"):
+        path = r / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Historical record\n\nRetired fixture wording\n")
+    write_registered_raw_fixture(r, "raw/notes/history.txt", "Retired fixture wording\n")
+    append(r, "wiki/concepts/beta.md", "\nRetired fixture\nwording\nSuperseded fixture wording\n")
+run_lint_fixture_case("history-paraphrase-and-multiline-outside-literal-policy", seed_historical_retirement,
+                      absent=("[retired-claim]", "retired-claim-scan"))
+
+# Files that exist but cannot be safely read are not treated as a clean scan.
+for kind in ("symlink", "hardlink", "invalid-utf8"):
+    def unreadable_active(r, kind=kind):
+        seed_retired_claim(r)
+        path = r / "wiki/primer.md"
+        if kind == "symlink": path.symlink_to(r / "wiki/concepts/beta.md")
+        elif kind == "hardlink": os.link(r / "wiki/concepts/beta.md", path)
+        else: path.write_bytes(b"\xff")
+    run_lint_fixture_case("retirement-active-" + kind, unreadable_active,
+                          expect_code=1, expect=("retired-claim-scan",))
+
+for label, patch in (("missing-hashes", {}), ("uppercase-hashes", {"pair_sha256": ["A" * 64] * 2}),
+                     ("invalid-date", {"pair_sha256": ["0" * 64] * 2, "date": "2026-02-30"}),
+                     ("empty-reason", {"pair_sha256": ["0" * 64] * 2, "reason": " "})):
+    run_lint_fixture_case("drift-review-" + label, lambda r, patch=patch: (seed_current_state_owner(r),
+                          write_adjudications(r, reviewed_status_drift=[{
+                              "pair": ["concepts/beta.md", "concepts/alpha.md"], "date": "2026-07-01", "reason": "Reviewed fixture", **patch}])),
+                          expect_code=1, expect=("adjudication-file",))
+
+
+for alias_kind in ("file-symlink", "directory-symlink", "hardlink"):
+    def alias_owner(r, kind=alias_kind):
+        seed_current_state_owner(r)
+        page = r / "wiki/concepts/alpha.md"
+        if kind == "directory-symlink":
+            directory = page.parent
+            target = r / "tmp/concepts"
+            target.parent.mkdir(exist_ok=True)
+            directory.rename(target)
+            directory.symlink_to(target, target_is_directory=True)
+        else:
+            original = r / "tmp/owner.md"
+            original.parent.mkdir(exist_ok=True)
+            page.rename(original)
+            if kind == "file-symlink": page.symlink_to(original)
+            else: os.link(original, page)
+    run_lint_fixture_case("owner-refuses-" + alias_kind, alias_owner, expect_code=1,
+                          expect=("current-state-registry",))
+
+for pair in (["sources/gamma.md", "concepts/alpha.md"], ["concepts/missing.md", "concepts/alpha.md"],
+             ["../concepts/beta.md", "concepts/alpha.md"], ["concepts/beta.md", "concepts/beta.md"],
+             ["concepts/alpha.md", "concepts/alpha.md"]):
+    run_lint_fixture_case("invalid-drift-pair-" + repr(pair), lambda r, pair=pair: (seed_current_state_owner(r),
+                          write_adjudications(r, reviewed_status_drift=[{
+                              "pair": pair, "pair_sha256": ["0" * 64] * 2,
+                              "date": "2026-07-01", "reason": "Reviewed fixture versions"}])),
+                          expect_code=1, expect=("adjudication-stale",))
+
+run_lint_fixture_case("missing-profile-directory-refused", lambda r:
+                      shutil.rmtree(r / "workflows/maintenance/refresh/profiles"),
+                      expect_code=1, expect=("retired-claim-registry",))
+
+
+for quote in ('"', "'"):
+    run_lint_fixture_case("owner-quoted-freshness-" + quote, lambda r, quote=quote: (seed_current_state_owner(r),
+                          edit(r, "wiki/concepts/alpha.md", "authority_freshness: current-state",
+                               "authority_freshness: " + quote + "current-state" + quote)))
 
 raise SystemExit(finish_lint_eval())

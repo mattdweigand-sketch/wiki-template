@@ -7,6 +7,8 @@ description: Manual high-rigor wiki research with claim-level independent verifi
 
 Use this workflow only when the user explicitly invokes `wiki-research`, `$wiki-research`, or `/wiki-research`. It is not the default for important or complex questions.
 
+For reviewed research, use the [run workspace](../run-workspace.md); reference the existing evidence-run directory without replacing its immutable sample/batch/verdict records.
+
 ## Load / Skip
 
 - **Load:** bounded `python3 scripts/wiki_lookup.py index --query "<topic>"` results, `wiki/primer.md`, the pages needed to answer the question, their cited source pages, only the raw files required to verify those claims, `workflows/maintenance/evidence-review.md`, and the citation and provenance rules in `wiki/SCHEMA.md`.

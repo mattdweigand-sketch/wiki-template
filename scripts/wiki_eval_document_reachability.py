@@ -103,6 +103,35 @@ def write_transcript_fixture(root: Path, *, linked: bool) -> None:
     )
 
 
+def write_anchor_fixture(root: Path, link: str) -> None:
+    (root / "workflows").mkdir(parents=True, exist_ok=True)
+    (root / "CONTEXT.md").write_text(
+        f"# Root\n\n[Route]({link})\n",
+        encoding="utf-8",
+    )
+    (root / "workflows" / "guide.md").write_text(
+        "# Guide: `Code` & Punctuation!\n\n"
+        "## Repeat\n\n"
+        "## Repeat\n\n"
+        "[Same file](#repeat-1)\n",
+        encoding="utf-8",
+    )
+    (root / "scripts").mkdir(exist_ok=True)
+    (root / "scripts" / "document-reachability.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "description": "Anchor fixture.",
+                "roots": ["CONTEXT.md"],
+                "operational_directories": ["workflows"],
+                "excluded_directories": [],
+                "standalone_documents": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     results = Results()
     with tempfile.TemporaryDirectory(prefix="wiki-doc-reachability-clean-") as td:
@@ -170,6 +199,60 @@ def main() -> int:
             ],
             repr(problems),
         )
+
+    with tempfile.TemporaryDirectory(prefix="wiki-doc-reachability-anchor-") as td:
+        root = Path(td)
+        write_anchor_fixture(root, "workflows/guide.md#guide-code--punctuation")
+        results.record(
+            "punctuation-code-span-duplicate-and-same-file-anchors-pass",
+            document_reachability_problems(root) == [],
+            repr(document_reachability_problems(root)),
+        )
+        write_anchor_fixture(root, "workflows/guide.md#guide%2Dcode%2D%2Dpunctuation")
+        results.record(
+            "percent-encoded-anchor-passes",
+            document_reachability_problems(root) == [],
+            repr(document_reachability_problems(root)),
+        )
+        write_anchor_fixture(root, "workflows/guide.md#stale-heading")
+        problems = document_reachability_problems(root)
+        results.record(
+            "stale-local-anchor-fails",
+            problems == [
+                "missing local Markdown fragment: CONTEXT.md -> "
+                "workflows/guide.md#stale-heading "
+                "(target workflows/guide.md, fragment stale-heading)"
+            ],
+            repr(problems),
+        )
+    with tempfile.TemporaryDirectory(prefix="wiki-doc-fences-") as td:
+        root = Path(td)
+        write_anchor_fixture(root, "workflows/guide.md#repeat-1")
+        guide = root / "workflows/guide.md"
+        guide.write_text(guide.read_text() + "\n```md\n## Phantom\n[Bad](missing.md#missing)\n```\n~~~md\n## Other phantom\n[Bad](missing.md)\n~~~\n")
+        results.record("fenced-links-and-headings-do-not-exist", document_reachability_problems(root) == [])
+        with (root / "CONTEXT.md").open("a") as handle:
+            handle.write("\n[Phantom](workflows/guide.md#phantom)\n[Self](#missing-self)\n")
+        problems = document_reachability_problems(root)
+        results.record("fenced-heading-and-missing-self-fragments-fail", len(problems) == 2 and all("missing local Markdown fragment" in p for p in problems), repr(problems))
+        (root / "CONTEXT.md").write_text("# Root\n[Escape](../escape.md#target)\n")
+        results.record("anchor-cannot-escape-root", any("escapes repository" in p for p in document_reachability_problems(root)))
+
+    with tempfile.TemporaryDirectory(prefix="wiki-doc-excluded-") as td:
+        root = Path(td)
+        write_fixture(root, linked=True)
+        (root / "wiki").mkdir()
+        (root / "wiki/guide.md").write_text("# Guide\n[Missing](missing.md)\n")
+        (root / "wiki/other.md").write_text("# Other\n[Ignored](ignored.md)\n")
+        manifest_path = root / "scripts/document-reachability.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["excluded_directories"].append("wiki")
+        for key in ("roots", "standalone_documents"):
+            manifest[key].append("wiki/guide.md")
+            manifest_path.write_text(json.dumps(manifest))
+            problems = document_reachability_problems(root)
+            results.record("excluded-explicit-" + key + "-is-checked", problems == ["missing local Markdown target: wiki/guide.md -> missing.md"], repr(problems))
+            manifest[key].remove("wiki/guide.md")
 
     repo_root = Path(__file__).resolve().parents[1]
     transcript_reference = repo_root / "workflows/ingest/transcript-evidence.md"

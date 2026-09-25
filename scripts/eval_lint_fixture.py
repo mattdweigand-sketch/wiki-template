@@ -40,6 +40,11 @@ def _build_lint_fixture_repository() -> tuple[tempfile.TemporaryDirectory[str], 
     root = Path(temporary.name) / "repo"
     shutil.copytree(FIXTURE / "wiki", root / "wiki")
     shutil.copytree(FIXTURE / "scripts", root / "scripts")
+    profiles = root / "workflows/maintenance/refresh/profiles"
+    profiles.mkdir(parents=True)
+    registry = json.loads((root / "scripts/retired-claims.json").read_text())
+    for profile in registry["profiles"]:
+        (profiles / f"{profile}.md").write_text(f"# {profile} fixture\n")
     for folder in FOLDER_TYPE:
         (root / "wiki" / folder).mkdir(exist_ok=True)
     raw_registry = json.loads(
@@ -148,6 +153,31 @@ def write_adjudications(root: Path, **kwargs: object) -> None:
     base = {field: [] for field in ADJUDICATION_CATEGORY_FIELDS.values()}
     base.update(kwargs)
     (root / "scripts" / "lint-adjudications.json").write_text(json.dumps(base))
+
+
+def seed_current_state_owner(root: Path) -> None:
+    """Enroll one neutral owner with a newer status than the fixture corpus."""
+    (root / "scripts/current-state-owners.json").write_text(json.dumps({
+        "schema_version": 1, "enabled": True, "owners": ["concepts/alpha.md"],
+    }))
+    add_authority(root, "wiki/concepts/alpha.md", "authority_kind: none",
+                  "authority_freshness: current-state")
+    edit(root, "wiki/concepts/alpha.md", "updated: 2026-06-01", "updated: 2026-07-01")
+    append(root, "wiki/concepts/alpha.md", "\n**Status (2026-07-01):** Current fixture wording.\n")
+
+
+def seed_retired_claim(root: Path) -> None:
+    """Retire an exact phrase after enrolling its neutral replacement owner."""
+    seed_current_state_owner(root)
+    path = root / "scripts/retired-claims.json"
+    value = json.loads(path.read_text())
+    value["claims"] = [{
+        "id": "fixture-retirement", "profile": "product-availability",
+        "retired_on": "2026-07-01", "phrases": ["Retired fixture wording"],
+        "replacement": "Current fixture wording", "replacement_ref": "wiki/concepts/alpha.md",
+        "reason": "The reviewed fixture changed on the stated date.",
+    }]
+    path.write_text(json.dumps(value))
 
 
 def write_raw_buckets(root: Path, value: object) -> None:

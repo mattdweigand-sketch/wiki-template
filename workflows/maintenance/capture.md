@@ -19,13 +19,13 @@ Neither capture route requires `scripts/capture_gate.py` approval unless it is b
    - **Experience:** what happened; what was learned; what would be done differently; when it occurred; what it connects to.
 3. Cross-link from affected or related entity pages back to this page.
 4. Add or update the `wiki/index.md` row for the page.
-5. Write a scratch entry to `tmp/capture-entry.md`, then run `python3 scripts/finalize_wiki_update.py --log-entry tmp/capture-entry.md`. The [routine finish](../../REFERENCES.md#routine-finalization) rebuilds backlinks, records the entry, and runs full lint once. Review relevant Tier-2 candidates.
+5. Write a scratch entry to `tmp/<run>/log-entry.md`, then run `python3 scripts/finalize_wiki_update.py --log-entry tmp/<run>/log-entry.md`. The [routine finish](../../REFERENCES.md#routine-finalization) rebuilds backlinks, records the entry, and runs full lint once. Review relevant Tier-2 candidates.
 
 ```text
 ## [YYYY-MM-DD] decision | <summary>
 Page created/updated: <path>
 Affects/Connects to: ...
-Verification: finalize_wiki_update.py --log-entry tmp/capture-entry.md
+Verification: finalize_wiki_update.py --log-entry tmp/<run>/log-entry.md
 ```
 
 Use `experience` as the entry type for an experience. Retry the same entry if finalization fails; do not append a second log entry afterwards.
