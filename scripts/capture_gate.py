@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from _durable_files import DurableFileError, read_regular_bytes, sha256_bytes
+from _durable_files import DurableFileError, directory_scope, read_regular_bytes, sha256_bytes
 from _file_transactions import recover_all, run_transaction
 from _repo_paths import EXISTING_FILE, MAY_CREATE_FILE, RepoPathError, resolve_repo_path
 from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
@@ -43,6 +43,26 @@ CAPTURE_LEDGER_PATH = "scripts/capture-runs.jsonl"
 
 class CaptureProposalError(ValueError):
     """An exact capture proposal failed deterministic validation."""
+
+
+def is_analysis_markdown(path: str) -> bool:
+    """Classify analysis destinations consistently across live and Git gates."""
+    lowered = path.lower()
+    return lowered.startswith("wiki/analyses/") and lowered.endswith(".md")
+
+
+def analysis_creation_problems(
+    boundary: str, primary: str, absent_destinations: list[str],
+) -> list[str]:
+    """Check route eligibility from independently established preimage absence."""
+    created = sorted({path for path in absent_destinations if is_analysis_markdown(path)})
+    if not created:
+        return []
+    if boundary != "analysis-capture":
+        return [f"{boundary} may update only existing analysis pages: {', '.join(created)}"]
+    if created != [primary]:
+        return ["analysis-capture may create only its single primary analysis: " + ", ".join(created)]
+    return []
 
 
 def canonical_capture_proposal_bytes(value: object) -> bytes:
@@ -200,6 +220,14 @@ def prepare_capture_proposal(repo_root: Path, descriptor_path: str) -> dict[str,
     if destinations != sorted(set(destinations)) or destinations != scope:
         raise CaptureProposalError("sorted unique target destinations must exactly match editable_scope")
 
+    creation_errors = analysis_creation_problems(
+        str(capture_boundary), primary,
+        [str(target["destination"]) for target in prepared_targets
+         if target["expected_preimage"] == "ABSENT"],
+    )
+    if creation_errors:
+        raise CaptureProposalError("; ".join(creation_errors))
+
     projection = {
         "descriptor": descriptor,
         "postimages": [
@@ -249,104 +277,104 @@ def apply_capture_proposal(
 ) -> dict[str, object]:
     """Apply exact approved targets plus their ledger record in one transaction."""
     root = repo_root.resolve()
-    prepared = prepare_capture_proposal(root, descriptor_path)
-    digest = str(prepared["authorization_digest"])
-    if approved_digest != digest:
-        raise CaptureProposalError(f"approved digest does not match current Authorization ID: {digest}")
-    recover_all(root)
-    descriptor = prepared["descriptor"]
-    targets = prepared["targets"]
-    assert isinstance(descriptor, dict) and isinstance(targets, list)
-    ledger_path = root / CAPTURE_LEDGER_PATH
-    ledger_bytes, _ = read_regular_bytes(ledger_path)
-    assert ledger_bytes is not None
-    prior = capture_application_from_ledger(ledger_bytes, digest)
-    target_states: dict[str, tuple[bytes | None, int | None]] = {}
-    for target in targets:
-        destination = str(target["destination"])
-        current, info = read_regular_bytes(root / destination, allow_missing=True)
-        target_states[destination] = (
-            current,
-            stat.S_IMODE(info.st_mode) if info is not None else None,
-        )
-    record_targets = [
-        {
-            "path": target["destination"],
-            "preimage_sha256": (
-                None if target["expected_preimage"] == "ABSENT" else target["expected_preimage"]
-            ),
-            "preimage_mode": target["expected_preimage_mode"],
-            "postimage_sha256": target["postimage_sha256"],
-            "postimage_mode": target["postimage_mode"],
-        }
-        for target in targets
-    ]
-    expected_record = {
-        "authorization_digest": digest,
-        "capture_boundary": descriptor["capture_boundary"],
-        "purpose": descriptor["purpose"],
-        "primary_destination": descriptor["primary_destination"],
-        "editable_scope": descriptor["editable_scope"],
-        "targets": record_targets,
-    }
-    if prior is not None:
-        comparable = {key: prior.get(key) for key in expected_record}
-        outputs_match = all(
-            target_states[str(target["destination"])]
-            == (target["postimage"], target["postimage_mode"])
+    with directory_scope(root):
+        prepared = prepare_capture_proposal(root, descriptor_path)
+        digest = str(prepared["authorization_digest"])
+        if approved_digest != digest:
+            raise CaptureProposalError(f"approved digest does not match current Authorization ID: {digest}")
+        recover_all(root)
+        descriptor = prepared["descriptor"]
+        targets = prepared["targets"]
+        assert isinstance(descriptor, dict) and isinstance(targets, list)
+        ledger_path = root / CAPTURE_LEDGER_PATH
+        ledger_bytes, ledger_info = read_regular_bytes(ledger_path)
+        assert ledger_bytes is not None and ledger_info is not None
+        prior = capture_application_from_ledger(ledger_bytes, digest)
+        target_states: dict[str, tuple[bytes | None, int | None]] = {}
+        for target in targets:
+            destination = str(target["destination"])
+            current, info = read_regular_bytes(root / destination, allow_missing=True)
+            target_states[destination] = (
+                current,
+                stat.S_IMODE(info.st_mode) if info is not None else None,
+            )
+        record_targets = [
+            {
+                "path": target["destination"],
+                "preimage_sha256": (
+                    None if target["expected_preimage"] == "ABSENT" else target["expected_preimage"]
+                ),
+                "preimage_mode": target["expected_preimage_mode"],
+                "postimage_sha256": target["postimage_sha256"],
+                "postimage_mode": target["postimage_mode"],
+            }
             for target in targets
-        )
-        if comparable == expected_record and outputs_match:
-            return {"result_code": "ALREADY_APPLIED", "authorization_digest": digest}
-        raise CaptureProposalError("authorization ledger record exists but applied targets differ")
+        ]
+        expected_record = {
+            "authorization_digest": digest,
+            "capture_boundary": descriptor["capture_boundary"],
+            "purpose": descriptor["purpose"],
+            "primary_destination": descriptor["primary_destination"],
+            "editable_scope": descriptor["editable_scope"],
+            "targets": record_targets,
+        }
+        if prior is not None:
+            comparable = {key: prior.get(key) for key in expected_record}
+            outputs_match = all(
+                target_states[str(target["destination"])]
+                == (target["postimage"], target["postimage_mode"])
+                for target in targets
+            )
+            if comparable == expected_record and outputs_match:
+                return {"result_code": "ALREADY_APPLIED", "authorization_digest": digest}
+            raise CaptureProposalError("authorization ledger record exists but applied targets differ")
 
-    expected_preimages: dict[str, bytes | None] = {}
-    expected_preimage_modes: dict[str, int | None] = {}
-    output_modes: dict[str, int] = {}
-    outputs: dict[str, bytes] = {}
-    for target in targets:
-        destination = str(target["destination"])
-        current, current_mode = target_states[destination]
-        expected = target["expected_preimage"]
-        if expected == "ABSENT":
-            if current is not None:
+        expected_preimages: dict[str, bytes | None] = {}
+        expected_preimage_modes: dict[str, int | None] = {}
+        output_modes: dict[str, int] = {}
+        outputs: dict[str, bytes] = {}
+        for target in targets:
+            destination = str(target["destination"])
+            current, current_mode = target_states[destination]
+            expected = target["expected_preimage"]
+            if expected == "ABSENT":
+                if current is not None:
+                    raise CaptureProposalError(f"destination preimage changed: {destination}")
+            elif current is None or sha256_bytes(current) != expected:
                 raise CaptureProposalError(f"destination preimage changed: {destination}")
-        elif current is None or sha256_bytes(current) != expected:
-            raise CaptureProposalError(f"destination preimage changed: {destination}")
-        if current_mode != target["expected_preimage_mode"]:
-            raise CaptureProposalError(f"destination preimage mode changed: {destination}")
-        expected_preimages[destination] = current
-        expected_preimage_modes[destination] = current_mode
-        output_modes[destination] = int(target["postimage_mode"])
-        outputs[destination] = target["postimage"]
+            if current_mode != target["expected_preimage_mode"]:
+                raise CaptureProposalError(f"destination preimage mode changed: {destination}")
+            expected_preimages[destination] = current
+            expected_preimage_modes[destination] = current_mode
+            output_modes[destination] = int(target["postimage_mode"])
+            outputs[destination] = target["postimage"]
 
-    record = capture_application_record(**expected_record)
-    projected_ledger = render_capture_application_ledger(ledger_bytes, record)
-    outputs[CAPTURE_LEDGER_PATH] = projected_ledger
-    expected_preimages[CAPTURE_LEDGER_PATH] = ledger_bytes
-    ledger_info = ledger_path.stat()
-    expected_preimage_modes[CAPTURE_LEDGER_PATH] = stat.S_IMODE(ledger_info.st_mode)
-    output_modes[CAPTURE_LEDGER_PATH] = stat.S_IMODE(ledger_info.st_mode)
-    guard_preimages = {str(prepared["descriptor_path"]): prepared["descriptor_bytes"]}
-    guard_preimages.update({
-        str(target["staged_path"]): target["postimage"] for target in targets
-    })
-    run_transaction(
-        root,
-        consumer="capture-gate",
-        outputs=outputs,
-        allowed_prefixes=tuple(sorted({*outputs, *guard_preimages})),
-        expected_preimages=expected_preimages,
-        expected_preimage_modes=expected_preimage_modes,
-        output_modes=output_modes,
-        guard_preimages=guard_preimages,
-        fault=fault,
-    )
-    return {
-        "result_code": "APPLIED",
-        "authorization_digest": digest,
-        "targets": sorted(outputs),
-    }
+        record = capture_application_record(**expected_record)
+        projected_ledger = render_capture_application_ledger(ledger_bytes, record)
+        outputs[CAPTURE_LEDGER_PATH] = projected_ledger
+        expected_preimages[CAPTURE_LEDGER_PATH] = ledger_bytes
+        expected_preimage_modes[CAPTURE_LEDGER_PATH] = stat.S_IMODE(ledger_info.st_mode)
+        output_modes[CAPTURE_LEDGER_PATH] = stat.S_IMODE(ledger_info.st_mode)
+        guard_preimages = {str(prepared["descriptor_path"]): prepared["descriptor_bytes"]}
+        guard_preimages.update({
+            str(target["staged_path"]): target["postimage"] for target in targets
+        })
+        run_transaction(
+            root,
+            consumer="capture-gate",
+            outputs=outputs,
+            allowed_prefixes=tuple(sorted({*outputs, *guard_preimages})),
+            expected_preimages=expected_preimages,
+            expected_preimage_modes=expected_preimage_modes,
+            output_modes=output_modes,
+            guard_preimages=guard_preimages,
+            fault=fault,
+        )
+        return {
+            "result_code": "APPLIED",
+            "authorization_digest": digest,
+            "targets": sorted(outputs),
+        }
 
 
 def parser() -> argparse.ArgumentParser:

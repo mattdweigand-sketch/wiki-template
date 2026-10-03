@@ -15,6 +15,7 @@ from _durable_files import (
     DurableFileError,
     FaultHook,
     atomic_replace_bytes,
+    directory_scope,
     read_regular_bytes,
     sha256_bytes,
     stable_lock,
@@ -96,7 +97,7 @@ def record_wiki_log_entry(
     log_path = root / WIKI_LOG_PATH
     lock_path = root / WIKI_LOG_LOCK_PATH
     try:
-        with stable_lock(lock_path):
+        with directory_scope(root), stable_lock(lock_path):
             preimage, info = read_regular_bytes(log_path)
             assert preimage is not None and info is not None
             postimage = render_wiki_log_postimage(preimage, entry)

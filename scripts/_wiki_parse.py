@@ -389,6 +389,15 @@ def authored_body_view(text: str) -> str:
     return _context_mask(text, frontmatter="none", mask_comments=True).replace("\x00", " ")
 
 
+def markdown_structure_view(text: str) -> str:
+    """Length-preserving navigation view without frontmatter, code, or comments.
+
+    Use the visible positions to locate links and headings, then read original
+    text at those positions when inline code belongs in a heading's slug.
+    """
+    return _context_mask(text, frontmatter="mask", mask_comments=True).replace("\x00", " ")
+
+
 def status_review_view(text: str) -> str:
     """Status-review text: authored prose and curated links, never generated/code."""
     return _context_mask(

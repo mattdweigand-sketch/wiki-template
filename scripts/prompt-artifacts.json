@@ -78,6 +78,7 @@
         "workflows/_templates/run/status.md",
         "workflows/_templates/run/verification.md",
         "workflows/ingest/CONTEXT.md",
+        "workflows/ingest/ingest.md",
         "workflows/ingest/transcript-evidence.md",
         "workflows/maintenance/CONTEXT.md",
         "workflows/maintenance/artifact-promotion.md",

@@ -23,6 +23,7 @@ from capture_gate import (
     prepare_capture_proposal,
 )
 from eval_lib import Results
+from capture_diff import capture_diff_problems
 from _repo_paths import RepoPathError
 
 
@@ -384,5 +385,67 @@ with tempfile.TemporaryDirectory() as temporary:
         and (root / "wiki/concepts/exact.md").read_bytes() == b"new exact bytes\n"
         and not ledger_errors and count == 1,
     )
+
+for boundary, hidden in (("artifact-promotion", False), ("synthesis-promotion", False), ("analysis-capture", True)):
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        proposal, _ = make_repo(root)
+        (root / "wiki/analyses").mkdir()
+        descriptor = json.loads(proposal.read_text())
+        descriptor["capture_boundary"] = boundary
+        descriptor["primary_destination"] = "wiki/analyses/exact.md"
+        descriptor["editable_scope"] = ["wiki/analyses/exact.md"]
+        descriptor["targets"][0]["destination"] = "wiki/analyses/exact.md"
+        if hidden:
+            target = dict(descriptor["targets"][0])
+            target["destination"] = "wiki/analyses/second.md"
+            descriptor["targets"].append(target)
+            descriptor["editable_scope"].append(target["destination"])
+        proposal.write_bytes(canonical_json(descriptor))
+        before = (root / "scripts/capture-runs.jsonl").read_bytes()
+        try:
+            prepare_capture_proposal(root, "tmp/proposal.json")
+        except CaptureProposalError as exc:
+            rejected = "analysis" in str(exc)
+        else:
+            rejected = False
+        results.record(
+            f"{boundary}-cannot-hide-new-analysis-before-preview",
+            rejected and before == (root / "scripts/capture-runs.jsonl").read_bytes()
+            and not list((root / "wiki/analyses").iterdir()),
+        )
+
+for boundary, existing in (("analysis-capture", False), ("artifact-promotion", True), ("synthesis-promotion", True)):
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        proposal, _ = make_repo(root)
+        (root / "wiki/analyses").mkdir()
+        descriptor = json.loads(proposal.read_text())
+        descriptor["capture_boundary"] = boundary
+        descriptor["primary_destination"] = "wiki/analyses/exact.md"
+        descriptor["editable_scope"] = ["wiki/analyses/exact.md"]
+        descriptor["targets"][0]["destination"] = "wiki/analyses/exact.md"
+        if existing:
+            (root / "wiki/analyses/exact.md").write_bytes(b"old")
+            descriptor["targets"][0]["expected_preimage"] = sha256(b"old")
+            descriptor["targets"][0]["expected_preimage_mode"] = 0o644
+        proposal.write_bytes(canonical_json(descriptor))
+        def git(*args):
+            return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.DEVNULL).decode().strip()
+        git("init")
+        git("config", "user.email", "fixture@example.test")
+        git("config", "user.name", "Fixture")
+        git("add", "scripts", "wiki")
+        git("commit", "-m", "baseline")
+        base = git("rev-parse", "HEAD")
+        prepared = prepare_capture_proposal(root, "tmp/proposal.json")
+        applied = apply_capture_proposal(root, "tmp/proposal.json", prepared["authorization_digest"])
+        git("add", "scripts", "wiki")
+        git("commit", "-m", "apply")
+        errors = capture_diff_problems(root, base, "HEAD")
+        results.record(
+            f"{boundary}-analysis-application-agrees-with-git-range",
+            applied["result_code"] == "APPLIED" and not errors, repr(errors),
+        )
 
 raise SystemExit(results.finish())

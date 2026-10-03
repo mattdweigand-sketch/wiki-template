@@ -33,6 +33,7 @@ from wiki_evidence import (
     create_evidence_sample,
     create_targeted_evidence_sample,
     publish_evidence_batches,
+    persist_evidence_validation,
     validate_evidence_run,
 )
 
@@ -92,7 +93,7 @@ def install_evidence_fixture(root: Path, authority: str = "") -> None:
     subprocess.run(["git", "commit", "-qm", "evidence fixture"], cwd=root, check=True)
 
 
-def make_repo(root: Path, run_id: str = "fixture-run", *, authority: str = "") -> tuple[Path, dict, dict, list[dict]]:
+def make_repo(root: Path, run_id: str = "fixture-run", *, authority: str = "", batch_count: int = 2) -> tuple[Path, dict, dict, list[dict]]:
     install_evidence_fixture(root, authority)
     manifest = create_evidence_sample(root, run_id, 25)
     run_dir = manifest.run_dir
@@ -110,7 +111,7 @@ def make_repo(root: Path, run_id: str = "fixture-run", *, authority: str = "") -
     }
     assert not validate_plant(plant, sample)
     atomic_json(run_dir / "plant.json", plant)
-    publish_evidence_batches(root, run_dir.relative_to(root), 2)
+    publish_evidence_batches(root, run_dir.relative_to(root), batch_count)
     batches = [load_json(path) for path in sorted((run_dir / "batches").glob("*.json"))]
     verdict_dir = run_dir / "verdicts"
     verdict_dir.mkdir()
@@ -254,7 +255,7 @@ def swap_batch_verdicts(_root: Path, run_dir: Path, *_args: object) -> None:
 
 
 case("verdicts-must-belong-to-their-assigned-batch", swap_batch_verdicts,
-     fragment="assigned batch")
+     fragment="assigned verdict item IDs")
 
 
 def plant_verified(_root, run_dir, _sample, _plant, batches):
@@ -775,4 +776,281 @@ for authority in ("https://example.invalid/source", "raw/evidence/alpha-source.t
                        ("[authority]" in rendered) == authority.startswith(("https://", "raw/"))
                        and str(root / "wiki/sources") in rendered, rendered)
 
+
+
+def swap_verdict_batches(_root, run_dir, *_args):
+    paths = [run_dir / f"verdicts/batch-{number:02d}.json" for number in (1, 2)]
+    values = [load_json(path) for path in paths]
+    values[0]["verdicts"], values[1]["verdicts"] = values[1]["verdicts"], values[0]["verdicts"]
+    for path, value in zip(paths, values):
+        atomic_json(path, value)
+
+
+case("cross-batch-verdict-swap-fails", swap_verdict_batches,
+     fragment="assigned verdict item IDs")
+
+
+def reverse_verdict_order(_root, run_dir, *_args):
+    for path in (run_dir / "verdicts").glob("*.json"):
+        value = load_json(path)
+        value["verdicts"].reverse()
+        atomic_json(path, value)
+
+
+case("assigned-verdict-order-is-independent", reverse_verdict_order, status="PASSED")
+
+with tempfile.TemporaryDirectory(prefix="wiki-evidence-invalid-publication-") as td:
+    root = Path(td).resolve()
+    run_dir, _sample, _plant, _batches = make_repo(root, "invalid-publication")
+    shutil.rmtree(run_dir / "batches")
+    shutil.rmtree(run_dir / "prompts")
+    (run_dir / "sample.json").write_bytes(b"null")
+    try:
+        publish_evidence_batches(root, run_dir.relative_to(root), 2)
+    except EvidenceError as exc:
+        rejected = "sample must be an object" in str(exc)
+    else:
+        rejected = False
+    results.record(
+        "invalid-sample-publishes-no-batches-or-prompts",
+        rejected and not (run_dir / "batches").exists() and not (run_dir / "prompts").exists(),
+    )
+
+with tempfile.TemporaryDirectory(prefix="wiki-evidence-three-batches-") as td:
+    root = Path(td).resolve()
+    run_dir, sample, _plant, batches = make_repo(root, "three-batches", batch_count=3)
+    result = validate_evidence_run(root, run_dir.relative_to(root))
+    results.record("three-assigned-verifier-batches-pass", result.status == "PASSED", str(result))
+    real_items = [item for batch in batches for item in batch["items"] if item["kind"] == "claim"]
+    flagged, selected = real_items[:2]
+    for path in (run_dir / "verdicts").glob("*.json"):
+        data = load_json(path)
+        for verdict in data["verdicts"]:
+            if verdict["item_id"] == flagged["item_id"]:
+                verdict["verdict"] = "OVEREXTENDED"
+        atomic_json(path, data)
+    atomic_json(run_dir / "response-draft.json", {
+        "schema_version": 1, "run_id": sample["run_id"],
+        "manifest_sha256": sample["manifest_sha256"],
+        "statements": [{"claim_id": selected["source_id"]}],
+    })
+    packet = build_reviewed_evidence_response(root, run_dir.relative_to(root).as_posix())
+    results.record(
+        "flagged-run-still-permits-other-verified-claims",
+        [statement["claim_id"] for statement in packet["statements"]] == [selected["source_id"]],
+    )
+
+
+# Explicit validation must replace an earlier success for invalid artifacts,
+# while read-only validation and both response paths reject current input. Reuse each disposable run only to test current-input revalidation;
+# production samples and reviews remain immutable.
+invalid_artifact_bytes = (
+    ("null", b"null"),
+    ("array", b"[]"),
+    ("string", b'"text"'),
+    ("number", b"17"),
+    ("boolean", b"true"),
+    ("invalid-json", b"{"),
+    ("duplicate-key", b'{"schema_version":1,"schema_version":1}'),
+    ("duplicate-surrogate-key", br'{"\ud800":1,"\ud800":2}'),
+    ("invalid-utf8", b"\xff"),
+    ("missing", None),
+)
+surrogate_fields = {
+    "sample.json": (("claims", 0, "line_text"), ("claims", 0, "path"), ("created_at",)),
+    "plant.json": (("text",),),
+    "batches/batch-01.json": (("items", 0, "text"),),
+    "verdicts/batch-01.json": (("verdicts", 0, "decisive_quote"), ("verdicts", 0, "evidence_paths", 0)),
+}
+for artifact in ("sample.json", "plant.json", "batches/batch-01.json", "verdicts/batch-01.json"):
+    with tempfile.TemporaryDirectory(prefix="wiki-evidence-invalid-artifact-") as td:
+        root = Path(td).resolve()
+        run_dir, sample, _plant, _batches = make_repo(root, "invalid-artifact")
+        relative_run = run_dir.relative_to(root)
+        target = run_dir / artifact
+        original = target.read_bytes()
+        invalid_cases = list(invalid_artifact_bytes)
+        floating_schema = json.loads(original)
+        floating_schema["schema_version"] = 1.0
+        invalid_cases.append(("floating-schema-version", json.dumps(floating_schema).encode("utf-8")))
+        for fields in surrogate_fields[artifact]:
+            payload = json.loads(original)
+            member = payload
+            for field in fields[:-1]:
+                member = member[field]
+            member[fields[-1]] = "\ud800"
+            invalid_cases.append((
+                "surrogate-" + "-".join(map(str, fields)),
+                json.dumps(payload, ensure_ascii=True).encode("ascii"),
+            ))
+        for defect, key, value in (
+            ("surrogate-object-key", "\ud800", "unknown"),
+            ("surrogate-nested-object-key", "unknown", [{"\udfff": "value"}]),
+        ):
+            payload = json.loads(original)
+            payload[key] = value
+            invalid_cases.append((defect, json.dumps(payload, ensure_ascii=True).encode("ascii")))
+        atomic_json(run_dir / "response-draft.json", {
+            "schema_version": 1,
+            "run_id": sample["run_id"],
+            "manifest_sha256": sample["manifest_sha256"],
+            "statements": [{"claim_id": sample["claims"][0]["claim_id"]}],
+        })
+        response_path = create_reviewed_evidence_response(root, relative_run.as_posix())
+        original_response = response_path.read_bytes()
+        for defect, content in invalid_cases:
+            target.write_bytes(original)
+            before = persist_evidence_validation(root, relative_run)
+            prior_validation = (run_dir / "validation.json").read_bytes()
+            if content is None:
+                target.unlink()
+            else:
+                target.write_bytes(content)
+            validation = validate_evidence_run(root, relative_run)
+            reader_preserved = (run_dir / "validation.json").read_bytes() == prior_validation
+            cli = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts/verify_evidence_run.py"),
+                 "--repo-root", str(root), "--run-dir", relative_run.as_posix()],
+                capture_output=True, text=True,
+            )
+            persisted = load_json(run_dir / "validation.json")
+            rejected_render = False
+            try:
+                render_reviewed_evidence_response(root, relative_run.as_posix())
+            except (EvidenceError, EvidenceResponseError):
+                rejected_render = True
+            response_preserved = response_path.read_bytes() == original_response
+            response_path.unlink()
+            rejected_create = False
+            try:
+                create_reviewed_evidence_response(root, relative_run.as_posix())
+            except (EvidenceError, EvidenceResponseError):
+                rejected_create = True
+            no_response_created = not response_path.exists()
+            response_path.write_bytes(original_response)
+            results.record(
+                f"invalid-{artifact.replace('/', '-')}-{defect}-replaces-success-and-blocks-response",
+                before.status == "PASSED"
+                and validation.status == persisted["status"] == "FAILED"
+                and validation.structure == persisted["structure"] == "INVALID"
+                and validation.review == persisted["review"] == "INCOMPLETE"
+                and (
+                    artifact.startswith("verdicts/") and defect == "missing"
+                    or validation.metrics is None and persisted["metrics"] is None
+                )
+                and reader_preserved
+                and bool(validation.errors)
+                and (not defect.startswith("surrogate-") or any(
+                    "unpaired Unicode surrogate" in error for error in validation.errors
+                ))
+                and cli.returncode == 1
+                and "Traceback" not in cli.stderr
+                and rejected_render and response_preserved
+                and rejected_create and no_response_created,
+                f"validation={validation}; cli={cli.stdout + cli.stderr}",
+            )
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-evidence-json-unicode-") as td:
+    path = Path(td) / "unicode.json"
+    expected = {"caf\u00e9": ["\U0001f600", {"\U0001f600": "valid scalar text"}]}
+    path.write_bytes(json.dumps(expected, ensure_ascii=True).encode("ascii"))
+    results.record("json-valid-unicode-and-surrogate-pairs-preserved", load_json(path) == expected)
+
+
+def malformed_nested_artifact(root, run_dir, sample, plant, batches, *, artifact, field, value):
+    path = run_dir / artifact
+    payload = load_json(path)
+    if artifact == "sample.json":
+        payload["claims"][0][field] = value
+        payload["manifest_sha256"] = manifest_hash(payload)
+    elif artifact == "plant.json":
+        payload[field] = value
+    elif artifact.startswith("batches/"):
+        payload["items"][0][field] = value
+    else:
+        payload["verdicts"][0][field] = value
+    atomic_json(path, payload)
+
+
+for artifact, field, value in (
+    ("sample.json", "claim_id", []),
+    ("sample.json", "source_closure", None),
+    ("plant.json", "source_claim_id", {}),
+    ("batches/batch-01.json", "kind", []),
+    ("batches/batch-01.json", "item_id", {}),
+    ("verdicts/batch-01.json", "item_id", []),
+    ("verdicts/batch-01.json", "evidence_paths", None),
+):
+    case(
+        f"malformed-nested-{artifact.replace('/', '-')}-{field}-fails-cleanly",
+        lambda *args, artifact=artifact, field=field, value=value:
+            malformed_nested_artifact(*args, artifact=artifact, field=field, value=value),
+    )
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-evidence-validation-persistence-") as td:
+    root = Path(td).resolve()
+    run_dir, _sample, _plant, _batches = make_repo(root, "persistence")
+    persist_evidence_validation(root, run_dir.relative_to(root))
+    prior = (run_dir / "validation.json").read_bytes()
+    original_atomic_json = wiki_evidence.atomic_json
+
+    def fail_validation_write(*_args):
+        raise OSError("injected write failure")
+
+    wiki_evidence.atomic_json = fail_validation_write
+    try:
+        try:
+            persist_evidence_validation(root, run_dir.relative_to(root))
+        except EvidenceError as exc:
+            write_failure = "validation result was not updated" in str(exc)
+        else:
+            write_failure = False
+    finally:
+        wiki_evidence.atomic_json = original_atomic_json
+    results.record(
+        "validation-write-failure-reports-unupdated-result",
+        write_failure and (run_dir / "validation.json").read_bytes() == prior,
+    )
+    outside = root / "outside-validation.json"
+    outside.write_bytes(prior)
+    (run_dir / "validation.json").unlink()
+    (run_dir / "validation.json").symlink_to(outside)
+    cli = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts/verify_evidence_run.py"),
+         "--repo-root", str(root), "--run-dir", run_dir.relative_to(root).as_posix()],
+        capture_output=True, text=True,
+    )
+    results.record(
+        "unsafe-validation-result-is-not-replaced-or-followed",
+        cli.returncode == 1
+        and "validation result was not updated" in cli.stderr
+        and not cli.stdout
+        and outside.read_bytes() == prior
+        and (run_dir / "validation.json").is_symlink(),
+        cli.stdout + cli.stderr,
+    )
+
+
+with tempfile.TemporaryDirectory(prefix="wiki-evidence-git-identity-") as td:
+    root = Path(td).resolve()
+    install_evidence_fixture(root)
+    sample = build_sample_data(root, "git-identity", injected_seed=9)
+    for label, oid, valid in (
+        ("unavailable", None, True),
+        ("abbreviated", "a" * 12, False),
+        ("wrong-length", "a" * 41, False),
+        ("nonhex", "z" * 40, False),
+        ("wrong-type", [], False),
+    ):
+        candidate = copy.deepcopy(sample)
+        candidate["git"]["head"] = oid
+        candidate["manifest_sha256"] = manifest_hash(candidate)
+        errors = validate_sample(candidate)
+        results.record(f"git-object-id-{label}", (not errors) == valid, repr(errors))
+    candidate = copy.deepcopy(sample)
+    candidate["claims"][0]["file_sha256"] = "a" * 40
+    candidate["manifest_sha256"] = manifest_hash(candidate)
+    results.record("content-hashes-remain-sha256", bool(validate_sample(candidate)))
 sys.exit(results.finish())

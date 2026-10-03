@@ -28,4 +28,6 @@ This is the independent review step inside `wiki-lint`. The linting agent orches
 
 Treat structure, snapshot, and review as separate outcomes. A caught plant does not hide a flagged real claim. Missing verdicts, altered prompts, invalid structure, a verified plant, or stale source bytes require a fresh run. Runs with older generated prompts also need fresh IDs; never rewrite scratch history to make it appear current.
 
+Acceptance requires valid structure and a current snapshot. Malformed artifacts produce invalid or incomplete results with unavailable metrics. On an invalid report, `CURRENT` means only that no source drift was independently detected; it does not establish verified freshness or make the run usable. Validation and response readers are read-only. The verifier CLI above explicitly refreshes the saved validation result, including failures.
+
 Adjudicate real flags. Fix confirmed overreach by correcting the claim, confidence, or citation. Record durable false positives only when the same judgment should suppress a future lint candidate.

@@ -127,6 +127,41 @@ def main() -> int:
         and runtime_result.stdout.startswith(expected_runtime + "\n"),
         f"exit={runtime_result.returncode}; stdout={runtime_result.stdout!r}",
     )
+    broken_provenance = subprocess.run(
+        [sys.executable, "-c", (
+            "import runpy; import wiki_provenance; "
+            "wiki_provenance.validate_live_provenance = lambda root: (); "
+            "runpy.run_path('wiki_eval_provenance.py', run_name='__main__')"
+        )],
+        cwd=Path(__file__).resolve().parent,
+        capture_output=True,
+        text=True,
+    )
+    check(
+        "actual-provenance-regressions-exit-nonzero",
+        broken_provenance.returncode == 1
+        and "FAIL raw-byte-mutation-fails" in broken_provenance.stdout
+        and "FAIL tracked-raw-artifact-fails" in broken_provenance.stdout,
+        broken_provenance.stdout + broken_provenance.stderr,
+    )
+    aggregate_failure = subprocess.run(
+        [sys.executable, "-c", (
+            "import sys; import wiki_eval; "
+            "wiki_eval.SUITES['provenance'] = [sys.executable, '-c', 'raise SystemExit(7)']; "
+            "sys.argv = ['wiki_eval.py', '--suite', 'provenance']; "
+            "raise SystemExit(wiki_eval.main())"
+        )],
+        cwd=Path(__file__).resolve().parent,
+        capture_output=True,
+        text=True,
+    )
+    check(
+        "aggregate-failing-child-reports-suite-and-exits-nonzero",
+        aggregate_failure.returncode == 1
+        and "Wiki eval failed:" in aggregate_failure.stdout
+        and "provenance exited 7" in aggregate_failure.stdout,
+        aggregate_failure.stdout + aggregate_failure.stderr,
+    )
     return results.finish()
 
 

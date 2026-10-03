@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -217,6 +218,14 @@ manifest_case(
     ),
     "workflow target does not exist",
 )
+manifest_case(
+    "surrogate-description-fails",
+    lambda path: mutate_json(
+        path,
+        lambda data: data["shortcuts"]["wiki-ask"].update({"codex_description": "invalid \ud800"}),
+    ),
+    "valid Unicode scalar values",
+)
 
 
 with tempfile.TemporaryDirectory(prefix="wiki-wrapper-duplicate-eval-") as td:
@@ -235,6 +244,52 @@ with tempfile.TemporaryDirectory(prefix="wiki-wrapper-duplicate-eval-") as td:
         detail = "duplicate key unexpectedly passed"
     results.record("duplicate-contract-key-fails", ok, detail)
 
+
+for description in (
+    "Answer questions: show consulted pages",
+    "Keep the # character",
+    "Preserve 'single' and \"double\" quotes",
+    "Use C:\\notes\\source",
+    "Café 日本語",
+    "Search 🔎 and separators \u0085\u2028\u2029 with C1 \u007f\u009f",
+    "Literal escape text \\ud83d\\udd0e",
+    "Escaped controls: \t\r\b\f\x00",
+):
+    with tempfile.TemporaryDirectory(prefix="wiki-wrapper-description-") as td:
+        root = Path(td)
+        build_clean_tree(root)
+        path = root / CONTRACT_PATH
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for field in ("codex_description", "claude_description"):
+            data["shortcuts"]["wiki-ask"][field] = description
+        path.write_text(json.dumps(data), encoding="utf-8")
+        render_all(root, check=False)
+        for relative, expected_fields in (
+            (".agents/skills/wiki-ask/SKILL.md", {"name", "description"}),
+            (".claude/commands/wiki-ask.md", {"description"}),
+        ):
+            frontmatter = (root / relative).read_text(encoding="utf-8").split("---", 2)[1]
+            fields = {}
+            try:
+                fields = dict(line.split(": ", 1) for line in frontmatter.splitlines() if line)
+                decoded = json.loads(fields["description"])
+                unicode_escapes = re.finditer(r'\\(?:u([0-9a-fA-F]{4})|.)', fields["description"])
+                yaml_scalars = all(
+                    match.group(1) is None or not 0xD800 <= int(match.group(1), 16) <= 0xDFFF
+                    for match in unicode_escapes
+                )
+            except (KeyError, ValueError):
+                decoded = None
+                yaml_scalars = False
+            results.record(
+                f"quoted-yaml-description-roundtrip-{relative}-{description!r}",
+                set(fields) == expected_fields and decoded == description and yaml_scalars,
+                repr(frontmatter),
+            )
+        results.record(
+            "quoted-description-parity-and-no-op",
+            not wrapper_parity_problems(root) and render_all(root, check=True) == [],
+        )
 
 live_problems = wrapper_parity_problems(REPO_ROOT)
 results.record("live-surfaces-pass", not live_problems, f"problems={live_problems}")

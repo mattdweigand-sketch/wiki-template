@@ -1,6 +1,6 @@
 ---
 name: wiki-refresh
-description: Run the wiki refresh workflow. Use when the user says wiki-refresh, refresh current-state claims, or asks to review changing facts or messaging and retire superseded wording.
+description: "Run the wiki refresh workflow. Use when the user says wiki-refresh, refresh current-state claims, or asks to review changing facts or messaging and retire superseded wording."
 ---
 
 # Wiki Refresh

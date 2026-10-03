@@ -100,18 +100,40 @@ def atomic_json(path: Path, data: object) -> None:
             pass
 
 
+def _validate_json_unicode(value: object) -> None:
+    """Reject escaped surrogate code points before hashing or diagnostics."""
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("JSON string or object key contains an unpaired Unicode surrogate") from exc
+    elif isinstance(value, dict):
+        for key, member in value.items():
+            _validate_json_unicode(key)
+            _validate_json_unicode(member)
+    elif isinstance(value, list):
+        for member in value:
+            _validate_json_unicode(member)
+
+
 def load_json(path: Path) -> object:
     try:
         if not stat.S_ISREG(path.lstat().st_mode):
             raise EvidenceError(f"cannot parse {path}: artifact is not a regular file")
-        return json.loads(
+        value = json.loads(
             path.read_text(encoding="utf-8"),
             object_pairs_hook=reject_duplicate_json_keys,
         )
+        _validate_json_unicode(value)
+        return value
     except EvidenceError:
         raise
     except (OSError, UnicodeError, ValueError, RecursionError) as exc:
-        raise EvidenceError(f"cannot parse {path}: {exc}") from exc
+        # The duplicate-key hook can fail before decoded strings are checked.
+        # Its exception may contain an escaped JSON surrogate; keep errors
+        # persistable and printable even when the input cannot be encoded.
+        detail = f"cannot parse {path}: {exc}".encode("utf-8", "backslashreplace").decode("utf-8")
+        raise EvidenceError(detail) from exc
 
 
 def _exact_fields(obj: dict[str, object], fields: frozenset[str], label: str) -> list[str]:
@@ -210,7 +232,7 @@ def validate_sample(sample: object) -> list[str]:
     if not isinstance(sample, dict):
         return ["sample must be an object"]
     errors = _exact_fields(sample, SAMPLE_FIELDS, "sample")
-    if sample.get("schema_version") != SCHEMA_VERSION or isinstance(sample.get("schema_version"), bool):
+    if sample.get("schema_version") != SCHEMA_VERSION or type(sample.get("schema_version")) is not int:
         errors.append("sample: schema_version must be integer 1")
     if not isinstance(sample.get("run_id"), str) or not RUN_ID_RE.fullmatch(sample["run_id"]):
         errors.append("sample: invalid run_id")
@@ -281,7 +303,7 @@ def validate_plant(plant: object, sample: dict[str, object]) -> list[str]:
     if not isinstance(plant, dict):
         return ["plant must be an object"]
     errors = _exact_fields(plant, PLANT_FIELDS, "plant")
-    if plant.get("schema_version") != SCHEMA_VERSION or isinstance(plant.get("schema_version"), bool):
+    if plant.get("schema_version") != SCHEMA_VERSION or type(plant.get("schema_version")) is not int:
         errors.append("plant: schema_version must be integer 1")
     if plant.get("plant_id") != "plant-01":
         errors.append("plant: plant_id must be plant-01")
@@ -292,7 +314,8 @@ def validate_plant(plant: object, sample: dict[str, object]) -> list[str]:
         claim.get("claim_id"): claim
         for claim in claims if isinstance(claim, dict)
     } if isinstance(claims, list) else {}
-    source = by_id.get(plant.get("source_claim_id"))
+    source_id = plant.get("source_claim_id")
+    source = by_id.get(source_id) if isinstance(source_id, str) else None
     if source is None:
         errors.append("plant: source_claim_id is not in the sample")
     else:
@@ -310,7 +333,7 @@ def validate_batch(batch: object) -> list[str]:
     if not isinstance(batch, dict):
         return ["batch must be an object"]
     errors = _exact_fields(batch, BATCH_FIELDS, "batch")
-    if batch.get("schema_version") != 1 or isinstance(batch.get("schema_version"), bool):
+    if batch.get("schema_version") != 1 or type(batch.get("schema_version")) is not int:
         errors.append("batch: schema_version must be integer 1")
     if not isinstance(batch.get("run_id"), str) or not RUN_ID_RE.fullmatch(batch["run_id"]):
         errors.append("batch: invalid run_id")
@@ -332,7 +355,7 @@ def validate_batch(batch: object) -> list[str]:
         errors.extend(_exact_fields(item, ITEM_FIELDS, label))
         if not isinstance(item.get("item_id"), str) or not re.fullmatch(r"item-[0-9]{3}", item["item_id"]):
             errors.append(f"{label}: invalid item_id")
-        if item.get("kind") not in {"claim", "plant"}:
+        if not isinstance(item.get("kind"), str) or item["kind"] not in {"claim", "plant"}:
             errors.append(f"{label}: invalid kind")
         if not isinstance(item.get("source_id"), str) or not item["source_id"]:
             errors.append(f"{label}: source_id must be nonempty")
@@ -352,7 +375,7 @@ def validate_verdict_file(data: object) -> list[str]:
     if not isinstance(data, dict):
         return ["verdict file must be an object"]
     errors = _exact_fields(data, VERDICT_FILE_FIELDS, "verdict file")
-    if data.get("schema_version") != 1 or isinstance(data.get("schema_version"), bool):
+    if data.get("schema_version") != 1 or type(data.get("schema_version")) is not int:
         errors.append("verdict file: schema_version must be integer 1")
     if not isinstance(data.get("run_id"), str) or not RUN_ID_RE.fullmatch(data["run_id"]):
         errors.append("verdict file: invalid run_id")
@@ -563,9 +586,11 @@ def build_batches(sample: dict[str, object], plant: dict[str, object], count: in
     if count not in {2, 3}:
         raise EvidenceError("batch count must be 2 or 3")
     sample_errors = validate_sample(sample)
+    if sample_errors:
+        raise EvidenceError("; ".join(sample_errors))
     plant_errors = validate_plant(plant, sample)
-    if sample_errors or plant_errors:
-        raise EvidenceError("; ".join(sample_errors + plant_errors))
+    if plant_errors:
+        raise EvidenceError("; ".join(plant_errors))
     items = batch_items(sample, plant)
     if len(items) < count:
         raise EvidenceError("not enough items for the requested batch count")

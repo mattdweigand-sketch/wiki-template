@@ -12,7 +12,7 @@ from typing import Optional
 from urllib.parse import unquote
 
 from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
-from _wiki_parse import strip_code_spans
+from _wiki_parse import FrontmatterError, markdown_structure_view
 
 MANIFEST_PATH = Path("scripts/document-reachability.json")
 MANIFEST_FIELDS = {
@@ -28,17 +28,12 @@ MARKDOWN_HEADING_RE = re.compile(r"^ {0,3}#{1,6}\s+(.*?)\s*#*\s*$")
 
 
 def _markdown_fragments(path: Path) -> set[str]:
-    """ATX heading IDs, excluding fences and retaining inline-code text."""
+    """Visible ATX heading IDs, retaining inline-code text in real headings."""
     fragments: set[str] = set()
-    fence = ""
-    for line in path.read_text(encoding="utf-8").splitlines():
-        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
-        if fence:
-            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not marker[2].strip():
-                fence = ""
-            continue
-        if marker:
-            fence = marker[1]
+    text = path.read_text(encoding="utf-8")
+    visible_lines = markdown_structure_view(text).splitlines()
+    for line, visible in zip(text.splitlines(), visible_lines):
+        if not MARKDOWN_HEADING_RE.match(visible):
             continue
         heading = MARKDOWN_HEADING_RE.match(line)
         if not heading:
@@ -140,10 +135,11 @@ def _linked_markdown_paths(repo_root: Path, source: Path) -> tuple[list[str], li
     problems: list[str] = []
     try:
         text = source.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
+        visible = markdown_structure_view(text)
+    except (OSError, UnicodeDecodeError, FrontmatterError) as exc:
         return [], [f"cannot read routed document {source.relative_to(repo_root)}: {exc}"]
-    for match in MARKDOWN_LINK_RE.finditer(strip_code_spans(text)):
-        raw = match.group(1).strip()
+    for match in MARKDOWN_LINK_RE.finditer(visible):
+        raw = text[match.start(1):match.end(1)].strip()
         target = raw.split()[0].strip("<>") if raw else ""
         if not target or target.startswith(("http://", "https://", "mailto:")):
             continue
@@ -169,7 +165,7 @@ def _linked_markdown_paths(repo_root: Path, source: Path) -> tuple[list[str], li
             try:
                 if unquote(fragment) not in _markdown_fragments(candidate):
                     problems.append(f"missing local Markdown fragment: {source.relative_to(repo_root).as_posix()} -> {target} (target {relative}, fragment {unquote(fragment)})")
-            except (OSError, UnicodeDecodeError) as exc:
+            except (OSError, UnicodeDecodeError, FrontmatterError) as exc:
                 problems.append(f"cannot read local Markdown target for fragment validation: {relative}: {exc}")
         linked.append(relative)
     return linked, problems

@@ -169,4 +169,142 @@ with stable_lock(Path(sys.argv[1])):
         f"ready={ready!r} blocked={blocked} stdout={stdout!r} stderr={stderr!r}",
     )
 
+
+# These faults replace an ancestor after its handle has been opened. The
+# replacement tree must never receive a write, including missing targets.
+for event, missing in (("before_replace", False), ("before_replace", True),
+                       ("before_reopen", False), ("after_verify", False)):
+    with tempfile.TemporaryDirectory(prefix="wiki-durable-namespace-") as td:
+        root = Path(td) / "repo"
+        outside = Path(td) / "outside"
+        (root / "wiki/concepts").mkdir(parents=True)
+        (outside / "concepts").mkdir(parents=True)
+        target = root / "wiki/concepts/a.md"
+        external = outside / "concepts/a.md"
+        if not missing:
+            target.write_bytes(b"old")
+            external.write_bytes(b"unrelated")
+
+        def substitute(current):
+            if current == event:
+                (root / "wiki").rename(root / "original-wiki")
+                (root / "wiki").symlink_to(outside, target_is_directory=True)
+
+        try:
+            with durable.directory_scope(root):
+                durable.atomic_replace_bytes(target, b"new", fault=substitute)
+        except durable.DurableFileError:
+            blocked = True
+        else:
+            blocked = False
+        original_parent = root / "original-wiki/concepts"
+        results.record(
+            f"namespace-{event}-{'absent' if missing else 'existing'}-preserves-outside",
+            blocked
+            and (not external.exists() if missing else external.read_bytes() == b"unrelated")
+            and not list(original_parent.glob(".a.md.*")),
+        )
+
+with tempfile.TemporaryDirectory(prefix="wiki-durable-read-namespace-") as td:
+    root = Path(td)
+    (root / "data/deep").mkdir(parents=True)
+    (root / "outside/deep").mkdir(parents=True)
+    target = root / "data/deep/a.txt"
+    target.write_bytes(b"trusted")
+    (root / "outside/deep/a.txt").write_bytes(b"unrelated")
+    real_read = os.read
+    switched = False
+
+    def swap_during_read(fd, size):
+        global switched
+        content = real_read(fd, size)
+        if not switched:
+            switched = True
+            (root / "data").rename(root / "saved-data")
+            (root / "data").symlink_to(root / "outside", target_is_directory=True)
+        return content
+
+    os.read = swap_during_read
+    try:
+        try:
+            with durable.directory_scope(root):
+                durable.read_regular_bytes(target)
+        except durable.DurableFileError:
+            read_blocked = True
+        else:
+            read_blocked = False
+    finally:
+        os.read = real_read
+    results.record("read-rejects-mid-read-ancestor-substitution", switched and read_blocked)
+
+with tempfile.TemporaryDirectory(prefix="wiki-durable-capabilities-") as td:
+    target = Path(td) / "new"
+    capabilities = os.supports_dir_fd
+    os.supports_dir_fd = capabilities - {os.open}
+    try:
+        try:
+            durable.atomic_replace_bytes(target, b"new")
+        except durable.DurableFileError as exc:
+            rejected = "unavailable" in str(exc)
+        else:
+            rejected = False
+    finally:
+        os.supports_dir_fd = capabilities
+    results.record("unsupported-dirfd-fails-before-mutation", rejected and not list(Path(td).iterdir()))
+
+# Real first-creation contention exercises the shared sidecar inode, rather
+# than starting with a precreated lock that avoids the creation race.
+with tempfile.TemporaryDirectory(prefix="wiki-durable-first-lock-") as td:
+    lock = Path(td) / ".first.lock"
+    child_code = """
+import sys
+from pathlib import Path
+from _durable_files import stable_lock
+with stable_lock(Path(sys.argv[1])):
+    print('LOCKED', flush=True)
+"""
+    children = [subprocess.Popen(
+        [sys.executable, "-c", child_code, str(lock)],
+        cwd=REPO_ROOT / "scripts", text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ) for _ in range(4)]
+    outputs = [child.communicate(timeout=10) for child in children]
+    results.record(
+        "concurrent-first-lock-creation-succeeds",
+        all(child.returncode == 0 and output[0].strip() == "LOCKED"
+            for child, output in zip(children, outputs)),
+        repr(outputs),
+    )
+
+with tempfile.TemporaryDirectory(prefix="wiki-durable-fifo-swap-") as td:
+    child_code = """
+import os, sys
+from pathlib import Path
+import _durable_files as durable
+target = Path(sys.argv[1]) / 'target'
+target.write_bytes(b'old')
+original = durable._regular_at
+swapped = False
+def swap_after_stat(fd, name, path, **kwargs):
+    global swapped
+    result = original(fd, name, path, **kwargs)
+    if not swapped and path == target:
+        swapped = True
+        os.unlink(name, dir_fd=fd)
+        os.mkfifo(target)
+    return result
+durable._regular_at = swap_after_stat
+try:
+    durable.read_regular_bytes(target)
+except durable.DurableFileError:
+    print('REJECTED')
+"""
+    try:
+        child = subprocess.run([sys.executable, "-c", child_code, td], cwd=REPO_ROOT / "scripts",
+                               text=True, capture_output=True, timeout=5)
+        rejected = child.returncode == 0 and child.stdout.strip() == "REJECTED"
+        detail = child.stderr
+    except subprocess.TimeoutExpired:
+        rejected, detail = False, "read blocked on substituted FIFO"
+    results.record("regular-file-swapped-to-fifo-does-not-block", rejected, detail)
+
 sys.exit(results.finish())

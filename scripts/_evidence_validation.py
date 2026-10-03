@@ -19,12 +19,16 @@ from _evidence_fidelity import (
     validate_verdict_file,
 )
 
-def _load_collect(path: Path, label: str, errors: list[str]) -> object | None:
+def _load_collect(path: Path, label: str, errors: list[str]) -> dict[str, object] | None:
     try:
-        return load_json(path)
+        value = load_json(path)
     except EvidenceError as exc:
         errors.append(f"{label}: {exc}")
         return None
+    if not isinstance(value, dict):
+        errors.append(f"{label}: must be a JSON object")
+        return None
+    return value
 
 
 def _safe_file(
@@ -182,11 +186,17 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
     if sample is not None:
         sample_errors = validate_sample(sample)
         errors.extend(sample_errors)
-        if sample.get("run_id") != run_id:
+        if sample_errors:
+            sample = None
+        elif sample.get("run_id") != run_id:
             errors.append("sample: run_id does not match run directory")
     if plant is not None and sample is not None:
         plant_errors = validate_plant(plant, sample)
         errors.extend(plant_errors)
+        if plant_errors:
+            plant = None
+    elif sample is None:
+        plant = None  # The plant's identity depends on a valid sample.
 
     batch_dir = run_dir / "batches"
     prompt_dir = run_dir / "prompts"
@@ -213,6 +223,8 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
             continue
         batch_errors = validate_batch(batch)
         errors.extend(f"{path.name}: {error}" for error in batch_errors)
+        if batch_errors:
+            continue
         expected_id = path.stem
         if batch.get("batch_id") != expected_id:
             errors.append(f"{path.name}: batch_id does not match filename")
@@ -267,6 +279,11 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
     assigned_ids = Counter(item.get("item_id") for item in all_items)
     if any(count != 1 for count in assigned_ids.values()):
         errors.append(f"batches: duplicate item IDs {dict(assigned_ids)}")
+    metrics_available = sample is not None and plant is not None and not errors
+    assigned_by_batch = {
+        batch["batch_id"]: Counter(item["item_id"] for item in batch["items"])
+        for batch in batches
+    }
     returned_ids: Counter = Counter()
     plant_verdict: str | None = None
     real_verdicts: list[str] = []
@@ -281,30 +298,38 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
         if extra:
             errors.append(f"verdicts: unknown files {sorted(extra)}")
     item_by_id = {item.get("item_id"): item for item in all_items}
-    assigned_by_batch = {
-        batch.get("batch_id"): {
-            item.get("item_id") for item in batch.get("items", [])
-            if isinstance(item, dict) and isinstance(item.get("item_id"), str)
-        }
-        for batch in batches
-        if isinstance(batch.get("batch_id"), str) and isinstance(batch.get("items"), list)
-    }
     evidence_errors: list[str] = []
     for path in verdict_paths:
         data = _load_collect(path, path.name, errors)
         if data is None:
+            metrics_available = False
             continue
-        errors.extend(f"{path.name}: {error}" for error in validate_verdict_file(data))
+        verdict_errors = validate_verdict_file(data)
+        errors.extend(f"{path.name}: {error}" for error in verdict_errors)
+        if verdict_errors:
+            metrics_available = False
+            continue
         if data.get("batch_id") != path.stem:
             errors.append(f"{path.name}: batch_id does not match filename")
+            metrics_available = False
         if sample is not None and data.get("run_id") != sample.get("run_id"):
             errors.append(f"{path.name}: run_id does not match sample")
+            metrics_available = False
+        batch_assignment = assigned_by_batch.get(path.stem)
+        if batch_assignment is not None:
+            batch_returned = Counter(verdict["item_id"] for verdict in data["verdicts"])
+            membership_errors = counter_differences(
+                batch_assignment,
+                batch_returned,
+                f"{path.name}: assigned verdict item IDs",
+            )
+            errors.extend(membership_errors)
+            if batch_returned - batch_assignment:
+                metrics_available = False
         for verdict in data.get("verdicts", []) if isinstance(data.get("verdicts"), list) else []:
             if not isinstance(verdict, dict):
                 continue
             item_id = verdict.get("item_id")
-            if isinstance(item_id, str) and item_id not in assigned_by_batch.get(path.stem, set()):
-                errors.append(f"{path.name}: item {item_id} is outside its assigned batch")
             returned_ids[item_id] += 1
             item = item_by_id.get(item_id)
             if item and not sample_errors and not plant_errors and sample and plant:
@@ -335,13 +360,15 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
     errors.extend(stale_errors)
     stale = bool(stale_errors)
     structure = "VALID" if not structural_errors else "INVALID"
+    # CURRENT only means no independently detected drift. Invalid structure
+    # never establishes freshness or permits a reviewed response.
     snapshot = "STALE" if stale else "CURRENT"
     review = (
         "INCOMPLETE" if structure == "INVALID"
         else "FLAGGED" if flagged_ids
         else "CLEAR"
     )
-    status = "STALE SNAPSHOT" if stale else ("PASSED" if structure == "VALID" else "FAILED")
+    status = "FAILED" if structure == "INVALID" else ("STALE SNAPSHOT" if stale else "PASSED")
     missing_count = sum(
         1 for item in all_items
         if item.get("kind") == "claim" and returned_ids[item.get("item_id")] != 1
@@ -354,7 +381,7 @@ def validate_run(repo_root: Path, run_dir: Path) -> dict[str, object]:
         "flagged": sum(verdict != "VERIFIED" for verdict in real_verdicts),
         "missing": missing_count,
         "plant_verdict": plant_verdict or "MISSING",
-    }
+    } if metrics_available else None
     return {
         "schema_version": 1,
         "run_id": run_id,

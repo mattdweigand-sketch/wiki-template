@@ -13,10 +13,18 @@ import os
 import stat
 import uuid
 from pathlib import Path
+from functools import wraps
 from typing import Callable, Iterable
 
 from _durable_files import (
     DurableFileError,
+    anchored_iterdir,
+    anchored_lstat,
+    anchored_mkdir,
+    anchored_replace_directory,
+    anchored_rmdir,
+    directory_scope,
+    classify_entry,
     atomic_replace_bytes,
     durable_unlink,
     fsync_directory,
@@ -40,6 +48,20 @@ from _transaction_contract import (
 
 
 FaultHook = Callable[[str], None]
+
+
+def _anchored_operation(function):
+    """Keep one descriptor scope for the complete transaction/recovery call."""
+    @wraps(function)
+    def invoke(repo_root: Path, *args, **kwargs):
+        try:
+            with directory_scope(repo_root):
+                return function(repo_root, *args, **kwargs)
+        except DurableFileError as exc:
+            if function.__name__ == "transaction_status":
+                return False, [str(exc)]
+            raise TransactionCorrupt(str(exc)) from exc
+    return invoke
 
 
 def _write_journal(tx_dir: Path, journal: dict[str, object], *, expected: str | None, fault: FaultHook | None) -> None:
@@ -88,7 +110,7 @@ def _target_state(repo_root: Path, target: dict[str, object]) -> str:
     except TransactionError:
         return "unsafe"
     try:
-        info = path.lstat()
+        info = anchored_lstat(path)
     except FileNotFoundError:
         if target.get("output_state", "regular") == "absent":
             return "output"
@@ -160,20 +182,20 @@ def _blob_bytes(tx_dir: Path, relative: str, expected_sha: str) -> bytes:
 
 def _validate_authority_transaction(repo_root: Path, tx_dir: Path, journal: dict[str, object]) -> None:
     transaction_contract.require_transaction_directory(tx_dir)
-    present_entries = {path.name for path in tx_dir.iterdir()}
+    present_entries = {path.name for path in anchored_iterdir(tx_dir)}
     unknown_entries = present_entries - {"journal.json", "blobs"}
     if unknown_entries:
         raise TransactionCorrupt(f"unknown transaction entries: {sorted(unknown_entries)}")
     if journal["repo_root"] != str(repo_root.resolve()):
         raise TransactionCorrupt("journal repository root identity mismatch")
-    if journal["repo_device"] != repo_root.stat().st_dev:
+    if journal["repo_device"] != anchored_lstat(repo_root).st_dev:
         raise TransactionCorrupt("journal repository device identity mismatch")
     for governed in [*journal["targets"], *journal["guards"]]:
         try:
             path = validate_target_path(repo_root, governed["path"], journal["allowed_prefixes"])
         except TransactionError as exc:
             raise TransactionCorrupt(str(exc)) from exc
-        if path.parent.stat().st_dev != journal["repo_device"]:
+        if anchored_lstat(path.parent).st_dev != journal["repo_device"]:
             raise TransactionCorrupt(f"governed path is on a different device: {governed['path']}")
     expected_blobs = {
         target[key]
@@ -183,7 +205,7 @@ def _validate_authority_transaction(repo_root: Path, tx_dir: Path, journal: dict
     }
     if "blobs" in present_entries:
         transaction_contract.require_transaction_directory(tx_dir / "blobs")
-        present_blobs = {f"blobs/{path.name}" for path in (tx_dir / "blobs").iterdir()}
+        present_blobs = {f"blobs/{path.name}" for path in anchored_iterdir(tx_dir / "blobs")}
         unexpected_blobs = present_blobs - expected_blobs
         if unexpected_blobs:
             raise TransactionCorrupt(f"unknown transaction blobs: {sorted(unexpected_blobs)}")
@@ -254,7 +276,7 @@ def _remove_cleanup_tombstone(
     if transaction_id is None:
         raise TransactionCorrupt(f"invalid cleanup tombstone name: {tombstone.name}")
     transaction_contract.require_transaction_directory(tombstone)
-    entries = {path.name for path in tombstone.iterdir()}
+    entries = {path.name for path in anchored_iterdir(tombstone)}
     journal_temps = {name for name in entries if name.startswith(".journal.json.")}
     extras = entries - {"journal.json", "blobs"} - journal_temps
     if extras:
@@ -288,7 +310,7 @@ def _remove_cleanup_tombstone(
                     expected[Path(target["pre_blob"]).name] = target["pre_sha256"]
                 if target["output_blob"] is not None:
                     expected[Path(target["output_blob"]).name] = target["output_sha256"]
-        for path in sorted(blobs.iterdir(), key=lambda item: item.name):
+        for path in sorted(anchored_iterdir(blobs), key=lambda item: item.name):
             transaction_contract.require_transaction_file(path, mode=0o600)
             is_temp = _valid_blob_temp_name(path.name)
             if not _valid_blob_name(path.name) and not is_temp:
@@ -310,12 +332,12 @@ def _remove_cleanup_tombstone(
             durable_unlink(path, expected_sha256=digest)
             _fault(fault, f"after_cleanup_blob:{index}")
         _fault(fault, "before_cleanup_blobs_rmdir")
-        blobs.rmdir()
+        anchored_rmdir(blobs)
         fsync_directory(tombstone)
         _fault(fault, "after_cleanup_blobs_rmdir")
 
     journal_path = tombstone / "journal.json"
-    if journal_path.exists():
+    if classify_entry(journal_path) != "missing":
         content, _ = read_regular_bytes(journal_path)
         assert content is not None
         _fault(fault, "before_cleanup_journal")
@@ -325,10 +347,10 @@ def _remove_cleanup_tombstone(
     for path, digest in journal_temp_records:
         durable_unlink(path, expected_sha256=digest)
 
-    if any(tombstone.iterdir()):
+    if any(anchored_iterdir(tombstone)):
         raise TransactionCorrupt(f"cleanup tombstone is not empty: {tombstone.name}")
     _fault(fault, "before_cleanup_rmdir")
-    tombstone.rmdir()
+    anchored_rmdir(tombstone)
     fsync_directory(tombstone.parent)
     _fault(fault, "after_cleanup_rmdir")
 
@@ -340,10 +362,10 @@ def _begin_cleanup(tx_dir: Path, fault: FaultHook | None = None) -> None:
     except ValueError as exc:
         raise TransactionCorrupt(f"invalid transaction directory name: {tx_dir.name}") from exc
     tombstone = tx_dir.with_name(f"{CLEANUP_PREFIX}{tx_dir.name}")
-    if tombstone.exists():
+    if classify_entry(tombstone) != "missing":
         raise TransactionCorrupt(f"cleanup tombstone already exists: {tombstone.name}")
     _fault(fault, "before_cleanup_rename")
-    os.replace(tx_dir, tombstone)
+    anchored_replace_directory(tx_dir, tombstone)
     fsync_directory(tombstone.parent)
     _fault(fault, "after_cleanup_rename")
     _remove_cleanup_tombstone(tombstone, fault)
@@ -356,9 +378,9 @@ def _abandon_preparation(preparing: Path) -> None:
     repo_root = preparing.parent.parent
     _validate_preparation(repo_root, preparing)
     tombstone = preparing.with_name(f"{CLEANUP_PREFIX}{transaction_id}")
-    if tombstone.exists():
+    if classify_entry(tombstone) != "missing":
         raise TransactionCorrupt(f"cleanup tombstone already exists: {tombstone.name}")
-    os.replace(preparing, tombstone)
+    anchored_replace_directory(preparing, tombstone)
     fsync_directory(tombstone.parent)
     _remove_cleanup_tombstone(tombstone)
 
@@ -368,7 +390,7 @@ def _validate_preparation(repo_root: Path, preparing: Path) -> None:
     if transaction_id is None:
         raise TransactionCorrupt(f"invalid preparing directory name: {preparing.name}")
     transaction_contract.require_transaction_directory(preparing)
-    entries = {path.name for path in preparing.iterdir()}
+    entries = {path.name for path in anchored_iterdir(preparing)}
     journal_temps = {name for name in entries if name.startswith(".journal.json.")}
     extras = entries - {"journal.json", "blobs"} - journal_temps
     if extras:
@@ -379,7 +401,7 @@ def _validate_preparation(repo_root: Path, preparing: Path) -> None:
     present_blobs: dict[str, bytes] = {}
     if "blobs" in entries:
         transaction_contract.require_transaction_directory(blobs)
-        for path in blobs.iterdir():
+        for path in anchored_iterdir(blobs):
             transaction_contract.require_transaction_file(path, mode=0o600)
             if not (_valid_blob_name(path.name) or _valid_blob_temp_name(path.name)):
                 raise TransactionCorrupt(f"unknown preparation blob: {path.name}")
@@ -400,7 +422,7 @@ def _validate_preparation(repo_root: Path, preparing: Path) -> None:
         raise TransactionCorrupt(f"published state remained under preparation name: {journal['state']}")
     if journal["repo_root"] != str(repo_root.resolve()):
         raise TransactionCorrupt("preparation repository root identity mismatch")
-    if journal["repo_device"] != repo_root.stat().st_dev:
+    if journal["repo_device"] != anchored_lstat(repo_root).st_dev:
         raise TransactionCorrupt("preparation repository device identity mismatch")
     expected = {
         target[key]: target["pre_sha256"] if key == "pre_blob" else target["output_sha256"]
@@ -417,7 +439,7 @@ def _validate_preparation(repo_root: Path, preparing: Path) -> None:
         raise TransactionCorrupt("PREPARED transaction is missing blobs")
     for governed in [*journal["targets"], *journal["guards"]]:
         path = validate_target_path(repo_root, governed["path"], journal["allowed_prefixes"])
-        if path.parent.stat().st_dev != journal["repo_device"]:
+        if anchored_lstat(path.parent).st_dev != journal["repo_device"]:
             raise TransactionCorrupt(f"governed path is on a different device: {governed['path']}")
 
 
@@ -534,6 +556,7 @@ def _finish_forward(repo_root: Path, tx_dir: Path, journal: dict[str, object]) -
     _safe_cleanup(tx_dir)
 
 
+@_anchored_operation
 def recover_transaction(repo_root: Path, tx_dir: Path) -> str:
     journal = transaction_contract.load_transaction_journal(tx_dir)
     _validate_authority_transaction(repo_root, tx_dir, journal)
@@ -573,7 +596,7 @@ def _transaction_dirs(authority: Path) -> tuple[list[Path], list[Path], list[Pat
     entries: list[Path] = []
     cleanup: list[Path] = []
     preparing: list[Path] = []
-    for path in sorted(authority.iterdir(), key=lambda item: item.name):
+    for path in sorted(anchored_iterdir(authority), key=lambda item: item.name):
         if path.name == ".lock":
             transaction_contract.require_transaction_file(path, mode=0o600)
             continue
@@ -598,6 +621,7 @@ def _transaction_dirs(authority: Path) -> tuple[list[Path], list[Path], list[Pat
     return entries, cleanup, preparing
 
 
+@_anchored_operation
 def recover_all_locked(repo_root: Path, authority: Path) -> list[str]:
     messages: list[str] = []
     tx_dirs, cleanup, preparing = _transaction_dirs(authority)
@@ -612,11 +636,12 @@ def recover_all_locked(repo_root: Path, authority: Path) -> list[str]:
     return messages
 
 
+@_anchored_operation
 def transaction_status(repo_root: Path) -> tuple[bool, list[str]]:
     """Read-only clean-state check. It never creates the authority root."""
     authority = transaction_contract.transaction_authority_root(repo_root)
     try:
-        info = authority.lstat()
+        info = anchored_lstat(authority)
     except FileNotFoundError:
         return True, []
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
@@ -676,10 +701,11 @@ def transaction_status(repo_root: Path) -> tuple[bool, list[str]]:
     return not reports, reports
 
 
+@_anchored_operation
 def recover_all(repo_root: Path) -> list[str]:
     authority = transaction_contract.transaction_authority_root(repo_root)
     try:
-        authority.lstat()
+        anchored_lstat(authority)
     except FileNotFoundError:
         return []
     authority = transaction_contract.ensure_transaction_authority(repo_root)
@@ -703,11 +729,11 @@ def _prepare_targets(
     if output_modes is not None and set(output_modes) != set(outputs):
         raise TransactionError("output_modes keys must exactly match outputs")
     targets: list[dict[str, object]] = []
-    repo_device = repo_root.stat().st_dev
+    repo_device = anchored_lstat(repo_root).st_dev
     for index, relative in enumerate(sorted(outputs)):
         output = outputs[relative]
         path = validate_target_path(repo_root, relative, allowed_prefixes)
-        if path.parent.stat().st_dev != repo_device:
+        if anchored_lstat(path.parent).st_dev != repo_device:
             raise TransactionError(f"target is on a different device: {relative}")
         try:
             preimage, info = read_regular_bytes(path, allow_missing=True)
@@ -758,7 +784,7 @@ def _prepare_guards(
     if guard_preimages is None:
         return []
     guards: list[dict[str, object]] = []
-    repo_device = repo_root.stat().st_dev
+    repo_device = anchored_lstat(repo_root).st_dev
     for relative in sorted(guard_preimages):
         expected = guard_preimages[relative]
         if not isinstance(expected, bytes):
@@ -766,7 +792,7 @@ def _prepare_guards(
         if relative in target_paths:
             raise TransactionError(f"governed path cannot be both target and guard: {relative}")
         path = validate_target_path(repo_root, relative, allowed_prefixes)
-        if path.parent.stat().st_dev != repo_device:
+        if anchored_lstat(path.parent).st_dev != repo_device:
             raise TransactionError(f"guard is on a different device: {relative}")
         try:
             content, info = read_regular_bytes(path)
@@ -784,6 +810,7 @@ def _prepare_guards(
     return guards
 
 
+@_anchored_operation
 def run_transaction(
     repo_root: Path,
     *,
@@ -831,9 +858,9 @@ def run_transaction(
         _fault(fault, "before_journal:PREPARING")
         preparing_dir = authority / f"{PREPARING_PREFIX}{tx_id}"
         tx_dir = authority / tx_id
-        preparing_dir.mkdir(mode=0o700)
+        anchored_mkdir(preparing_dir, mode=0o700)
         blobs = preparing_dir / "blobs"
-        blobs.mkdir(mode=0o700)
+        anchored_mkdir(blobs, mode=0o700)
         fsync_directory(authority)
         created = transaction_contract.transaction_timestamp()
         targets = [
@@ -847,7 +874,7 @@ def run_transaction(
             "created_at": created,
             "updated_at": created,
             "repo_root": str(repo_root),
-            "repo_device": repo_root.stat().st_dev,
+            "repo_device": anchored_lstat(repo_root).st_dev,
             "state": "PREPARING",
             "generation": 0,
             "allowed_prefixes": list(prefixes),
@@ -885,7 +912,7 @@ def run_transaction(
                 _fault(fault, f"after_blob:output:{index}")
             _transition(preparing_dir, journal, "PREPARED", fault)
             _fault(fault, "before_prepared_publish")
-            os.replace(preparing_dir, tx_dir)
+            anchored_replace_directory(preparing_dir, tx_dir)
             fsync_directory(authority)
             _fault(fault, "after_prepared_publish")
             _require_guards(repo_root, tx_dir, journal)
@@ -949,6 +976,7 @@ def run_transaction(
             raise
 
 
+@_anchored_operation
 def diagnose_transaction(repo_root: Path, transaction_id: str) -> dict[str, object]:
     try:
         uuid.UUID(transaction_id)
@@ -963,7 +991,7 @@ def diagnose_transaction(repo_root: Path, transaction_id: str) -> dict[str, obje
     present: list[Path] = []
     for candidate in candidates:
         try:
-            candidate.lstat()
+            anchored_lstat(candidate)
         except FileNotFoundError:
             continue
         present.append(candidate)
@@ -975,7 +1003,7 @@ def diagnose_transaction(repo_root: Path, transaction_id: str) -> dict[str, obje
     transaction_contract.require_transaction_directory(tx_dir)
     journal_path = tx_dir / "journal.json"
     try:
-        journal_path.lstat()
+        anchored_lstat(journal_path)
     except FileNotFoundError:
         return {
             "transaction_id": transaction_id,

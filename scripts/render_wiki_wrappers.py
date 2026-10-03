@@ -128,6 +128,9 @@ def load_contract(repo_root: Path = REPO_ROOT, contract_path: Path = CONTRACT_PA
             problems.append(f"{label}: claude_description must be one nonempty line")
         if not isinstance(codex_description, str) or not codex_description.strip() or "\n" in codex_description:
             problems.append(f"{label}: codex_description must be one nonempty line")
+        for field, value in (("claude_description", claude_description), ("codex_description", codex_description)):
+            if isinstance(value, str) and any(0xD800 <= ord(character) <= 0xDFFF for character in value):
+                problems.append(f"{label}: {field} must contain valid Unicode scalar values")
         authorization = record.get("authorization")
         if authorization not in AUTHORIZATIONS:
             problems.append(f"{label}: unknown authorization {authorization!r}")
@@ -166,10 +169,21 @@ def _authorization_line(value: str) -> str:
     return ""
 
 
+def _yaml_description(value: str) -> str:
+    """JSON-compatible quoted YAML, without invalid UTF-16 surrogate escapes."""
+    # JSON escapes safely handle punctuation and BMP controls/separators.
+    # YAML requires non-BMP Unicode scalars literally (or as \U escapes),
+    # rather than the paired \u surrogate escapes emitted by JSON's default.
+    return '"' + "".join(
+        character if ord(character) > 0xFFFF else json.dumps(character)[1:-1]
+        for character in value
+    ) + '"'
+
+
 def render_claude(shortcut: Shortcut) -> bytes:
     pieces = [
         "---\n",
-        f"description: {shortcut.claude_description}\n",
+        f"description: {_yaml_description(shortcut.claude_description)}\n",
         "---\n\n",
         f"Run `{shortcut.name}` through the canonical wiki workflow. ",
         _route_sentence(shortcut.workflow_refs),
@@ -188,7 +202,7 @@ def render_codex(shortcut: Shortcut) -> bytes:
     pieces = [
         "---\n",
         f"name: {shortcut.name}\n",
-        f"description: {shortcut.codex_description}\n",
+        f"description: {_yaml_description(shortcut.codex_description)}\n",
         "---\n\n",
         f"# {_title(shortcut.name)}\n\n",
         f"Run `{shortcut.name}` through the canonical wiki workflow for this repo. ",

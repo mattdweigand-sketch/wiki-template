@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -225,13 +226,29 @@ def validate_evidence_run(repo_root: Path, run_dir: Path) -> EvidenceRunValidati
 
 def persist_evidence_validation(repo_root: Path, run_dir: Path) -> EvidenceRunValidation:
     """Record an explicit validation result while keeping reader calls pure."""
-    root = repo_root.resolve()
-    resolved_run = safe_run_dir(root, run_dir.as_posix())
-    validation = validate_evidence_run(root, run_dir)
-    atomic_json(resolved_run / "validation.json", {
-        "schema_version": 1,
-        **asdict(validation),
-    })
+    try:
+        root = repo_root.resolve()
+        resolved_run = safe_run_dir(root, run_dir.as_posix())
+        validation = validate_evidence_run(root, run_dir)
+    except (EvidenceRunError, OSError) as exc:
+        raise EvidenceRunError(f"validation result was not updated: {exc}") from exc
+    validation_path = resolved_run / "validation.json"
+    try:
+        try:
+            mode = validation_path.lstat().st_mode
+        except FileNotFoundError:
+            pass
+        else:
+            if not stat.S_ISREG(mode):
+                raise EvidenceRunError(
+                    "validation result was not updated: validation.json is not a regular file"
+                )
+        atomic_json(validation_path, {
+            "schema_version": 1,
+            **asdict(validation),
+        })
+    except OSError as exc:
+        raise EvidenceRunError(f"validation result was not updated: {exc}") from exc
     return validation
 
 

@@ -255,6 +255,53 @@ def main() -> int:
             manifest[key].remove("wiki/guide.md")
 
     repo_root = Path(__file__).resolve().parents[1]
+    for example in (
+        "```markdown\n[Guide](workflows/guide.md)\n```",
+        "~~~markdown\n[Guide](workflows/guide.md)\n~~~",
+        "`[Guide](workflows/guide.md)`",
+        "<!-- [Guide](workflows/guide.md) -->",
+    ):
+        with tempfile.TemporaryDirectory(prefix="wiki-doc-example-route-") as td:
+            root = Path(td)
+            write_anchor_fixture(root, "workflows/guide.md")
+            (root / "CONTEXT.md").write_text("# Root\n\n" + example + "\n")
+            problems = document_reachability_problems(root)
+            results.record(
+                f"example-only-route-is-orphan-{example!r}",
+                problems == ["unreachable operational document: workflows/guide.md"],
+                repr(problems),
+            )
+            (root / "CONTEXT.md").write_text(
+                "# Root\n\n[Guide](workflows/guide.md)\n\n"
+                + example.replace("workflows/guide.md", "missing.md") + "\n"
+            )
+            results.record(
+                f"missing-example-link-is-not-a-route-{example!r}",
+                document_reachability_problems(root) == [],
+                repr(document_reachability_problems(root)),
+            )
+    with tempfile.TemporaryDirectory(prefix="wiki-doc-example-heading-") as td:
+        root = Path(td)
+        write_anchor_fixture(root, "workflows/guide.md#repeat-1")
+        guide = root / "workflows/guide.md"
+        guide.write_text(
+            "# Guide\n\n```markdown\n## Repeat\n## Example\n```\n"
+            "<!--\n## Repeat\n## Comment\n-->\n\n## Repeat\n\n## Repeat\n"
+        )
+        results.record(
+            "example-headings-do-not-change-real-duplicate-numbering",
+            document_reachability_problems(root) == [],
+        )
+        for fragment in ("example", "comment", "repeat-2"):
+            (root / "CONTEXT.md").write_text(
+                f"# Root\n\n[Guide](workflows/guide.md#{fragment})\n"
+            )
+            problems = document_reachability_problems(root)
+            results.record(
+                f"example-only-fragment-is-missing-{fragment}",
+                len(problems) == 1 and "missing local Markdown fragment" in problems[0],
+                repr(problems),
+            )
     transcript_reference = repo_root / "workflows/ingest/transcript-evidence.md"
     ingest_route = (repo_root / "workflows/ingest/CONTEXT.md").read_text(encoding="utf-8")
     results.record(
@@ -262,6 +309,12 @@ def main() -> int:
         transcript_reference.is_file()
         and "[transcript evidence](transcript-evidence.md)" in ingest_route.lower(),
         "the ingest workflow must route the transcript evidence reference",
+    )
+    results.record(
+        "live-ingest-recipe-is-routed",
+        (repo_root / "workflows/ingest/ingest.md").is_file()
+        and "[ingest recipe](ingest.md)" in ingest_route.lower(),
+        "the stable ingest router must load its execution recipe",
     )
     results.record(
         "live-operational-document-graph-passes",

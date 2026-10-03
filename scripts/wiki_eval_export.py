@@ -68,9 +68,9 @@ with tempfile.TemporaryDirectory(prefix="wiki-export-preserve-eval-") as td:
     output = root / "backup.zip"
     output.write_bytes(b"previous verified backup")
     try:
-        with patch.object(zipfile.ZipFile, "write", side_effect=OSError("injected write failure")):
+        with patch.object(export_wiki, "read_regular_bytes", side_effect=OSError("injected write failure")):
             export_wiki.build_zip(root, output, [source])
-    except OSError:
+    except ValueError:
         pass
     results.record(
         "interrupted-backup-keeps-previous-archive",
@@ -1041,5 +1041,202 @@ The configured restore retains exact evidence. (source: [[closure-source]])
             and not list(output.parent.glob(f".{output.name}.*.tmp")),
             repr((rejected.stdout, rejected.stderr)),
         )
+
+with tempfile.TemporaryDirectory(prefix="wiki-export-replacement-") as td:
+    root = Path(td)
+    build_export_fixture(root, REPO_ROOT)
+    output = root / "tmp/wiki-export-2026-10-02.zip"
+    files = export_wiki.export_files(root, output)
+    first = export_wiki.build_zip(root, output, files)
+    previous = output.read_bytes()
+    previous_mode = stat.S_IMODE(output.stat().st_mode)
+    original_close = zipfile.ZipFile.close
+    def fail_archive_finalization(archive):
+        was_writing = archive.mode == "w" and archive.fp is not None
+        original_close(archive)
+        if was_writing:
+            raise OSError("injected archive finalization failure")
+    faults = (
+        ("source-read", patch.object(export_wiki, "read_regular_bytes", side_effect=OSError("source read"))),
+        ("manifest", patch.object(export_wiki, "build_backup_manifest", side_effect=OSError("manifest"))),
+        ("archive-finalization", patch.object(zipfile.ZipFile, "close", fail_archive_finalization)),
+        ("verification", patch.object(export_wiki, "verify_backup_archive", return_value=(None, ["injected verification"]))),
+        ("replacement", patch.object(export_wiki.os, "replace", side_effect=OSError("replacement"))),
+    )
+    for name, failure in faults:
+        try:
+            with failure:
+                export_wiki.build_zip(root, output, files)
+        except ValueError as exc:
+            failed_before_install = "before installation" in str(exc)
+        else:
+            failed_before_install = False
+        results.record(
+            f"replacement-{name}-failure-preserves-valid-archive",
+            failed_before_install and output.read_bytes() == previous
+            and stat.S_IMODE(output.stat().st_mode) == previous_mode
+            and export_wiki.verify_backup_archive(output)[1] == []
+            and not list(output.parent.glob("*.tmp")),
+        )
+    original_manifest = export_wiki.build_backup_manifest
+    def change_destination(*args):
+        output.write_bytes(b"external generation")
+        return original_manifest(*args)
+    try:
+        with patch.object(export_wiki, "build_backup_manifest", side_effect=change_destination):
+            export_wiki.build_zip(root, output, files)
+    except ValueError as exc:
+        conflict = "destination changed" in str(exc)
+    else:
+        conflict = False
+    results.record("export-preserves-intervening-destination-update", conflict and output.read_bytes() == b"external generation")
+    output.write_bytes(previous)
+    original_replace, original_fsync = os.replace, os.fsync
+    installed = [False]
+    def observed_replace(*args, **kwargs):
+        result = original_replace(*args, **kwargs)
+        installed[0] = True
+        return result
+    def fail_installed_directory_sync(fd):
+        if installed[0] and stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise OSError("injected post-install fsync")
+        return original_fsync(fd)
+    try:
+        with patch.object(export_wiki.os, "replace", side_effect=observed_replace), patch.object(export_wiki.os, "fsync", side_effect=fail_installed_directory_sync):
+            export_wiki.build_zip(root, output, files)
+    except ValueError as exc:
+        reported_installed = "after installation" in str(exc) and "unconfirmed" in str(exc)
+    else:
+        reported_installed = False
+    results.record("export-reports-post-install-durability-failure", reported_installed and not export_wiki.verify_backup_archive(output)[1])
+    output.write_bytes(b"replacement before upload")
+    with patch.object(export_wiki, "run_rclone") as upload:
+        proof, errors = export_wiki.upload_rclone(output, "test:backup", installed_proof=first)
+    results.record("upload-refuses-replaced-installed-generation", proof is None and not upload.called and any("since verified installation" in e for e in errors))
+
+    real_verify = export_wiki.verify_backup_archive
+    for verdict in (True, False):
+        output.write_bytes(previous)
+        replaced_path = []
+        def substitute_candidate(*args):
+            answer = real_verify(*args)
+            candidate = next(output.parent.glob("*.tmp"))
+            candidate.unlink()
+            candidate.write_bytes(b"third-party replacement")
+            replaced_path.append(candidate)
+            return answer if verdict else (None, ["injected failure"])
+        try:
+            with patch.object(export_wiki, "verify_backup_archive", side_effect=substitute_candidate):
+                export_wiki.build_zip(root, output, files)
+        except ValueError:
+            refused = True
+        else:
+            refused = False
+        results.record(
+            f"candidate-substitution-{verdict}-preserves-destination-and-third-party",
+            refused and output.read_bytes() == previous and len(replaced_path) == 1
+            and replaced_path[0].read_bytes() == b"third-party replacement",
+        )
+        replaced_path[0].unlink()
+    def mutate_candidate_after_verification(*args):
+        answer = real_verify(*args)
+        next(output.parent.glob("*.tmp")).write_bytes(b"changed in place")
+        return answer
+    try:
+        with patch.object(export_wiki, "verify_backup_archive", side_effect=mutate_candidate_after_verification):
+            export_wiki.build_zip(root, output, files)
+    except ValueError as exc:
+        detected = "bytes changed" in str(exc)
+    else:
+        detected = False
+    results.record("candidate-inplace-edit-cannot-reset-verified-identity", detected and output.read_bytes() == previous)
+
+with tempfile.TemporaryDirectory(prefix="wiki-export-concurrent-") as td:
+    root = Path(td)
+    build_export_fixture(root, REPO_ROOT)
+    command = [sys.executable, str(EXPORT), "--repo-root", str(root), "--date", "2026-10-02"]
+    children = [subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(2)]
+    reports = [child.communicate(timeout=30) for child in children]
+    output = root / "tmp/wiki-export-2026-10-02.zip"
+    results.record("concurrent-export-publishers-serialize", all(child.returncode == 0 for child in children) and not export_wiki.verify_backup_archive(output)[1], repr(reports))
+
+with tempfile.TemporaryDirectory(prefix="wiki-export-output-parent-") as td:
+    root = Path(td) / "repo"
+    root.mkdir()
+    build_export_fixture(root, REPO_ROOT)
+    (root / "tmp").mkdir()
+    outside = Path(td) / "outside"
+    outside.mkdir()
+    (root / "tmp/link").symlink_to(outside, target_is_directory=True)
+    output = root / "tmp/link/new/wiki-export-2026-10-02.zip"
+    try:
+        export_wiki.build_zip(root, output, [root / "README.md"])
+    except ValueError:
+        refused = True
+    else:
+        refused = False
+    results.record("linked-output-ancestor-refused-before-directory-creation", refused and not list(outside.iterdir()))
+
+with tempfile.TemporaryDirectory(prefix="wiki-export-complete-inventory-") as td:
+    root = Path(td)
+    build_export_fixture(root, REPO_ROOT)
+    write(root / ".git/config", "local history")
+    write(root / "tmp/scratch.txt", "local scratch")
+    write(root / "deliverables/draft.txt", "private draft")
+    raw_zip = root / "raw/notes/wiki-export-2026-10-02.zip"
+    write(raw_zip, "immutable raw source")
+    write(root / "tmp/.wiki-export-2026-10-02.zip.lock", "")
+    write(root / "tmp/.wiki-export-2026-10-02.zip.0123456789abcdef0123456789abcdef.tmp", "orphan")
+    archive_named_dir = root / "deliverables/wiki-export-2026-10-02.zip"
+    write(archive_named_dir / "valuable.md", "private content")
+    (archive_named_dir / "empty").mkdir()
+    work_named_dir = root / "tmp/.wiki-export-2026-10-02.zip.lock"
+    work_named_dir.unlink()
+    write(work_named_dir / "valuable.md", "private content")
+    names = {path.relative_to(root).as_posix() for path in export_wiki.export_files(root)}
+    directories = {
+        item["path"] for item in export_wiki.build_backup_manifest(root, export_wiki.export_files(root))["directories"]
+    }
+    results.record(
+        "archive-shaped-directories-retain-descendants-and-empty-directories",
+        {"deliverables/wiki-export-2026-10-02.zip/valuable.md", "tmp/.wiki-export-2026-10-02.zip.lock/valuable.md"} <= names
+        and {"deliverables/wiki-export-2026-10-02.zip", "deliverables/wiki-export-2026-10-02.zip/empty", "tmp/.wiki-export-2026-10-02.zip.lock"} <= directories,
+    )
+    results.record(
+        "template-complete-tree-retains-local-state-and-raw-zips",
+        {".git/config", "tmp/scratch.txt", "deliverables/draft.txt", raw_zip.relative_to(root).as_posix()} <= names
+        and not any(export_wiki.EXPORT_WORK_FILE_RE.fullmatch(Path(name).name) for name in names),
+    )
+    for prefix in ("tmp", "deliverables", ".git", "wiki"):
+        link = root / prefix / "broken-link"
+        link.symlink_to(root / "absent")
+        results.record(f"complete-tree-{prefix}-symlink-remains-refused", link in export_wiki.find_symlinks(root))
+        try:
+            export_wiki.export_files(root)
+        except ValueError:
+            refused = True
+        else:
+            refused = False
+        results.record(f"inventory-rejects-{prefix}-link", refused)
+        link.unlink()
+    linked = root / "wiki/hardlink.md"
+    os.link(root / "README.md", linked)
+    try:
+        export_wiki.export_files(root)
+    except ValueError:
+        refused = True
+    else:
+        refused = False
+    results.record("inventory-rejects-included-hardlink", refused)
+    linked.unlink()
+    fifo = root / "wiki/special"
+    os.mkfifo(fifo)
+    try:
+        export_wiki.export_files(root)
+    except ValueError:
+        refused = True
+    else:
+        refused = False
+    results.record("inventory-rejects-special-file", refused)
 
 sys.exit(results.finish())

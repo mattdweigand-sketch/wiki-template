@@ -1,6 +1,6 @@
 ---
 name: wiki-ask
-description: Run the default lightweight wiki question workflow. Use for ordinary questions, comparisons, explanations, and lookups from the wiki unless the user explicitly invokes wiki-research.
+description: "Run the default lightweight wiki question workflow. Use for ordinary questions, comparisons, explanations, and lookups from the wiki unless the user requests claim-level independent verification or invokes wiki-research."
 ---
 
 # Wiki Ask

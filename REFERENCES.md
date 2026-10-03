@@ -41,7 +41,7 @@ Detailed workflow ownership:
 | Clone connection | `workflows/maintenance/connect.md` | Optional, separately approved GitHub remote and private rclone backup connection without storing connection details in tracked context. |
 | Ingest | `workflows/ingest/CONTEXT.md` | Raw source handling, `wiki/sources/` summaries, affected entity-page updates, index rows, backlinks, Tier-1 lint, touched-page Tier-2 review, and ingest log entries. |
 | Ask | `workflows/research/ask.md` | Default bounded wiki answers with selective page loading and optional analysis capture. |
-| Research | `workflows/research/research.md` | Explicitly invoked research with exact-page evidence sampling and claim-level independent review. |
+| Research | `workflows/research/research.md` | Explicitly requested independent verification with exact-page evidence sampling and claim-level review. |
 | Root-document audit | `workflows/maintenance/audit-docs.md` | Drift checks for root operating documents and workflow routers against live files, scripts, registries, and routes. |
 | Capture | `workflows/maintenance/capture.md` | Decision or experience pages with rationale, lessons, affected entities, cross-links, verification, and log entries. |
 | Artifact promotion | `workflows/maintenance/artifact-promotion.md` | Routing useful external or conversational artifacts to a source, active entity type, workflow, script, existing page update, or discard. |
@@ -114,7 +114,7 @@ In durable wiki pages, append `(source: [[source-filename]])` to specific facts.
 | `scripts/capture-runs.jsonl`, `scripts/capture_ledger.py` | Exact application ledger and its strict parser; proposal apply installs the ledger postimage with approved targets through the shared transaction |
 | `scripts/wiki-wrapper-contract.json` | Strict machine authority for the eleven generated Claude and Codex wrappers; render with `scripts/render_wiki_wrappers.py` and check with `scripts/check_wrapper_parity.py` |
 | `scripts/document-reachability.json` | Declares operational document roots, routed directories, exclusions, and intentional standalone documents |
-| `scripts/check_document_reachability.py` | Checks local paths and ATX heading fragments, ignores fenced examples, and rejects unreachable operating documents |
+| `scripts/check_document_reachability.py` | Checks visible local paths and ATX heading fragments, ignores code examples and comments, and rejects unreachable operating documents |
 | `.wiki-transactions/` | Gitignored recovery authority for exact approved capture; use `scripts/wiki_transactions.py status`, `recover`, or `diagnose`, and never delete it to clear a gate |
 | [`scripts/CONTEXT.md`](scripts/CONTEXT.md) | Tooling entry points and links to canonical maintenance contracts |
 | `scripts/fixtures/` | Fixture data for live tooling evals |
@@ -122,6 +122,8 @@ In durable wiki pages, append `(source: [[source-filename]])` to specific facts.
 ## Durable File And Transaction Boundary
 
 `scripts/_durable_files.py` owns stable locks, complete writes, directory synchronization, guarded replacement, and installed-byte checks. Backlink rebuilds and log rotation use these idempotent single-file writes and converge on rerun. `scripts/_transaction_contract.py` owns transaction vocabulary, path confinement, and journal validation. `scripts/_file_transactions.py` applies exact capture generations.
+
+Descriptor-relative operations retain validated directory objects so substituted paths or symlinks cannot redirect I/O into replacement directories. An external process can still move an opened directory. Locks coordinate only writers using the same lock domain; a hash precheck is not an atomic compare-and-swap against arbitrary editors, and a recoverable multi-file transaction does not provide globally atomic visibility.
 
 An absent or verified-clean `.wiki-transactions/` root is safe. Any unpublished preparation, unfinished cleanup, nonterminal transaction, changed guard, conflict, corruption, or unknown state blocks mutation, Tier 1, pre-commit, and export. Recovery follows only the recorded deterministic policy; third-party bytes are preserved as a conflict rather than overwritten.
 
@@ -197,6 +199,8 @@ The helper overlays authored drafts on the existing backlink snapshot, computes 
 
 The generated schema-2 proposal names `capture_boundary`, `purpose`, `primary_destination`, sorted `editable_scope`, and sorted targets. Each target names `destination`, `expected_preimage`, `expected_preimage_mode`, `staged_path`, `postimage_sha256`, and `postimage_mode`. Absent preimages use `ABSENT` and null mode. The proposal binds all authored and generated postimages, including index edits, backlinks, and final log bytes.
 
+Staging preserves each target's intended mode, including generated changes to existing files. A retry must match the complete staged bytes and modes. If staging left an incomplete output directory, preserve it for diagnosis and use a fresh directory.
+
 ### 3. Preview and obtain digest approval
 
 ```bash
@@ -228,6 +232,8 @@ After apply, make no backlink rewrite, routine finalizer call, new log entry, or
 ## Capture history validation
 
 `check_capture_diff.py --base <base> --head <head>` checks applications at their introducing commits, so later routine corrections remain valid. A staged tree checks one transition. Merges may inherit an exact parent ledger but cannot invent records, discard a parent's records, or resolve divergent ledgers silently. Schema-2 applications prove recorded bytes and scope only. Schema-3 applications also prove modes. An all-zero initial-push base denotes an empty prior state. Missing required history fails closed.
+
+Git-range checks verify exact bytes and Git's executable/non-executable mode distinction. Git does not retain every POSIX permission bit; staging and application check exact supported live permissions. New analyses are permitted only as the single primary destination of `analysis-capture`. Artifact and synthesis promotion may update existing analyses but cannot create new ones; live application and Git history validation use the same rule.
 
 ## Routine finalization
 

@@ -15,7 +15,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Callable
+from typing import BinaryIO, Callable
 
 from _durable_files import fsync_directory
 from check_document_reachability import document_reachability_problems
@@ -163,7 +163,7 @@ def _fsync_restored_regular_file(path: Path) -> None:
 
 
 def _extract_backup_snapshot(
-    archive: Path, staged: Path, manifest: dict[str, object], *, durable: bool,
+    archive: Path | BinaryIO, staged: Path, manifest: dict[str, object], *, durable: bool,
 ) -> None:
     """Share exact extraction between readiness checks and durable restores."""
     with zipfile.ZipFile(archive) as zf:
@@ -221,7 +221,7 @@ def _extract_backup_snapshot(
                 fsync_directory(directory)
 
 
-def verify_backup_restore_readiness(archive: Path) -> list[str]:
+def verify_backup_restore_readiness(archive: Path | BinaryIO) -> list[str]:
     """Check the archived tree with trusted tools without installing a destination."""
     manifest, errors = verify_backup_archive(archive)
     if manifest is None:

@@ -1,11 +1,11 @@
 ---
 name: wiki-research
-description: Manual high-rigor wiki research with claim-level independent verification.
+description: Explicitly requested wiki research with claim-level independent verification.
 ---
 
 # Wiki Research
 
-Use this workflow only when the user explicitly invokes `wiki-research`, `$wiki-research`, or `/wiki-research`. It is not the default for important or complex questions.
+Use this workflow when the [research router](CONTEXT.md) selects explicit independent verification. Follow its canonical trigger policy; ordinary important or complex questions remain on the ask route.
 
 For reviewed research, use the [run workspace](../run-workspace.md); reference the existing evidence-run directory without replacing its immutable sample/batch/verdict records.
 

@@ -9,6 +9,14 @@ updated: 2026-08-25
 
 Append-only history of work in this configured wiki. Newest entries go on top.
 
+## [2026-10-02] maintenance | Port reviewed wiki audit and refactor safeguards
+
+Adapted the reviewed wiki-pplx refactor at 50078c3 into the template's existing owners: descriptor-relative durable writes and capture recovery; shared new-analysis eligibility and Git permission projection; owned, verified backup candidates; fail-closed evidence structures; valid Unicode wrapper descriptions; visible Markdown routing; and a short ingest router with its full recipe. Research activation now includes an explicit request for independent claim-level verification while ordinary questions retain the ask route.
+
+Preserved configurable domain and setup, local-only immutable raw sources, the provenance registry, proposal schema 2 and existing ledger compatibility, read-only evidence APIs, all eleven wrapper routes, and complete private backup/restore checks. Already-correct template behavior was retained; source-only checkers and Perplexity corpus/configuration were not imported.
+
+Verification includes baseline and focused evals, full and portable profiles on supported Python runtimes, independent verifier/hostile-review/auditor checks, preservation snapshots, and diff hygiene. This entry precedes final validation; the local port handoff records final outcomes and limits. Tooling checks do not establish semantic evidence quality or live provider behavior. Publication is a separate action.
+
 ## [2026-09-24] maintenance | Port wiki reliability and optional current-state refresh
 
 Implemented bounded lint judgment coverage and shared run records; atomic routine-finalization results; Markdown heading-link checks; clickable chat source citations; and optional current-state owner tracking, hash-bound drift review, retired-claim policy, and the reviewed wiki-refresh workflow. Defaults remain disabled and empty; all eleven shortcuts are generated from the existing contract.

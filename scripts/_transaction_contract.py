@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Iterable
 
 from _durable_files import (
+    anchored_lstat,
+    anchored_mkdir,
     fsync_directory,
     read_regular_bytes,
     sha256_bytes,
@@ -149,14 +151,14 @@ def validate_target_path(repo_root: Path, relative: str, allowed_prefixes: Itera
     for part in parts[:-1]:
         current = current / part
         try:
-            info = current.lstat()
+            info = anchored_lstat(current)
         except OSError as exc:
             raise TransactionError(f"cannot inspect target parent {current}: {exc}") from exc
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
             raise TransactionError(f"unsafe target parent: {current}")
     target = repo_root / relative
     try:
-        info = target.lstat()
+        info = anchored_lstat(target)
     except FileNotFoundError:
         return target
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
@@ -171,27 +173,27 @@ def transaction_authority_root(repo_root: Path) -> Path:
 def ensure_transaction_authority(repo_root: Path) -> Path:
     authority = transaction_authority_root(repo_root)
     try:
-        info = authority.lstat()
+        info = anchored_lstat(authority)
     except FileNotFoundError:
         try:
-            authority.mkdir(mode=0o700)
+            anchored_mkdir(authority, mode=0o700)
         except FileExistsError:
             pass
         else:
             fsync_directory(repo_root)
-        info = authority.lstat()
+        info = anchored_lstat(authority)
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
         raise TransactionCorrupt(f"transaction authority root is not a real directory: {authority}")
     if stat.S_IMODE(info.st_mode) != 0o700:
         raise TransactionCorrupt(f"transaction authority root mode must be 0700: {authority}")
-    if info.st_dev != repo_root.stat().st_dev:
+    if info.st_dev != anchored_lstat(repo_root).st_dev:
         raise TransactionCorrupt(f"transaction authority root is on a different device: {authority}")
     return authority
 
 
 def require_transaction_file(path: Path, *, mode: int | None = None) -> os.stat_result:
     try:
-        info = path.lstat()
+        info = anchored_lstat(path)
     except OSError as exc:
         raise TransactionCorrupt(f"cannot inspect authority entry {path}: {exc}") from exc
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
@@ -203,7 +205,7 @@ def require_transaction_file(path: Path, *, mode: int | None = None) -> os.stat_
 
 def require_transaction_directory(path: Path, *, mode: int = 0o700) -> os.stat_result:
     try:
-        info = path.lstat()
+        info = anchored_lstat(path)
     except OSError as exc:
         raise TransactionCorrupt(f"cannot inspect authority directory {path}: {exc}") from exc
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):

@@ -11,6 +11,8 @@ import tempfile
 from pathlib import Path
 
 from capture_diff import capture_diff_problems
+from capture_gate import (apply_capture_proposal, canonical_capture_proposal_bytes,
+                          prepare_capture_proposal)
 from eval_lib import Results
 
 LEDGER_HEADER = json.dumps({"record_type": "schema", "schema_version": 1, "description": "Fixture capture ledger"}) + "\n"
@@ -246,6 +248,72 @@ def main() -> int:
             commit_all(root, "invalid merge resolution")
             errors = capture_diff_problems(root, base, "HEAD")
             results.record("merge-cannot-" + defect + "-parent-ledgers", any("discards or rewrites" in error for error in errors), str(errors))
+    with tempfile.TemporaryDirectory(prefix="wiki-capture-case-analysis-") as directory:
+        root = Path(directory)
+        base = initialize_repo(root)
+        (root / "wiki/analyses/uncaptured.MD").write_text("# Ungated analysis\n")
+        head = commit_all(root, "uppercase analysis extension")
+        errors = capture_diff_problems(root, base, head)
+        results.record("case-variant-analysis-needs-capture", any("new analysis lacks" in error for error in errors), repr(errors))
+    for post_mode in (0o644, 0o700):
+        with tempfile.TemporaryDirectory(prefix="wiki-capture-mode-only-") as directory:
+            root = Path(directory)
+            base = initialize_repo(root)
+            relative = "wiki/concepts/existing.md"
+            destination = root / relative
+            content = destination.read_bytes()
+            destination.chmod(0o600)
+            (root / "tmp").mkdir()
+            staged = root / "tmp/mode.md"
+            staged.write_bytes(content)
+            staged.chmod(post_mode)
+            digest = hashlib.sha256(content).hexdigest()
+            descriptor = {
+                "schema_version": 2, "capture_boundary": "artifact-promotion",
+                "purpose": "Approve exact live permission change", "primary_destination": relative,
+                "editable_scope": [relative], "targets": [{
+                    "destination": relative, "expected_preimage": digest, "expected_preimage_mode": 0o600,
+                    "staged_path": "tmp/mode.md", "postimage_sha256": digest, "postimage_mode": post_mode,
+                }],
+            }
+            (root / "tmp/proposal.json").write_bytes(canonical_capture_proposal_bytes(descriptor))
+            prepared = prepare_capture_proposal(root, "tmp/proposal.json")
+            applied = apply_capture_proposal(root, "tmp/proposal.json", prepared["authorization_digest"])
+            git(root, "add", "scripts", "wiki")
+            git(root, "commit", "-m", "approved permission change")
+            errors = capture_diff_problems(root, base, "HEAD")
+            changed = git(root, "diff", "--name-only", base, "HEAD").splitlines()
+            results.record(
+                f"exact-live-mode-only-600-to-{post_mode:o}-agrees-with-git",
+                applied["result_code"] == "APPLIED" and not errors
+                and destination.stat().st_mode & 0o7777 == post_mode
+                and (relative in changed) == bool(post_mode & 0o100), repr(errors),
+            )
+    for defect in ("true-noop", "legacy-unchanged", "wrong-projected-mode", "wrong-content"):
+        with tempfile.TemporaryDirectory(prefix="wiki-capture-unchanged-target-") as directory:
+            root = Path(directory)
+            base = initialize_repo(root)
+            relative = "wiki/concepts/existing.md"
+            content = (root / relative).read_bytes()
+            record = application_record(relative, content)
+            record["capture_boundary"] = "artifact-promotion"
+            target = record["targets"][0]
+            target["preimage_sha256"] = target["postimage_sha256"]
+            target["preimage_mode"] = 0o644
+            if defect == "legacy-unchanged":
+                record["schema_version"] = 2
+                target.pop("preimage_mode")
+                target.pop("postimage_mode")
+            elif defect == "wrong-projected-mode":
+                target["preimage_mode"], target["postimage_mode"] = 0o700, 0o755
+            elif defect == "wrong-content":
+                target["preimage_sha256"] = target["postimage_sha256"] = "b" * 64
+                target["preimage_mode"] = 0o600
+            append_record(root, record)
+            head = commit_all(root, defect)
+            errors = capture_diff_problems(root, base, head)
+            expected = "target was not changed" if defect in {"true-noop", "legacy-unchanged"} else "state mismatch"
+            results.record("unchanged-git-target-rejects-" + defect, any(expected in error for error in errors), repr(errors))
     return results.finish()
 
 

@@ -10,7 +10,7 @@
       ],
       "script_hint": null,
       "claude_description": "Answer an ordinary question from the smallest relevant part of the wiki",
-      "codex_description": "Run the default lightweight wiki question workflow. Use for ordinary questions, comparisons, explanations, and lookups from the wiki unless the user explicitly invokes wiki-research.",
+      "codex_description": "Run the default lightweight wiki question workflow. Use for ordinary questions, comparisons, explanations, and lookups from the wiki unless the user requests claim-level independent verification or invokes wiki-research.",
       "authorization": "none",
       "claude_arguments": true
     },
@@ -104,8 +104,8 @@
         "workflows/research/research.md"
       ],
       "script_hint": null,
-      "claude_description": "Run manually invoked wiki research with claim-level independent verification",
-      "codex_description": "Run the manual high-rigor wiki research workflow with claim-level independent verification. Use only when the user explicitly says $wiki-research, wiki-research, or /wiki-research.",
+      "claude_description": "Run claim-level independent verification when explicitly requested or invoked by name",
+      "codex_description": "Run the reviewed wiki research workflow. Use only when the user says $wiki-research, wiki-research, /wiki-research, or explicitly asks for claim-level independent verification from this repository.",
       "authorization": "none",
       "claude_arguments": true
     },

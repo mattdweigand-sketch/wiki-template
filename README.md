@@ -47,7 +47,7 @@ The repo has eleven workflow shortcuts. Claude Code exposes them as slash comman
 |---|---|---|---|
 | `wiki-setup` | `/wiki-setup` | `$wiki-setup` | Configure `wiki/domain.md`, then optionally connect GitHub and a private backup. |
 | `wiki-ask` | `/wiki-ask` | `$wiki-ask` | Answer ordinary wiki questions from the smallest relevant page set. This is the default. |
-| `wiki-research` | `/wiki-research` | `$wiki-research` | Run manually invoked research with claim-level independent review. |
+| `wiki-research` | `/wiki-research` | `$wiki-research` | Run explicitly requested research with claim-level independent review. |
 | `wiki-ingest` | `/wiki-ingest` | `$wiki-ingest` | Turn a raw source into durable wiki pages. |
 | `wiki-capture` | `/wiki-capture` | `$wiki-capture` | Record first-person context, usually a decision or lived experience. |
 | `wiki-promote` | `/wiki-promote` | `$wiki-promote` | Route a useful artifact into the wiki, or decide not to save it. |
@@ -57,7 +57,7 @@ The repo has eleven workflow shortcuts. Claude Code exposes them as slash comman
 | `wiki-synthesize` | `/wiki-synthesize` | `$wiki-synthesize` | Draft corpus distillations for review and approved promotion. |
 | `wiki-export` | `/wiki-export` | `$wiki-export` | Build a complete private backup and optionally copy it to an approved private off-device destination. |
 
-Ask answers stay lightweight. Research answers add independent claim review only when `wiki-research` is named. Either can become a durable analysis when worth saving.
+Ask answers stay lightweight. The [research router](workflows/research/CONTEXT.md) defines when named research or an explicit request for independent claim verification adds review. Either can become a durable analysis when worth saving.
 
 ---
 

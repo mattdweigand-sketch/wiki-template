@@ -290,7 +290,7 @@ def _install_or_match_staging_files(
     )
     if existing_files:
         if set(existing_files) != set(files):
-            raise CaptureStagingError("existing staging output has a different file set")
+            raise CaptureStagingError("existing staging output has a different file set; use a fresh output directory")
         for relative, path in existing_files.items():
             content, info = read_regular_bytes(path)
             expected_content, expected_mode = files[relative]

@@ -7,7 +7,7 @@ import hashlib
 import subprocess
 from pathlib import Path
 
-from capture_gate import CAPTURE_LEDGER_PATH
+from capture_gate import CAPTURE_LEDGER_PATH, analysis_creation_problems, is_analysis_markdown
 from capture_ledger import validate_capture_application, validate_capture_ledger_text
 
 
@@ -57,6 +57,13 @@ def _state(root: Path, revision: str, path: str) -> tuple[str | None, int | None
     if content is None:
         return None, None
     return hashlib.sha256(content).hexdigest(), _object_mode(root, revision, path)
+
+
+def _git_permission_mode(value: object) -> object:
+    """Git stores only the owner-executable bit for regular-file permissions."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return 0o755 if value & 0o100 else 0o644
+    return value
 
 
 def _changed_paths(root: Path, base: str, head: str, *, added_only: bool = False) -> set[str]:
@@ -129,27 +136,51 @@ def _capture_transition_problems(repo_root: Path, base_revision: str, head_revis
         targets = record.get("targets")
         if not isinstance(targets, list):
             continue
+        absent = [
+            target["path"] for target in targets
+            if isinstance(target, dict) and isinstance(target.get("path"), str)
+            and path_states.get(target["path"], _state(root, base_revision, target["path"]))[0] is None
+        ]
+        problems.extend(
+            f"capture application {record_index}: {error}"
+            for error in analysis_creation_problems(
+                str(record.get("capture_boundary", "")),
+                str(record.get("primary_destination", "")), absent,
+            )
+        )
         for target in targets:
             if not isinstance(target, dict) or not isinstance(target.get("path"), str):
                 continue
             path = str(target["path"])
             captured_paths.add(path)
-            if path not in changed:
+            # A live permission-only application can leave Git's bytes and
+            # executable bit unchanged. Schema 3 records the exact POSIX modes;
+            # independent preimage/final checks below still bind the Git state.
+            live_mode_only = (
+                record["schema_version"] == 3
+                and target.get("preimage_sha256") == target.get("postimage_sha256")
+                and target.get("preimage_mode") != target.get("postimage_mode")
+                and _git_permission_mode(target.get("preimage_mode"))
+                == _git_permission_mode(target.get("postimage_mode"))
+            )
+            if path not in changed and not live_mode_only:
                 problems.append(
                     f"capture application {record_index}: target was not changed: {path}"
                 )
             current = path_states.setdefault(
                 path, _state(root, base_revision, path)
             )
-            expected = (target.get("preimage_sha256"), target.get("preimage_mode"))
+            expected = (target.get("preimage_sha256"), _git_permission_mode(target.get("preimage_mode")))
             mode_mismatch = (record["schema_version"] == 3 and current[1] is not None
                              and expected[1] != current[1])
             if expected[0] != current[0] or mode_mismatch:
                 problems.append(
                     f"capture application {record_index}: preimage state mismatch for {path}"
                 )
-            postimage = (target.get("postimage_sha256"), target.get("postimage_mode"))
-            if postimage == expected:
+            postimage = (target.get("postimage_sha256"), _git_permission_mode(target.get("postimage_mode")))
+            if (target.get("postimage_sha256"), target.get("postimage_mode")) == (
+                target.get("preimage_sha256"), target.get("preimage_mode")
+            ):
                 problems.append(
                     f"capture application {record_index}: target has unchanged postimage: {path}"
                 )
@@ -165,7 +196,7 @@ def _capture_transition_problems(repo_root: Path, base_revision: str, head_revis
 
     new_analyses = {
         path for path in added
-        if path.startswith("wiki/analyses/") and path.endswith(".md")
+        if is_analysis_markdown(path)
     }
     for path in sorted(new_analyses - analysis_primaries):
         problems.append(f"new analysis lacks a matching analysis-capture record: {path}")
@@ -183,7 +214,7 @@ def _merge_capture_problems(root: Path, parents: list[str], head: str) -> list[s
         problems.append("merge discards or rewrites a parent capture ledger; rebase divergent capture histories")
     # A new analysis brought in from a side branch must survive the merge exactly.
     for path in _changed_paths(root, parents[0], head, added_only=True):
-        if path.startswith("wiki/analyses/") and path.endswith(".md"):
+        if is_analysis_markdown(path):
             if not any(_state(root, parent, path) == _state(root, head, path) for parent in parents):
                 problems.append(f"merge adds or rewrites a new analysis without an exact parent: {path}")
     return problems

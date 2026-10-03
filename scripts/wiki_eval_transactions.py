@@ -9,11 +9,14 @@ import stat
 import tempfile
 from pathlib import Path
 
+import _file_transactions as transactions
+
 from _file_transactions import (
     AUTHORITY_NAME,
     TransactionConflict,
     TransactionError,
     recover_all,
+    diagnose_transaction,
     run_transaction,
     transaction_status,
 )
@@ -292,5 +295,147 @@ with tempfile.TemporaryDirectory(prefix="wiki-historical-deletion-conflict-") as
                    and (root / "data/a.txt").read_bytes() == b"third-party recreation"
                    and (root / "data/b.txt").read_bytes() == b"old-b", repr(reports))
 
+
+# Active writes retain the preimage directory objects, including a missing
+# target, rather than following a replacement namespace after the last check.
+for ancestor, missing in (("wiki", False), ("wiki/concepts", False), ("wiki", True)):
+    with tempfile.TemporaryDirectory(prefix="wiki-transactions-active-swap-") as td:
+        root = Path(td) / "repo"
+        outside = Path(td) / "outside"
+        (root / "wiki/concepts").mkdir(parents=True)
+        outside_parent = outside / "concepts" if ancestor == "wiki" else outside
+        outside_parent.mkdir(parents=True)
+        target = root / "wiki/concepts/a.md"
+        external = outside_parent / "a.md"
+        if not missing:
+            target.write_bytes(b"old")
+            external.write_bytes(b"old")
+
+        def swap_before_target(event):
+            if event == "before_target:0":
+                (root / ancestor).rename(root / "saved-parent")
+                (root / ancestor).symlink_to(outside, target_is_directory=True)
+
+        try:
+            run_transaction(
+                root, consumer="capture-gate",
+                outputs={"wiki/concepts/a.md": b"new"}, allowed_prefixes=("wiki",),
+                fault=swap_before_target,
+            )
+        except TransactionError:
+            rejected = True
+        else:
+            rejected = False
+        clean, reports = transaction_status(root)
+        results.record(
+            f"active-swap-{ancestor.replace('/', '-')}-{'absent' if missing else 'existing'}-preserves-outside",
+            rejected and not clean and bool(list((root / AUTHORITY_NAME).glob("*/journal.json")))
+            and (not external.exists() if missing else external.read_bytes() == b"old"),
+            repr(reports),
+        )
+
+for replace_absent in (False, True):
+    with tempfile.TemporaryDirectory(prefix="wiki-transactions-rollback-swap-") as td:
+        root = Path(td) / "repo"
+        outside = Path(td) / "outside"
+        root.mkdir()
+        outside.mkdir()
+        outputs, preimages = install_transaction_fixture(root)
+        if replace_absent:
+            (root / "data/a.txt").unlink()
+            preimages["data/a.txt"] = None
+        try:
+            run_transaction(
+                root, consumer="capture-gate", outputs=outputs,
+                expected_preimages=preimages, allowed_prefixes=("data",),
+                fault=lambda event: (_ for _ in ()).throw(RuntimeError("stop"))
+                if event == "after_target:0" else None,
+            )
+        except RuntimeError:
+            pass
+        (outside / "a.txt").write_bytes(b"new-a")
+        (outside / "b.txt").write_bytes(b"old-b")
+        original_write = transactions.atomic_replace_bytes
+        original_unlink = transactions.durable_unlink
+        changed = False
+
+        def swap_rollback(path, *args, **kwargs):
+            global changed
+            if path.name == "a.txt" and not changed:
+                changed = True
+                (root / "data").rename(root / "saved-data")
+                (root / "data").symlink_to(outside, target_is_directory=True)
+            operation = original_unlink if replace_absent else original_write
+            return operation(path, *args, **kwargs)
+
+        if replace_absent:
+            transactions.durable_unlink = swap_rollback
+        else:
+            transactions.atomic_replace_bytes = swap_rollback
+        try:
+            try:
+                recover_all(root)
+            except TransactionError:
+                rejected = True
+            else:
+                rejected = False
+        finally:
+            transactions.atomic_replace_bytes = original_write
+            transactions.durable_unlink = original_unlink
+        results.record(
+            f"rollback-{'unlink' if replace_absent else 'replace'}-ancestor-swap-preserves-outside",
+            changed and rejected and bool(list((root / AUTHORITY_NAME).glob("*/journal.json")))
+            and (outside / "a.txt").read_bytes() == b"new-a"
+            and (outside / "b.txt").read_bytes() == b"old-b",
+        )
+
+for event in ("before_cleanup_rename", "before_cleanup_blob:0"):
+    with tempfile.TemporaryDirectory(prefix="wiki-transactions-cleanup-swap-") as td:
+        root = Path(td) / "repo"
+        outside = Path(td) / "outside"
+        root.mkdir()
+        outside.mkdir()
+        outputs, preimages = install_transaction_fixture(root)
+        (outside / "untouched").write_bytes(b"third-party")
+        saved = root / "saved-authority"
+
+        def swap_cleanup(current):
+            if current == event:
+                (root / AUTHORITY_NAME).rename(saved)
+                (root / AUTHORITY_NAME).symlink_to(outside, target_is_directory=True)
+
+        try:
+            run_transaction(
+                root, consumer="capture-gate", outputs=outputs,
+                expected_preimages=preimages, allowed_prefixes=("data",),
+                fault=swap_cleanup,
+            )
+        except TransactionError:
+            rejected = True
+        else:
+            rejected = False
+        results.record(
+            f"cleanup-{event.replace(':', '-')}-preserves-substituted-authority",
+            rejected and (outside / "untouched").read_bytes() == b"third-party"
+            and [path.name for path in outside.iterdir()] == ["untouched"]
+            and bool(list(saved.rglob("journal.json"))),
+        )
+
+# Diagnosis must inspect journal paths through the same pinned namespace.
+with tempfile.TemporaryDirectory(prefix="wiki-transaction-diagnose-") as directory:
+    root = Path(directory)
+    outputs, preimages = install_transaction_fixture(root)
+    try:
+        run_transaction(
+            root, consumer="capture-gate", outputs=outputs,
+            expected_preimages=preimages, allowed_prefixes=("data",),
+            fault=lambda event: (_ for _ in ()).throw(RuntimeError("stop"))
+            if event == "after_target:0" else None,
+        )
+    except RuntimeError:
+        pass
+    transaction = next((root / AUTHORITY_NAME).glob("*/journal.json")).parent
+    diagnosis = diagnose_transaction(root, transaction.name)
+    results.record("interrupted-capture-diagnosis-reads-pinned-journal", diagnosis["state"] == "COMMITTING")
 
 raise SystemExit(results.finish())

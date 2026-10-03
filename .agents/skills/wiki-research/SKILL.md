@@ -1,6 +1,6 @@
 ---
 name: wiki-research
-description: Run the manual high-rigor wiki research workflow with claim-level independent verification. Use only when the user explicitly says $wiki-research, wiki-research, or /wiki-research.
+description: "Run the reviewed wiki research workflow. Use only when the user says $wiki-research, wiki-research, /wiki-research, or explicitly asks for claim-level independent verification from this repository."
 ---
 
 # Wiki Research

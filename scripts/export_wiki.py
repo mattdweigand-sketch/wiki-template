@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -11,13 +12,17 @@ import re
 import stat
 import subprocess
 import sys
-import tempfile
 import zipfile
+import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path, PurePosixPath
+from typing import BinaryIO, Iterator
 
-from _durable_files import fsync_directory
+from _durable_files import (
+    anchored_mkdir, assert_directory_identity, directory_scope, pinned_parent,
+    read_regular_bytes, stable_lock,
+)
 from _file_transactions import transaction_status
 from _strict_json import DuplicateJsonKeyError, reject_duplicate_json_keys
 from wiki_backup_receipt import (
@@ -47,6 +52,9 @@ REQUIRED_PREFIXES = (
 )
 ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
 EXPORT_ARCHIVE_RE = re.compile(r"wiki-export-\d{4}-\d{2}-\d{2}\.zip\Z")
+EXPORT_WORK_FILE_RE = re.compile(
+    r"\.wiki-export-\d{4}-\d{2}-\d{2}\.zip\.(?:lock|[0-9a-f]{32}\.tmp)\Z"
+)
 BACKUP_MANIFEST_NAME = "BACKUP-MANIFEST.json"
 BACKUP_MANIFEST_FIELDS = {
     "schema_version", "created_at", "members", "raw_artifact_manifest_sha256",
@@ -102,33 +110,50 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
-def export_files(
-    repo_root: Path,
-    output: Path | None = None,
-) -> list[Path]:
-    """Return regular files while excluding generated wiki export archives."""
-    resolved_output = output.resolve() if output is not None else None
-    files: list[Path] = []
-    for path in sorted(repo_root.rglob("*")):
-        if not path.is_file():
-            continue
-        if resolved_output is not None:
-            resolved_path = path.resolve()
-            if resolved_path == resolved_output:
+def _export_entries(repo_root: Path, output: Path | None = None) -> Iterator[Path]:
+    """Traverse the complete private tree, excluding generated export files."""
+    def visit(directory: Path) -> Iterator[Path]:
+        with pinned_parent(directory / ".inventory") as (parent_fd, _name):
+            for name in sorted(os.listdir(parent_fd)):
+                path = directory / name
+                relative = path.relative_to(repo_root)
+                if output is not None and path.absolute() == output.absolute():
+                    continue
+                metadata = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                # Archive-shaped directory names still hold private backup data.
+                if not stat.S_ISDIR(metadata.st_mode) and relative.parts[0] != "raw" and (
+                    EXPORT_ARCHIVE_RE.fullmatch(name) or EXPORT_WORK_FILE_RE.fullmatch(name)
+                ):
+                    continue
+                yield path
+                if stat.S_ISDIR(metadata.st_mode):
+                    yield from visit(path)
+    with directory_scope(repo_root):
+        yield from visit(repo_root)
+
+
+def export_files(repo_root: Path, output: Path | None = None) -> list[Path]:
+    """Inventory included regular files; unsafe included entries are errors."""
+    files = []
+    for path in _export_entries(repo_root, output):
+        with pinned_parent(path) as (parent_fd, name):
+            metadata = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            if stat.S_ISDIR(metadata.st_mode):
                 continue
-        relative = path.relative_to(repo_root)
-        if (
-            relative.parts[0] != "raw"
-            and EXPORT_ARCHIVE_RE.fullmatch(path.name)
-        ):
-            continue
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                raise ValueError(f"unsafe included backup member: {path.relative_to(repo_root)}")
         files.append(path)
-    return files
+    return sorted(files)
 
 
-def find_symlinks(repo_root: Path) -> list[Path]:
-    """Return every symlink, including broken links, under the export root."""
-    return sorted(path for path in repo_root.rglob("*") if path.is_symlink())
+def find_symlinks(repo_root: Path, output: Path | None = None) -> list[Path]:
+    """Return included links, including broken links, using the inventory policy."""
+    links = []
+    for path in _export_entries(repo_root, output):
+        with pinned_parent(path) as (parent_fd, name):
+            if stat.S_ISLNK(os.stat(name, dir_fd=parent_fd, follow_symlinks=False).st_mode):
+                links.append(path)
+    return sorted(links)
 
 
 def zip_path(repo_root: Path, output_dir: str, stamp: str) -> Path:
@@ -156,10 +181,8 @@ def build_backup_manifest(repo_root: Path, files: list[Path]) -> dict[str, objec
     """Build the canonical exact-member manifest for one export snapshot."""
     members = []
     for path in files:
-        metadata = path.lstat()
-        if not stat.S_ISREG(metadata.st_mode):
-            raise ValueError(f"backup member is not a regular file: {path}")
-        content = path.read_bytes()
+        content, metadata = read_regular_bytes(path)
+        assert content is not None and metadata is not None
         members.append({
             "path": path.relative_to(repo_root).as_posix(),
             "size": len(content),
@@ -167,16 +190,19 @@ def build_backup_manifest(repo_root: Path, files: list[Path]) -> dict[str, objec
             "mode": stat.S_IMODE(metadata.st_mode),
         })
     members.sort(key=lambda member: str(member["path"]))
-    raw_manifest = repo_root / "scripts/raw-artifacts.json"
-    raw_sha = hashlib.sha256(raw_manifest.read_bytes()).hexdigest() if raw_manifest.is_file() else None
-    directories = [
-        {
-            "path": path.relative_to(repo_root).as_posix(),
-            "mode": stat.S_IMODE(path.lstat().st_mode),
-        }
-        for path in sorted(repo_root.rglob("*"))
-        if path.is_dir() and not path.is_symlink()
-    ]
+    raw_sha = next((m["sha256"] for m in members if m["path"] == "scripts/raw-artifacts.json"), None)
+    directories = []
+    # Complete template backups also preserve empty directories and local state.
+    for path in _export_entries(repo_root):
+        with pinned_parent(path) as (parent_fd, name):
+            metadata = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            if stat.S_ISDIR(metadata.st_mode):
+                with pinned_parent(path / ".directory-mode") as (directory_fd, _):
+                    directories.append({
+                        "path": path.relative_to(repo_root).as_posix(),
+                        "mode": stat.S_IMODE(os.fstat(directory_fd).st_mode),
+                    })
+    directories.sort(key=lambda item: item["path"])
     return {
         "schema_version": BACKUP_MANIFEST_SCHEMA_VERSION,
         "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
@@ -186,45 +212,144 @@ def build_backup_manifest(repo_root: Path, files: list[Path]) -> dict[str, objec
     }
 
 
+@contextlib.contextmanager
+def _archive_stream(path: Path) -> Iterator[BinaryIO]:
+    with pinned_parent(path) as (parent_fd, name):
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent_fd)
+        with os.fdopen(fd, "rb") as stream:
+            metadata = os.fstat(stream.fileno())
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                raise ValueError(f"archive is not a single-link regular file: {path}")
+            yield stream
+            current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns) != (
+                metadata.st_dev, metadata.st_ino, metadata.st_size, metadata.st_mtime_ns
+            ) or current.st_nlink != 1:
+                raise ValueError(f"archive changed while being read: {path}")
+
+
+def _stream_hashes(stream: BinaryIO) -> tuple[str, str]:
+    md5, sha256 = hashlib.md5(), hashlib.sha256()
+    stream.seek(0)
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        md5.update(chunk)
+        sha256.update(chunk)
+    return md5.hexdigest(), sha256.hexdigest()
+
+
+def _archive_state(path: Path) -> tuple[int, str, int, int, int] | None:
+    try:
+        with _archive_stream(path) as stream:
+            metadata = os.fstat(stream.fileno())
+            _md5, sha256 = _stream_hashes(stream)
+            return (metadata.st_size, sha256, stat.S_IMODE(metadata.st_mode), metadata.st_dev, metadata.st_ino)
+    except FileNotFoundError:
+        return None
+
+
+@contextlib.contextmanager
+def _export_directory_scope(repo_root: Path, output_parent: Path) -> Iterator[None]:
+    """Create missing output components through opened, no-follow parents."""
+    missing = []
+    ancestor = output_parent.absolute()
+    while True:
+        try:
+            ancestor.lstat()
+            break
+        except FileNotFoundError:
+            missing.append(ancestor)
+            ancestor = ancestor.parent
+    with directory_scope(repo_root), directory_scope(ancestor):
+        for directory in reversed(missing):
+            try:
+                anchored_mkdir(directory, mode=0o777)
+            except FileExistsError:
+                pass  # A participating publisher may have created it first.
+            assert_directory_identity(directory)
+        with directory_scope(output_parent):
+            yield
+
+
 def build_zip(
     repo_root: Path, output: Path, files: list[Path], *, require_restore_ready: bool = False,
-) -> None:
-    """Publish a verified archive only after its complete replacement is ready."""
-    output.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
-    os.close(descriptor)
-    staged = Path(name)
+) -> VerifiedUpload:
+    """Validate a sibling candidate before atomically publishing one generation."""
+    lock_path = output.with_name(f".{output.name}.lock")
+    temporary = f".{output.name}.{uuid.uuid4().hex}.tmp"
+    installed = False
     try:
-        with zipfile.ZipFile(staged, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for path in files:
-                zf.write(path, path.relative_to(repo_root).as_posix())
-            info = zipfile.ZipInfo(BACKUP_MANIFEST_NAME)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = (0o100600 << 16)
-            zf.writestr(info, _canonical_json_bytes(build_backup_manifest(repo_root, files)))
-        if require_restore_ready:
-            from restore_wiki import verify_backup_restore_readiness
+        with _export_directory_scope(repo_root, output.parent), stable_lock(lock_path):
+            expected = _archive_state(output)
+            with pinned_parent(output) as (parent_fd, final_name):
+                fd = os.open(temporary, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent_fd)
+                owned = os.fstat(fd)
+                try:
+                    with os.fdopen(fd, "w+b") as stream:
+                        with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                            for path in files:
+                                content, metadata = read_regular_bytes(path)
+                                assert content is not None and metadata is not None
+                                info = zipfile.ZipInfo(path.relative_to(repo_root).as_posix())
+                                info.compress_type = zipfile.ZIP_DEFLATED
+                                info.external_attr = (stat.S_IFREG | stat.S_IMODE(metadata.st_mode)) << 16
+                                zf.writestr(info, content)
+                            info = zipfile.ZipInfo(BACKUP_MANIFEST_NAME)
+                            info.compress_type = zipfile.ZIP_DEFLATED
+                            info.external_attr = 0o100600 << 16
+                            zf.writestr(info, _canonical_json_bytes(build_backup_manifest(repo_root, files)))
+                        try:
+                            output_rel = output.absolute().relative_to(repo_root.absolute()).as_posix()
+                        except ValueError:
+                            output_rel = None
+                        stream.flush()
+                        _md5, verified_sha256 = _stream_hashes(stream)
+                        if require_restore_ready:
+                            from restore_wiki import verify_backup_restore_readiness
 
-            try:
-                output_rel = output.resolve().relative_to(repo_root.resolve()).as_posix()
-            except ValueError:
-                output_rel = None
-            with zipfile.ZipFile(staged) as zf:
-                errors = _backup_member_coverage_errors(zf.namelist(), len(files), output_rel)
-            if not errors:
-                errors = verify_backup_restore_readiness(staged)
-            if errors:
-                raise ValueError("backup restore readiness failed: " + "; ".join(errors))
-        else:
-            _manifest, errors = verify_backup_archive(staged)
-            if errors:
-                raise ValueError("backup verification failed: " + "; ".join(errors))
-        with staged.open("rb") as stream:
-            os.fsync(stream.fileno())
-        os.replace(staged, output)
-        fsync_directory(output.parent)
-    finally:
-        staged.unlink(missing_ok=True)
+                            with zipfile.ZipFile(stream) as zf:
+                                errors = _backup_member_coverage_errors(zf.namelist(), len(files), output_rel)
+                            if not errors:
+                                errors = verify_backup_restore_readiness(stream)
+                            if errors:
+                                raise ValueError("backup restore readiness failed: " + "; ".join(errors))
+                        else:
+                            _manifest, errors = verify_backup_archive(stream)
+                            if errors:
+                                raise ValueError("backup verification failed: " + "; ".join(errors))
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                        _md5, sha256 = _stream_hashes(stream)
+                        if sha256 != verified_sha256:
+                            raise ValueError("candidate bytes changed during verification")
+                        proof = VerifiedUpload(os.fstat(stream.fileno()).st_size, sha256)
+                        assert_directory_identity(repo_root)
+                        assert_directory_identity(output.parent)
+                        if _archive_state(output) != expected:
+                            raise ValueError("export destination changed before installation")
+                        candidate = os.stat(temporary, dir_fd=parent_fd, follow_symlinks=False)
+                        if (
+                            not stat.S_ISREG(candidate.st_mode) or candidate.st_nlink != 1
+                            or (candidate.st_dev, candidate.st_ino) != (owned.st_dev, owned.st_ino)
+                        ):
+                            raise ValueError("export candidate was replaced before installation")
+                        os.replace(temporary, final_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+                        installed = True
+                        os.fsync(parent_fd)
+                        actual = _archive_state(output)
+                        if actual is None or actual[:2] != (proof.byte_count, proof.content_sha256):
+                            raise ValueError("installed export identity differs from verified candidate")
+                        return proof
+                finally:
+                    if not installed:
+                        try:
+                            remaining = os.stat(temporary, dir_fd=parent_fd, follow_symlinks=False)
+                            if (remaining.st_dev, remaining.st_ino) == (owned.st_dev, owned.st_ino):
+                                os.unlink(temporary, dir_fd=parent_fd)
+                        except FileNotFoundError:
+                            pass
+    except (OSError, ValueError, RuntimeError, zipfile.BadZipFile) as exc:
+        phase = "after installation; new archive may be installed, durability/identity unconfirmed" if installed else "before installation; destination was not replaced by this export"
+        raise ValueError(f"export failed {phase}: {exc}") from exc
 
 
 def validate_names(names: list[str]) -> list[str]:
@@ -257,11 +382,11 @@ def _safe_backup_member_name(name: object) -> bool:
     )
 
 
-def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[str]]:
+def verify_backup_archive(output: Path | BinaryIO) -> tuple[dict[str, object] | None, list[str]]:
     """Verify archive safety plus exact member paths, bytes, and permission modes."""
     errors: list[str] = []
     try:
-        with zipfile.ZipFile(output) as zf:
+        with (_archive_stream(output) if isinstance(output, Path) else contextlib.nullcontext(output)) as source, zipfile.ZipFile(source) as zf:
             infos = zf.infolist()
             names = [info.filename for info in infos]
             infos_by_name = {info.filename: info for info in infos}
@@ -419,7 +544,7 @@ def verify_backup_archive(output: Path) -> tuple[dict[str, object] | None, list[
             expected_raw_sha = raw_member.get("sha256") if raw_member is not None else None
             if raw_sha != expected_raw_sha:
                 errors.append("raw artifact manifest hash does not match its member")
-    except (OSError, KeyError, RuntimeError, zipfile.BadZipFile) as exc:
+    except (OSError, KeyError, ValueError, RuntimeError, zipfile.BadZipFile) as exc:
         return None, [f"cannot verify backup archive: {exc}"]
     return (manifest if not errors else None), errors
 
@@ -436,17 +561,18 @@ def _backup_member_coverage_errors(
 
 
 def verify_zip(
-    output: Path,
+    output: Path | BinaryIO,
     expected_count: int,
     output_rel: str | None = None,
 ) -> tuple[bool, list[str]]:
     errors: list[str] = []
-    if not output.exists():
-        return False, [f"{output} was not created"]
     _manifest, manifest_errors = verify_backup_archive(output)
     errors.extend(manifest_errors)
-    with zipfile.ZipFile(output) as zf:
-        names = zf.namelist()
+    try:
+        with (_archive_stream(output) if isinstance(output, Path) else contextlib.nullcontext(output)) as source, zipfile.ZipFile(source) as zf:
+            names = zf.namelist()
+    except (OSError, ValueError, RuntimeError, zipfile.BadZipFile) as exc:
+        return False, [*errors, f"cannot inspect archive members: {exc}"]
     errors.extend(_backup_member_coverage_errors(names, expected_count, output_rel))
     return not errors, errors
 
@@ -545,13 +671,8 @@ def parse_rclone_md5(stdout: str) -> tuple[str | None, list[str]]:
 
 
 def _stream_file_hashes(path: Path) -> tuple[str, str]:
-    md5 = hashlib.md5()
-    sha256 = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            md5.update(chunk)
-            sha256.update(chunk)
-    return md5.hexdigest(), sha256.hexdigest()
+    with _archive_stream(path) as stream:
+        return _stream_hashes(stream)
 
 
 def upload_rclone(
@@ -559,6 +680,8 @@ def upload_rclone(
     target: str,
     rclone_bin: str = "rclone",
     init_drive_remote: str | None = None,
+    *,
+    installed_proof: VerifiedUpload | None = None,
 ) -> tuple[VerifiedUpload | None, list[str]]:
     if not output.exists():
         return None, [f"{output} was not created"]
@@ -577,6 +700,11 @@ def upload_rclone(
 
     expected_size = output.stat().st_size
     expected_md5, expected_sha256 = _stream_file_hashes(output)
+    if installed_proof is not None and (
+        expected_size != installed_proof.byte_count
+        or expected_sha256 != installed_proof.content_sha256
+    ):
+        return None, ["local archive changed since verified installation; upload refused"]
     ok, _, errors = run_rclone(rclone_bin, ["copyto", str(output), target])
     if not ok:
         return None, errors
@@ -643,20 +771,28 @@ def main() -> int:
             print(f"- {report}", file=sys.stderr)
         return 1
 
-    symlinks = find_symlinks(repo_root)
+    output = zip_path(repo_root, args.output_dir, stamp)
+    try:
+        symlinks = find_symlinks(repo_root, output)
+    except (OSError, ValueError) as exc:
+        print(f"Wiki export inventory failed: {exc}", file=sys.stderr)
+        return 1
     if symlinks:
         print("Wiki export refused: the tree contains symlink(s):", file=sys.stderr)
         for link in symlinks:
             print(f"- {link.relative_to(repo_root)}", file=sys.stderr)
         return 1
-    output = zip_path(repo_root, args.output_dir, stamp)
     receipt_path = args.receipt_path
     if not receipt_path.is_absolute():
         receipt_path = repo_root / receipt_path
     if receipt_path.resolve() == output.resolve():
         print("Error: --receipt-path must differ from the export archive path.", file=sys.stderr)
         return 2
-    files = export_files(repo_root, output)
+    try:
+        files = export_files(repo_root, output)
+    except (OSError, ValueError) as exc:
+        print(f"Wiki export inventory failed: {exc}", file=sys.stderr)
+        return 1
     if args.dry_run:
         names = [path.relative_to(repo_root).as_posix() for path in files]
         errors = validate_names(names)
@@ -669,7 +805,7 @@ def main() -> int:
         return 0 if not errors else 1
 
     try:
-        build_zip(repo_root, output, files, require_restore_ready=True)
+        installed_proof = build_zip(repo_root, output, files, require_restore_ready=True)
     except (OSError, ValueError, zipfile.BadZipFile) as exc:
         print(f"Wiki export verification failed: {exc}", file=sys.stderr)
         return 1
@@ -683,6 +819,7 @@ def main() -> int:
             args.upload_target,
             args.rclone_bin,
             args.init_rclone_drive,
+            installed_proof=installed_proof,
         )
         if proof is None:
             print("Private off-device backup copy failed:")

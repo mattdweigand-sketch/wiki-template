@@ -18,6 +18,7 @@ from finalize_wiki_update import finalize_routine_wiki_update
 from capture_gate import (CaptureProposalError, apply_capture_proposal, canonical_capture_proposal_bytes,
                           prepare_capture_proposal)
 from capture_staging import CaptureStagingError, stage_capture_proposal
+from capture_diff import capture_diff_problems
 from eval_lib import Results
 from eval_lint_fixture import copy_lint_fixture, seed_retired_claim, write_registered_raw_fixture
 
@@ -264,6 +265,9 @@ def main() -> int:
             "log_entry_path": "tmp/entry.md", "rebuild_referenced_by": True,
         }
         (root / "tmp/request.json").write_bytes(canonical_capture_proposal_bytes(request))
+        subprocess.run(["git", "add", "scripts", "wiki"], cwd=root, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "capture preimages and modes"], cwd=root, check=True)
+        capture_base = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root).decode().strip()
         before = snapshot(root)
         canonical_request = canonical_capture_proposal_bytes(request).decode()
         invalid_requests = {
@@ -335,6 +339,18 @@ def main() -> int:
             results.record("staging-retry-rejects-" + label + "-mode-drift", rejected
                            and stat.S_IMODE(path.stat().st_mode) == altered_mode and snapshot(root) == before)
             path.chmod(planned_mode)
+        metadata = root / "tmp/staged/staging-result.json"
+        metadata_bytes = metadata.read_bytes()
+        metadata.unlink()
+        try:
+            stage_capture_proposal(root, "tmp/request.json", "tmp/staged")
+        except CaptureStagingError as exc:
+            rejected = "fresh output directory" in str(exc)
+        else:
+            rejected = False
+        results.record("incomplete-staging-requires-fresh-generation", rejected and snapshot(root) == before)
+        metadata.write_bytes(metadata_bytes)
+        metadata.chmod(0o644)
         prepared = prepare_capture_proposal(root, staged.proposal_path)
         results.record("guarded-refresh-stages-pages-registries-index-backlinks-and-log", {
             "wiki/concepts/alpha.md", "wiki/concepts/beta.md", "wiki/index.md", "wiki/log.md",
@@ -363,6 +379,10 @@ def main() -> int:
         results.record("approved-finish-is-validation-only-and-byte-mode-exact", snapshot(root) == approved
                        and all(check.returncode == 0 for check in checks) and retried["result_code"] == "ALREADY_APPLIED",
                        "\n".join(check.stdout + check.stderr for check in checks))
+        subprocess.run(["git", "add", "scripts", "wiki"], cwd=root, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "complete exact application"], cwd=root, check=True)
+        capture_errors = capture_diff_problems(root, capture_base, "HEAD")
+        results.record("staged-posix-modes-agree-with-git-executable-projection", not capture_errors, repr(capture_errors))
         (root / "tmp/alpha.md").write_text("changed desired postimage\n")
         try:
             stage_capture_proposal(root, "tmp/request.json", "tmp/staged")

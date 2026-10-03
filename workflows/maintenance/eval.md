@@ -51,7 +51,7 @@ Do not copy these repo-local skills into `~/.agents/skills/`. Identical personal
 
 ## Operational Document Reachability Contract
 
-`scripts/document-reachability.json` declares graph roots, operational directories, exclusions, and intentional standalone documents. `scripts/check_document_reachability.py` follows local Markdown links and ATX heading fragments (including same-file links, percent encoding, punctuation/inline-code headings, and duplicate suffixes), ignores fenced examples, and fails on missing targets or fragments or operational documents that no declared route reaches. Change the manifest only when routing scope changes; do not add an obsolete document as standalone merely to silence the check.
+`scripts/document-reachability.json` declares graph roots, operational directories, exclusions, and intentional standalone documents. `scripts/check_document_reachability.py` follows local Markdown links and ATX heading fragments (including same-file links, percent encoding, punctuation/inline-code headings, and duplicate suffixes), ignores fenced and inline code examples and HTML comments, and fails on missing targets or fragments or operational documents that no declared route reaches. Change the manifest only when routing scope changes; do not add an obsolete document as standalone merely to silence the check.
 
 ## Load / Skip
 
